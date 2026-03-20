@@ -1,7 +1,7 @@
 site_name: Intelligent API Security Gateway
 site_description: Engineering documentation for the Go-based API security gateway.
 repo_name: Intelligent_API_Security_Gateway
-docs_dir: docs
+docs_dir: gateway/docs
 theme:
   name: material
   features:
