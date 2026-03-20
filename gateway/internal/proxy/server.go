@@ -26,6 +26,19 @@ type Config struct {
 	// WriteTimeout is the maximum duration before timing out writes of the response.
 	// This helps prevent long-running handlers from blocking server resources.
 	WriteTimeout time.Duration
+
+	// IdleTimeout is the maximum amount of time to wait for the next request
+	// when keep-alives are enabled.
+	IdleTimeout time.Duration
+
+	// ProxyTimeout defines the timeout for communicating with upstream backends.
+	ProxyTimeout time.Duration
+
+	// MaxIdleConns controls the maximum number of idle connections in the proxy transport.
+	MaxIdleConns int
+
+	// MaxConnsPerHost limits total connections per upstream host.
+	MaxConnsPerHost int
 }
 
 // Server represents the API gateway proxy server instance.
@@ -64,7 +77,7 @@ func NewServer(cfg Config) *Server {
 func (s *Server) Start() error {
 
 	// Create a reverse proxy that forwards requests to the configured backend URL
-	proxy := NewReverseProxy(s.config.BackendURL)
+	proxy := NewReverseProxy(s.config)
 
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)
@@ -79,6 +92,7 @@ func (s *Server) Start() error {
 		Handler:      handler,
 		ReadTimeout:  s.config.ReadTimeout,
 		WriteTimeout: s.config.WriteTimeout,
+		IdleTimeout:  s.config.IdleTimeout,
 	}
 
 	// Start the HTTP server and listen for incoming connections

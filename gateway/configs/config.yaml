@@ -9,7 +9,7 @@ server:
 
 proxy:
   # Backend API to protect
-  backend_url: "http://localhost:3000"
+  backend_url: "http://localhost:9000"
   timeout: 30s
   max_idle_conns: 100
   max_conns_per_host: 10
