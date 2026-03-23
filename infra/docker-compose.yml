@@ -13,7 +13,8 @@ services:
         echo "- Vulnerable Web:       http://localhost:5173" &&
         echo "- Dashboard Web:        http://localhost:5174" &&
         echo "- MkDocs:               http://localhost:8000" &&
-        echo "- Postgres:             localhost:5432" &&
+        echo "- Postgres (Gateway):   localhost:5432" &&
+        echo "- Postgres (Vuln API):  localhost:5433" &&
         echo "- Redis:                localhost:6379"
 
   postgres:
@@ -32,6 +33,26 @@ services:
       - postgres_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iasg_user} -d ${POSTGRES_DB:-iasg}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vulnerable_postgres:
+    image: postgres:18.2
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_USER: ${VULN_POSTGRES_USER:-vuln_user}
+      POSTGRES_PASSWORD: ${VULN_POSTGRES_PASSWORD:-vuln_changeme}
+      POSTGRES_DB: ${VULN_POSTGRES_DB:-vuln_app}
+    ports:
+      - "5433:5432"
+    volumes:
+      - vulnerable_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VULN_POSTGRES_USER:-vuln_user} -d ${VULN_POSTGRES_DB:-vuln_app}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -59,11 +80,16 @@ services:
       - vulnerable_api_node_modules:/app/node_modules
     environment:
       PORT: 4000
+      PGHOST: vulnerable_postgres
+      PGPORT: 5432
+      PGUSER: ${VULN_POSTGRES_USER:-vuln_user}
+      PGPASSWORD: ${VULN_POSTGRES_PASSWORD:-vuln_changeme}
+      PGDATABASE: ${VULN_POSTGRES_DB:-vuln_app}
     command: sh -c "npm ci && npm start"
     ports:
       - "4000:4000"
     depends_on:
-      postgres:
+      vulnerable_postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -143,6 +169,7 @@ services:
 
 volumes:
   postgres_data:
+  vulnerable_postgres_data:
   redis_data:
   vulnerable_api_node_modules:
   gateway_dashboard_api_node_modules:
