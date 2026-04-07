@@ -10,7 +10,7 @@ This page shows which directories contain active code and which directories curr
 
 ## Architecture Explanation
 
-`cmd/gateway` contains the executable entrypoint. `internal/proxy` contains the implemented server, middleware, and reverse proxy logic. The other directories under `internal/` exist in the repository but do not currently contain Go source files. `configs/` and `docker-compose.yml` are present in the tree, but the current binary does not load the YAML configuration or connect to Redis or PostgreSQL.
+`cmd/gateway` contains the executable entrypoint. `internal/proxy` contains the implemented server, middleware, and reverse proxy logic. The other directories under `internal/` exist in the repository but do not currently contain Go source files. `configs/` holds the shared YAML configuration used by both local runs and Docker Compose, while `docker-compose.yml` wires the services together.
 
 ## Code References
 
@@ -23,7 +23,7 @@ This page shows which directories contain active code and which directories curr
 | `internal/signals/` | Present in the repository but currently empty. |
 | `internal/storage/` | Present in the repository with empty adapter directories. |
 | `internal/trust/` | Present in the repository but currently empty. |
-| `configs/` | Contains example configuration that is not loaded by the current binary. |
+| `configs/` | Contains the shared configuration template and the local runtime config. |
 | `docs/` | MkDocs documentation content. |
 
 ## Flow Diagram
@@ -48,7 +48,8 @@ flowchart TD
 │   └── gateway/
 │       └── main.go
 ├── configs/
-│   └── config.yaml.example
+│   ├── config.yaml.example
+│   └── config.yaml
 ├── docker/
 ├── docs/
 │   ├── index.md

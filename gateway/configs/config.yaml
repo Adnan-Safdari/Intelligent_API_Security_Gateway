@@ -1,7 +1,7 @@
 # IASG Configuration Example
 
 server:
-  port: 8080
+  port: 8082
   host: 0.0.0.0
   read_timeout: 30s
   write_timeout: 30s
@@ -9,7 +9,7 @@ server:
 
 proxy:
   # Backend API to protect
-  backend_url: "http://localhost:9000"
+  backend_url: "http://localhost:5002"
   timeout: 30s
   max_idle_conns: 100
   max_conns_per_host: 10
@@ -38,7 +38,7 @@ storage:
   
   postgres:
     host: localhost
-    port: 5432
+    port: 5434
     database: iasg
     username: iasg_user
     password: changeme

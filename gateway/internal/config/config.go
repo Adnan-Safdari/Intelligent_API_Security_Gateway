@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Config maps the full gateway YAML configuration.
+// Config maps the gateway YAML configuration.
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
 	Proxy       ProxyConfig       `yaml:"proxy"`

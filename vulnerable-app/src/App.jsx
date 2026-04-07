@@ -32,7 +32,7 @@ function ScrollToTop() {
 
 export default function App() {
   useEffect(() => {
-    fetch("http://localhost:5000/api/login", {
+    fetch("http://localhost:5002/api/login", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

@@ -7,14 +7,14 @@ services:
       - -c
       - |
         echo "Port map:" &&
-        echo "- Gateway API:          http://localhost:8080" &&
-        echo "- Vulnerable API:       http://localhost:4000" &&
-        echo "- Gateway Dashboard API:http://localhost:4001" &&
-        echo "- Vulnerable Web:       http://localhost:5173" &&
-        echo "- Dashboard Web:        http://localhost:5174" &&
+        echo "- Gateway API:          http://localhost:8082" &&
+        echo "- Vulnerable API:       http://localhost:5002" &&
+        echo "- Gateway Dashboard API:http://localhost:4004" &&
+        echo "- Vulnerable Web:       http://localhost:5175" &&
+        echo "- Dashboard Web:        http://localhost:5177" &&
         echo "- MkDocs:               http://localhost:8000" &&
-        echo "- Postgres (Gateway):   localhost:5432" &&
-        echo "- Postgres (Vuln API):  localhost:5433" &&
+        echo "- Postgres (Gateway):   localhost:5434" &&
+        echo "- Postgres (Vuln API):  localhost:5435" &&
         echo "- Redis:                localhost:6379"
 
   postgres:
@@ -28,7 +28,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
       POSTGRES_DB: ${POSTGRES_DB:-iasg}
     ports:
-      - "5432:5432"
+      - "5434:5432"
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
@@ -48,7 +48,7 @@ services:
       POSTGRES_PASSWORD: ${VULN_POSTGRES_PASSWORD:-vuln_changeme}
       POSTGRES_DB: ${VULN_POSTGRES_DB:-vuln_app}
     ports:
-      - "5433:5432"
+      - "5435:5432"
     volumes:
       - vulnerable_postgres_data:/var/lib/postgresql
     healthcheck:
@@ -76,10 +76,10 @@ services:
     restart: unless-stopped
     working_dir: /app
     volumes:
-      - ../vulnerable-application/api:/app
+      - ../vulnerable-app/backend:/app
       - vulnerable_api_node_modules:/app/node_modules
     environment:
-      PORT: 4000
+      PORT: 5002
       PGHOST: vulnerable_postgres
       PGPORT: 5432
       PGUSER: ${VULN_POSTGRES_USER:-vuln_user}
@@ -87,7 +87,7 @@ services:
       PGDATABASE: ${VULN_POSTGRES_DB:-vuln_app}
     command: sh -c "npm ci && npm start"
     ports:
-      - "4000:4000"
+      - "5002:5002"
     depends_on:
       vulnerable_postgres:
         condition: service_healthy
@@ -102,10 +102,10 @@ services:
       - ../gateway-dashboard/api:/app
       - gateway_dashboard_api_node_modules:/app/node_modules
     environment:
-      PORT: 4001
+      PORT: 4004
     command: sh -c "npm ci && npm start"
     ports:
-      - "4001:4001"
+      - "4004:4004"
     depends_on:
       postgres:
         condition: service_healthy
@@ -117,11 +117,11 @@ services:
     restart: unless-stopped
     working_dir: /app
     volumes:
-      - ../vulnerable-application/web:/app
+      - ../vulnerable-app:/app
       - vulnerable_web_node_modules:/app/node_modules
-    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5173"
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5175"
     ports:
-      - "5173:5173"
+      - "5175:5175"
     depends_on:
       - vulnerable_api
 
@@ -132,9 +132,9 @@ services:
     volumes:
       - ../gateway-dashboard/web:/app
       - gateway_dashboard_web_node_modules:/app/node_modules
-    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5174"
+    command: sh -c "npm ci && npm run dev -- --host 0.0.0.0 --port 5177"
     ports:
-      - "5174:5174"
+      - "5177:5177"
     depends_on:
       - gateway_dashboard_api
 
@@ -145,10 +145,11 @@ services:
     volumes:
       - ../gateway:/app
     environment:
-      IASG_CONFIG: configs/config.docker.yaml
+      IASG_CONFIG: configs/config.yaml
+      IASG_BACKEND_URL: http://vulnerable_api:5002
     command: sh -c "go run ./cmd/server"
     ports:
-      - "8080:8080"
+      - "8082:8082"
     depends_on:
       vulnerable_api:
         condition: service_started

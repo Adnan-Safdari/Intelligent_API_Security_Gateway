@@ -16,7 +16,7 @@ type Config struct {
 	ListenAddr string
 
 	// BackendURL is the full URL of the backend service to which requests are proxied.
-	// Format: "scheme://host:port" (e.g., "http://localhost:9000")
+	// Format: "scheme://host:port" (e.g., "http://localhost:4000")
 	BackendURL string
 
 	// ReadTimeout is the maximum duration for reading the entire request, including the body.

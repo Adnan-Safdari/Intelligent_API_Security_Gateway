@@ -15,6 +15,7 @@ The gateway now loads runtime configuration from YAML at startup.
 - Default config path: `configs/config.yaml`
 - Optional override: `IASG_CONFIG=/path/to/config.yaml`
 - Fallback when default file is missing: `configs/config.yaml.example`
+- Docker Compose reuses the same YAML file and overrides the backend with `IASG_BACKEND_URL`.
 
 The listen address is built from `server.host` + `server.port`, and the upstream backend target comes from `proxy.backend_url`.
 
@@ -45,13 +46,13 @@ flowchart TD
 
    ```yaml
    proxy:
-     backend_url: "http://localhost:9000"
+       backend_url: "http://localhost:4000"
    ```
 
 2. Start the backend service.
 
    ```bash
-   python3 -m http.server 9000
+   python3 -m http.server 4000
    ```
 
 3. Download Go dependencies and run the gateway:
@@ -73,3 +74,4 @@ flowchart TD
 
 - If `configs/config.yaml` does not exist, the gateway will attempt to load `configs/config.yaml.example`.
 - PostgreSQL and Redis configuration are mapped in YAML and loaded by the gateway, even though not all modules are wired yet.
+- In Docker Compose, the gateway uses the same config file and reads the backend target from `IASG_BACKEND_URL`.

@@ -9,12 +9,13 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/proxy"
 )
-
 func main() {
 	cfgPath := os.Getenv("IASG_CONFIG")
 	if cfgPath == "" {
 		cfgPath = "configs/config.yaml"
 	}
+
+	backendURLOverride := os.Getenv("IASG_BACKEND_URL")
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -25,6 +26,11 @@ func main() {
 			log.Fatalf("failed to load config from %s and fallback %s: %v", cfgPath, fallbackPath, err)
 		}
 		cfgPath = fallbackPath
+	}
+
+	if backendURLOverride != "" {
+		cfg.Proxy.BackendURL = backendURLOverride
+		log.Printf("Overriding backend URL from IASG_BACKEND_URL: %s", backendURLOverride)
 	}
 
 	listenAddr := net.JoinHostPort(cfg.Server.Host, fmt.Sprintf("%d", cfg.Server.Port))
