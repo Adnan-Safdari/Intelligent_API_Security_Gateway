@@ -22,7 +22,6 @@ export default function Auth() {
   const validate = () => {
     const e = {}
     if (isRegister && !form.name.trim()) e.name = 'Name is required'
-    if (!form.email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) e.email = 'Enter a valid email'
     if (form.password.length < 6) e.password = 'Password must be at least 6 characters'
     if (isRegister && form.password !== form.confirm) e.confirm = 'Passwords do not match'
     setErrors(e)
@@ -63,7 +62,7 @@ export default function Auth() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="auth-form">
+        <form onSubmit={handleSubmit} className="auth-form" noValidate>
           {isRegister && (
             <div className="form-group">
               <label className="form-label">Full Name</label>
@@ -82,7 +81,7 @@ export default function Auth() {
           <div className="form-group">
             <label className="form-label">Email Address</label>
             <input
-              type="email"
+              type="text"
               className={`form-input ${errors.email ? 'error' : ''}`}
               placeholder="jane@example.com"
               value={form.email}

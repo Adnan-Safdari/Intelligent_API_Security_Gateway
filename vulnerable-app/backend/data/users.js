@@ -10,19 +10,19 @@
 const users = [
   {
     id: 1,
-    username: "admin",
+    email: "admin",
     password: "adminPassword123", // VERY INSECURE: Plain text password
     role: "administrator"
   },
   {
     id: 2,
-    username: "user1",
+    email: "user1",
     password: "password1",
     role: "user"
   },
   {
     id: 3,
-    username: "john_doe",
+    email: "john_doe",
     password: "doePassword",
     role: "user"
   }

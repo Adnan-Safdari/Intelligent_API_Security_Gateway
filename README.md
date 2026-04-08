@@ -1,3 +1,4 @@
+
 # Intelligent API Security Gateway
 
 A smart API gateway that uses trust scoring and adaptive enforcement to protect backend APIs from malicious traffic.
@@ -25,6 +26,7 @@ cp configs/config.yaml.example configs/config.yaml
 ### 2. Configure
 
 Edit `.env` if you want to change default credentials:
+
 ```
 POSTGRES_USER=iasg_user
 POSTGRES_PASSWORD=iasg_password
@@ -32,6 +34,7 @@ POSTGRES_DB=iasg_db
 ```
 
 Edit `configs/config.yaml` to configure:
+
 - Backend API URL to protect
 - Trust scoring thresholds
 - Rate limiting rules

@@ -17,6 +17,13 @@ let nextOrderId = 1000
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms))
 
+const getApiBaseUrl = () => {
+  const mode = localStorage.getItem("api_mode") || "backend";
+  return mode === 'gateway'
+    ? 'http://localhost:8082'
+    : 'http://localhost:5002'
+}
+
 const err = (msg, status = 400) => {
   const e = new Error(msg)
   e.status = status
@@ -121,11 +128,73 @@ export const userApi = {
 
   // Real: POST /api/users/login
   login: async ({ email, password }) => {
-    await delay()
-    const user = users.find((u) => u.email === email && u.password === password)
-    if (!user) err('Invalid email or password', 401)
-    const { password: _, ...safe } = user
-    return { user: safe, token: makeToken(user._id) }
+    const toAuthShape = (payload) => {
+      if (!payload || typeof payload !== 'object') return null
+
+      const token = payload.token || payload.accessToken || payload.jwt
+      const payloadUser = payload.user || payload.data?.user
+      const user = payloadUser || (payload._id || payload.id ? payload : null)
+
+      if (!user) return null
+
+      const userId = user._id || user.id
+      const normalizedToken = token || (userId ? makeToken(userId) : null)
+      if (!normalizedToken) return null
+
+      return { user, token: normalizedToken }
+    }
+
+    const localLogin = () => {
+      const user = users.find((u) => u.email === email && u.password === password)
+      if (!user) err('Invalid email or password', 401)
+      const { password: _, ...safe } = user
+      return { user: safe, token: makeToken(user._id) }
+    }
+
+    try {
+      const BASE_URL = getApiBaseUrl()
+      const res = await fetch(`${BASE_URL}/api/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+
+      const text = await res.text()
+      if (!res.ok) {
+  if (res.status === 403) {
+    window.__ATTACK_BLOCKED__ = true;
+    throw new Error("🚨 SQL Injection Attack Blocked");
+  }
+  throw new Error(text || 'Login failed');
+}
+
+      let parsed
+      try {
+        parsed = JSON.parse(text)
+      } catch {
+        throw new Error('Login endpoint returned invalid JSON')
+      }
+
+      const normalized = toAuthShape(parsed)
+      if (!normalized) {
+        throw new Error('Login endpoint returned unsupported response shape')
+      }
+
+      return normalized
+    } catch (e) {
+  console.log("LOGIN ERROR:", e); // 👈 DEBUG
+
+  if (
+    e?.message?.includes('Blocked') ||
+    e?.message?.includes('SQL') ||
+    e?.message?.includes('Forbidden')
+  ) {
+    window.__ATTACK_BLOCKED__ = true;
+    throw new Error("🚨 SQL Injection Attack Blocked");
+  }
+
+  return localLogin();
+}
   },
 
   // Real: GET /api/users/profile
@@ -311,7 +380,10 @@ export const adminApi = {
   // Real: GET /api/admin/users
   getUsers: async () => {
     await delay()
-    return users.map(({ password: _, ...u }) => u)
+    return users.map((user) => {
+    const {  ...safeUser } = user;
+    return safeUser;
+  });
   },
 }
 
