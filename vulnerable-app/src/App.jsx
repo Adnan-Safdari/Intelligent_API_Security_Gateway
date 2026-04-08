@@ -21,7 +21,6 @@ import Auth from "./pages/Auth";
 import Orders, { OrderDetail } from "./pages/Orders";
 import Wishlist from "./pages/Wishlist";
 import Admin from "./pages/Admin";
-import { useEffect } from "react";
 
 function ScrollToTop() {
   if (typeof window !== "undefined") {
@@ -31,21 +30,6 @@ function ScrollToTop() {
 }
 
 export default function App() {
-  useEffect(() => {
-    fetch("http://localhost:5002/api/login", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        username: "admin",
-        password: "1234",
-      }),
-    })
-      .then((res) => res.json())
-      .then((data) => console.log("Response:", data))
-      .catch((err) => console.log("ERROR:", err));
-  }, []);
   return (
     <BrowserRouter>
       <AuthProvider>

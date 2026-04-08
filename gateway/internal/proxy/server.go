@@ -84,6 +84,7 @@ func (s *Server) Start() error {
 	handler := ChainMiddleware(
 		LoggingMiddleware,
 		RequestInspectionMiddleware,
+		SecurityMiddleware,
 	)(proxy)
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler

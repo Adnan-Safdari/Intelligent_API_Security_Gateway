@@ -47,6 +47,7 @@ services:
       POSTGRES_USER: ${VULN_POSTGRES_USER:-vuln_user}
       POSTGRES_PASSWORD: ${VULN_POSTGRES_PASSWORD:-vuln_changeme}
       POSTGRES_DB: ${VULN_POSTGRES_DB:-vuln_app}
+
     ports:
       - "5435:5432"
     volumes:
@@ -85,6 +86,7 @@ services:
       PGUSER: ${VULN_POSTGRES_USER:-vuln_user}
       PGPASSWORD: ${VULN_POSTGRES_PASSWORD:-vuln_changeme}
       PGDATABASE: ${VULN_POSTGRES_DB:-vuln_app}
+      AUTH_MODE: db_secure
     command: sh -c "npm ci && npm start"
     ports:
       - "5002:5002"
