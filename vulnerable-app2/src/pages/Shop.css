@@ -1,0 +1,67 @@
+.shop-page { padding: 32px 0 60px; }
+
+.shop-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 28px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.shop-heading { font-size: 1.5rem; font-weight: 600; margin-bottom: 2px; }
+.shop-count { font-size: 0.85rem; color: var(--text-muted); }
+.shop-controls { display: flex; gap: 10px; align-items: center; }
+
+.filter-toggle { display: none; }
+
+.shop-layout { display: grid; grid-template-columns: 220px 1fr; gap: 32px; align-items: start; }
+
+/* Sidebar */
+.shop-sidebar {
+  background: var(--bg-white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  position: sticky;
+  top: 80px;
+}
+.sidebar-section { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+.sidebar-section:last-of-type { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.sidebar-section h3 {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+.filter-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.filter-list button {
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  border: none;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.filter-list button:hover { background: var(--bg); color: var(--text); }
+.filter-list button.active { background: var(--brand-light); color: var(--brand); font-weight: 500; }
+
+.price-inputs { display: flex; align-items: center; gap: 6px; }
+.price-inputs .form-input { padding: 7px 10px; font-size: 0.85rem; }
+.price-inputs span { color: var(--text-muted); flex-shrink: 0; }
+
+@media (max-width: 900px) {
+  .filter-toggle { display: flex; }
+  .shop-layout { grid-template-columns: 1fr; }
+  .shop-sidebar {
+    display: none;
+    position: static;
+    margin-bottom: 20px;
+  }
+  .shop-sidebar.open { display: block; }
+}

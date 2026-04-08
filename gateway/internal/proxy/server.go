@@ -6,6 +6,9 @@ package proxy
 import (
 	"net/http"
 	"time"
+
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
 
 // Config holds the configuration settings for the proxy server.
@@ -39,6 +42,9 @@ type Config struct {
 
 	// MaxConnsPerHost limits total connections per upstream host.
 	MaxConnsPerHost int
+
+	// RateLimit holds the configuration for API flooding detection.
+	RateLimit config.RateLimitConfig
 }
 
 // Server represents the API gateway proxy server instance.
@@ -79,12 +85,15 @@ func (s *Server) Start() error {
 	// Create a reverse proxy that forwards requests to the configured backend URL
 	proxy := NewReverseProxy(s.config)
 
+	// Create the flood detector signal engine
+	floodDetector := signals.NewFloodDetector(s.config.RateLimit)
+
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)
 	handler := ChainMiddleware(
 		LoggingMiddleware,
 		RequestInspectionMiddleware,
-		SecurityMiddleware,
+		floodDetector.Middleware,
 	)(proxy)
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler
