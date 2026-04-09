@@ -74,9 +74,15 @@ type PostgresConfig struct {
 }
 
 type EnforcementConfig struct {
-	RateLimit RateLimitConfig `yaml:"rate_limit"`
-	Throttle  ThrottleConfig  `yaml:"throttle"`
-	Block     BlockConfig     `yaml:"block"`
+	RateLimit       RateLimitConfig       `yaml:"rate_limit"`
+	AttackDetection AttackDetectionConfig `yaml:"attack_detection"`
+	Throttle        ThrottleConfig        `yaml:"throttle"`
+	Block           BlockConfig           `yaml:"block"`
+}
+
+type AttackDetectionConfig struct {
+	Enabled     bool     `yaml:"enabled"`
+	SQLPatterns []string `yaml:"sql_patterns"`
 }
 
 type RateLimitConfig struct {

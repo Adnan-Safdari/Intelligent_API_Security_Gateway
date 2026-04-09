@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
+
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
 type Middleware func(http.Handler) http.Handler
@@ -23,7 +24,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+		ip := netutil.ClientIP(r.RemoteAddr)
 
 		fmt.Println("------ Incoming Request ------")
 		fmt.Println("Method:", r.Method)

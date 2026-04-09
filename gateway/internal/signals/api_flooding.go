@@ -16,13 +16,12 @@ package signals
 
 import (
 	"fmt"
-	"io"
-	"net"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
 // ClientData stores the timestamps of recent requests for a specific IP.
@@ -102,10 +101,7 @@ func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 		}
 
 		// Extract IP without port to ensure accurate tracking
-		ip, _, err := net.SplitHostPort(r.RemoteAddr)
-		if err != nil {
-			ip = r.RemoteAddr
-		}
+		ip := netutil.ClientIP(r.RemoteAddr)
 
 		now := time.Now()
 		shard := fd.getShard(ip)
@@ -138,8 +134,7 @@ func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 		if requestCount > fd.threshold {
 			shard.mu.Unlock()
 			fd.logAlert(ip, r, requestCount)
-			w.WriteHeader(http.StatusTooManyRequests)
-			io.WriteString(w, "API Flood Detected: Too Many Requests\n")
+			next.ServeHTTP(w, r)
 			return
 		}
 		shard.mu.Unlock()
@@ -168,7 +163,7 @@ func (fd *FloodDetector) logAlert(ip string, r *http.Request, count int) {
 			User-Agent     : %s
 			Severity       : %s
 			Timestamp      : %s
-			ACTION         : BLOCKED (429)
+			ACTION         : DETECTED (ALLOWING REQUEST)
 			========================================
 			`,
 		ip,

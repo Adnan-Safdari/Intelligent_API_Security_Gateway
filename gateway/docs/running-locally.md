@@ -64,10 +64,10 @@ flowchart TD
 
 4. Send requests to your configured gateway address.
 
-   With the example server settings (`host: 0.0.0.0`, `port: 8080`):
+   With the example server settings (`host: 0.0.0.0`, `port: 8082`):
 
    ```bash
-   curl -i http://localhost:8080
+   curl -i http://localhost:8082
    ```
 
 ## Notes

@@ -4,17 +4,15 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"io"
-	"net"
 	"net/http"
 	"time"
+
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
 // NewRequestContext creates a RequestContext from an HTTP request
 func NewRequestContext(r *http.Request, body string) *RequestContext {
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	if ip == "" {
-		ip = r.RemoteAddr
-	}
+	ip := netutil.ClientIP(r.RemoteAddr)
 
 	requestID := make([]byte, 16)
 	if _, err := rand.Read(requestID); err != nil {

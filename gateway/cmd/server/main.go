@@ -9,6 +9,7 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/proxy"
 )
+
 func main() {
 	cfgPath := os.Getenv("IASG_CONFIG")
 	if cfgPath == "" {
@@ -45,6 +46,7 @@ func main() {
 		MaxIdleConns:    cfg.Proxy.MaxIdleConns,
 		MaxConnsPerHost: cfg.Proxy.MaxConnsPerHost,
 		RateLimit:       cfg.Enforcement.RateLimit,
+		AttackDetection: cfg.Enforcement.AttackDetection,
 	})
 
 	log.Printf("Gateway starting on %s (backend: %s, config: %s)", listenAddr, cfg.Proxy.BackendURL, cfgPath)

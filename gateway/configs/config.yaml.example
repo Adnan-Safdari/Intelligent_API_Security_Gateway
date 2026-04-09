@@ -52,6 +52,15 @@ enforcement:
     enabled: true
     requests_per_minute: 100
     burst: 20
+
+  # Attack detection (SQL injection signatures)
+  attack_detection:
+    enabled: true
+    sql_patterns:
+      - "' OR"
+      - "--"
+      - "UNION"
+      - " OR 1=1"
   
   # Throttling
   throttle:

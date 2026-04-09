@@ -15,7 +15,7 @@ import (
 // It defines network parameters and timeout values for the gateway.
 type Config struct {
 	// ListenAddr is the address and port on which the gateway listens for incoming requests.
-	// Format: "host:port" or ":port" (e.g., ":8080" or "0.0.0.0:8080")
+	// Format: "host:port" or ":port" (e.g., ":8082" or "0.0.0.0:8082")
 	ListenAddr string
 
 	// BackendURL is the full URL of the backend service to which requests are proxied.
@@ -45,6 +45,9 @@ type Config struct {
 
 	// RateLimit holds the configuration for API flooding detection.
 	RateLimit config.RateLimitConfig
+
+	// AttackDetection holds SQL injection detection settings.
+	AttackDetection config.AttackDetectionConfig
 }
 
 // Server represents the API gateway proxy server instance.
@@ -87,6 +90,10 @@ func (s *Server) Start() error {
 
 	// Create the flood detector signal engine
 	floodDetector := signals.NewFloodDetector(s.config.RateLimit)
+	sqliDetector := signals.NewSQLiDetector(signals.SQLiDetectorConfig{
+		Enabled:     s.config.AttackDetection.Enabled,
+		SQLPatterns: s.config.AttackDetection.SQLPatterns,
+	})
 
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)
@@ -94,6 +101,7 @@ func (s *Server) Start() error {
 		LoggingMiddleware,
 		RequestInspectionMiddleware,
 		floodDetector.Middleware,
+		sqliDetector.Middleware,
 	)(proxy)
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler
