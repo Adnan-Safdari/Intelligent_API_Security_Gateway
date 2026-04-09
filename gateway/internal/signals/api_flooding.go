@@ -1,0 +1,182 @@
+/*
+	API Flood detection Middleware
+		- Sits on he backend server
+		- Moniors incomming request
+		- Detects if someone is sending too many requests
+		- Blocks wih a 429 Too Many Requests
+		- Logs a security alert
+
+
+	Core Idea
+		“ For each IP address, track how many requests they send within a time window.
+		If it exceeds a limit -> block them. ”
+*/
+
+package signals
+
+import (
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"sync"
+	"time"
+
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+)
+
+// ClientData stores the timestamps of recent requests for a specific IP.
+type ClientData struct {
+	Requests []time.Time
+}
+
+// FloodDetector manages request tracking across multiple shards to reduce lock contention.
+type FloodDetector struct {
+	shards    []*floodShard
+	threshold int
+	window    time.Duration
+}
+
+// floodShard represents a single bucket of IP data with its own mutex.
+type floodShard struct {
+	mu      sync.Mutex
+	clients map[string]*ClientData
+}
+
+// FloodDetector initializes a sharded detector based on the provided configuration.
+func NewFloodDetector(cfg config.RateLimitConfig) *FloodDetector {
+	if !cfg.Enabled {
+		return &FloodDetector{threshold: 0}
+	}
+	numShards := 32
+	fd := &FloodDetector{
+		shards:    make([]*floodShard, numShards),
+		threshold: cfg.RequestsPerMinute, // Using RPM as threshold for demo
+		window:    time.Minute,           // Default to 1 minute to match RPM
+	}
+
+	for i := 0; i < numShards; i++ {
+		fd.shards[i] = &floodShard{
+			clients: make(map[string]*ClientData),
+		}
+	}
+
+	go fd.startCleanupTimer()
+	return fd
+}
+
+// getShard returns the specific shard for a given IP using a simple hash.
+func (fd *FloodDetector) getShard(ip string) *floodShard {
+	var hash uint32
+	for i := 0; i < len(ip); i++ {
+		hash = 31*hash + uint32(ip[i])
+	}
+	return fd.shards[hash%uint32(len(fd.shards))]
+}
+
+// startCleanupTimer runs a background task to remove inactive IPs every 5 minutes.
+func (fd *FloodDetector) startCleanupTimer() {
+	ticker := time.NewTicker(5 * time.Minute)
+	for range ticker.C {
+		now := time.Now()
+		for _, shard := range fd.shards {
+			shard.mu.Lock()
+			for ip, client := range shard.clients {
+				// If the last request was longer than the window ago, delete the entry
+				if len(client.Requests) == 0 || now.Sub(client.Requests[len(client.Requests)-1]) > fd.window {
+					delete(shard.clients, ip)
+				}
+			}
+			shard.mu.Unlock()
+		}
+	}
+}
+
+// Middleware returns an http.Handler that inspects requests for flooding attacks.
+func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If the detector is disabled, skip inspection
+		if fd.threshold <= 0 {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// Extract IP without port to ensure accurate tracking
+		ip, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			ip = r.RemoteAddr
+		}
+
+		now := time.Now()
+		shard := fd.getShard(ip)
+
+		shard.mu.Lock()
+		if _, exists := shard.clients[ip]; !exists {
+			shard.clients[ip] = &ClientData{}
+		}
+		client := shard.clients[ip]
+
+		// O(1) cleanup: Remove expired timestamps from the beginning of the slice
+		cutoff := now.Add(-fd.window)
+		firstValid := 0
+		for i, t := range client.Requests {
+			if t.After(cutoff) {
+				firstValid = i
+				break
+			}
+			// If all are expired, the loop will finish and firstValid will stay 0 or be set correctly
+			if i == len(client.Requests)-1 {
+				firstValid = len(client.Requests)
+			}
+		}
+		client.Requests = client.Requests[firstValid:]
+
+		// Add current request and check against threshold
+		client.Requests = append(client.Requests, now)
+		requestCount := len(client.Requests)
+
+		if requestCount > fd.threshold {
+			shard.mu.Unlock()
+			fd.logAlert(ip, r, requestCount)
+			w.WriteHeader(http.StatusTooManyRequests)
+			io.WriteString(w, "API Flood Detected: Too Many Requests\n")
+			return
+		}
+		shard.mu.Unlock()
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// logAlert prints a high-visibility security alert to the console.
+func (fd *FloodDetector) logAlert(ip string, r *http.Request, count int) {
+	severity := "LOW"
+	if count > fd.threshold*5 {
+		severity = "HIGH "
+	} else if count > fd.threshold*2 {
+		severity = "MEDIUM"
+	}
+
+	fmt.Printf(`
+			========================================
+			SECURITY ALERT: API FLOOD DETECTED
+			----------------------------------------
+			IP Address     : %s
+			Endpoint       : %s
+			Requests       : %d
+			Time Window    : %s
+			User-Agent     : %s
+			Severity       : %s
+			Timestamp      : %s
+			ACTION         : BLOCKED (429)
+			========================================
+			`,
+		ip,
+		r.URL.Path,
+		count,
+		fd.window,
+		r.Header.Get("User-Agent"),
+		severity,
+		time.Now().Format(time.RFC3339),
+	)
+}

@@ -44,6 +44,7 @@ func main() {
 		ProxyTimeout:    cfg.Proxy.Timeout,
 		MaxIdleConns:    cfg.Proxy.MaxIdleConns,
 		MaxConnsPerHost: cfg.Proxy.MaxConnsPerHost,
+		RateLimit:       cfg.Enforcement.RateLimit,
 	})
 
 	log.Printf("Gateway starting on %s (backend: %s, config: %s)", listenAddr, cfg.Proxy.BackendURL, cfgPath)
