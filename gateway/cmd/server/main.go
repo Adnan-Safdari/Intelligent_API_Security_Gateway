@@ -20,13 +20,7 @@ func main() {
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
-		// Keep local dev friction low by falling back to the example config.
-		fallbackPath := "configs/config.yaml.example"
-		cfg, err = config.Load(fallbackPath)
-		if err != nil {
-			log.Fatalf("failed to load config from %s and fallback %s: %v", cfgPath, fallbackPath, err)
-		}
-		cfgPath = fallbackPath
+		log.Fatalf("failed to load config from %s: %v", cfgPath, err)
 	}
 
 	if backendURLOverride != "" {

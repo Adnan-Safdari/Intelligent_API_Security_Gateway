@@ -77,8 +77,19 @@ func (sd *SQLiDetector) isSQLi(body string) bool {
 }
 
 func (sd *SQLiDetector) logAlert(ip string, r *http.Request, details string) {
-	fmt.Printf(
-		"SECURITY ALERT [SQL_INJECTION] ip=%s method=%s path=%s user-agent=%q details=%s time=%s\n",
+	fmt.Printf(`
+		========================================
+		SECURITY ALERT: SQL INJECTION DETECTED
+		----------------------------------------
+		IP Address     : %s
+		Method         : %s
+		Endpoint       : %s
+		User-Agent     : %s
+		Details        : %s
+		Timestamp      : %s
+		ACTION         : DETECTED (ALLOWING REQUEST)
+		========================================
+		`,
 		ip,
 		r.Method,
 		r.URL.Path,
