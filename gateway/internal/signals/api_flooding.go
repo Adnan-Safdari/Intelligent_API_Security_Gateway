@@ -10,6 +10,29 @@
 	Core Idea
 		“ For each IP address, track how many requests they send within a time window.
 		If it exceeds a limit -> block them. ”
+
+	Sharding architecute (in FloodDetector & floodShard)
+		Instead of putting all IP address into a giant map
+		We are breaking it into multiple buckets using an architecture called sharding
+		Splitting into 32 smaller "buckets"
+
+		Each shard has its own lock "mu" (mutex) where it only locks its own data preventing race conditions
+		
+
+
+	func (fd *FloodDetector) getShard(ip string) *floodShard 
+
+		similiar to String.hashCode() in jaba (polynomial rolling hash)
+		starts with hash = 0, for each char in string multiplies hash with x (31 in our case)
+		adds the ascii value of the character
+	
+		It iterates over the characters in the IP string, calculates a mathematical hash, 
+		and then uses the modulo operator (%) to pin it safely between 0 and 31.
+
+		ensures same ip goes to the same shard
+
+
+
 */
 
 package signals
@@ -31,15 +54,21 @@ type ClientData struct {
 
 // FloodDetector manages request tracking across multiple shards to reduce lock contention.
 type FloodDetector struct {
-	shards    []*floodShard
-	threshold int
-	window    time.Duration
+	shards    []*floodShard	// Instead of one big map, we are breaking it into multiple buckets
+	threshold int			// Maximum number of requests allowed in the time window
+	window    time.Duration	// The time window duration
+
+	/*
+		So if
+		threshold => 100 and window is 1
+		:> 100 requests in 1 minute => Block
+	*/
 }
 
 // floodShard represents a single bucket of IP data with its own mutex.
 type floodShard struct {
-	mu      sync.Mutex
-	clients map[string]*ClientData
+	mu      sync.Mutex				// Mutex to protect the clients map
+	clients map[string]*ClientData	// Map to store client data - modifying directly
 }
 
 // FloodDetector initializes a sharded detector based on the provided configuration.
@@ -75,18 +104,18 @@ func (fd *FloodDetector) getShard(ip string) *floodShard {
 
 // startCleanupTimer runs a background task to remove inactive IPs every 5 minutes.
 func (fd *FloodDetector) startCleanupTimer() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute)
 	for range ticker.C {
 		now := time.Now()
 		for _, shard := range fd.shards {
-			shard.mu.Lock()
+			shard.mu.Lock()				// Locking the shard so that no race condition occurs
 			for ip, client := range shard.clients {
 				// If the last request was longer than the window ago, delete the entry
 				if len(client.Requests) == 0 || now.Sub(client.Requests[len(client.Requests)-1]) > fd.window {
 					delete(shard.clients, ip)
 				}
 			}
-			shard.mu.Unlock()
+			shard.mu.Unlock()			// unlocking after critical phase is over 
 		}
 	}
 }
