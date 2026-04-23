@@ -87,3 +87,6 @@ go build -o gateway cmd/gateway/main.go
 ```bash
 docker compose down
 ```
+
+
+// docker compose -f docker-compose.yml logs -f gateway
