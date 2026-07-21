@@ -61,7 +61,16 @@ enforcement:
       - "--"
       - "UNION"
       - " OR 1=1"
-  
+
+  # Brute force login detection
+  brute_force:
+    enabled: true
+    max_failures: 5        # failed logins allowed inside the window
+    window: 60s            # sliding window for counting failures
+    lockout_duration: 120s # set to 0s to detect + log without blocking
+    login_paths:
+      - "/api/login"
+
   # Throttling
   throttle:
     enabled: true

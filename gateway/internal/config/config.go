@@ -76,8 +76,17 @@ type PostgresConfig struct {
 type EnforcementConfig struct {
 	RateLimit       RateLimitConfig       `yaml:"rate_limit"`
 	AttackDetection AttackDetectionConfig `yaml:"attack_detection"`
+	BruteForce      BruteForceConfig      `yaml:"brute_force"`
 	Throttle        ThrottleConfig        `yaml:"throttle"`
 	Block           BlockConfig           `yaml:"block"`
+}
+
+type BruteForceConfig struct {
+	Enabled         bool          `yaml:"enabled"`
+	MaxFailures     int           `yaml:"max_failures"`     // failed logins allowed inside the window
+	Window          time.Duration `yaml:"window"`           // sliding window for counting failures
+	LockoutDuration time.Duration `yaml:"lockout_duration"` // 0 = detect and log only, never block
+	LoginPaths      []string      `yaml:"login_paths"`      // request paths treated as login endpoints
 }
 
 type AttackDetectionConfig struct {
