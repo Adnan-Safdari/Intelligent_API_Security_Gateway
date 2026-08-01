@@ -3,7 +3,8 @@
   <hashTree>
     <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Brute Force Attack Demo - IASG Gateway" enabled="true">
       <stringProp name="TestPlan.comments">Simulates a dictionary brute force attack against /api/login through the Intelligent API Security Gateway (localhost:8082).
-Expected: first 5 attempts return 401 (failed login), then the gateway locks the IP out and returns 429.</stringProp>
+Expected: every attempt returns 401 (the gateway detects but does not block - enforcement belongs to the decision engine).
+From the 5th failure onward the gateway console prints SECURITY ALERT: BRUTE FORCE DETECTED.</stringProp>
       <boolProp name="TestPlan.functional_mode">false</boolProp>
       <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
       <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
