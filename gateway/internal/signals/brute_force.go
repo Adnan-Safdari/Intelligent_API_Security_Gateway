@@ -1,10 +1,10 @@
 /*
-	Brute Force Attack Detection Middleware
+	Brute Force Attack Detection Signal
 		- Watches login endpoints only (e.g. /api/login)
 		- Counts FAILED login attempts (401/403 responses) per IP
-		- Too many failures inside a time window -> security alert
-		- Optionally locks the IP out for a while (429 Too Many Requests)
+		- Too many failures inside a time window -> security alert + metrics
 		- A successful login resets the counter for that IP
+		- DOES NOT BLOCK. Every request is forwarded to the backend.
 
 
 	Core Idea
@@ -23,11 +23,12 @@
 		We also track how many DISTINCT emails an IP has tried, so the
 		alert can tell the two apart.
 
-	Lockout
-		When an IP crosses the threshold we remember "locked until".
-		While locked, login requests from that IP are rejected with
-		429 immediately — the backend never sees them, so the attacker
-		cannot keep guessing.
+	Detection only — no enforcement (team decision)
+		Detectors produce EVIDENCE; the centralized decision engine produces
+		POLICY. This detector therefore never returns 403/429 on its own.
+		It records evidence and exposes it through Metrics(ip), which the
+		future risk-scoring / decision engine will consume alongside the
+		other signals to make one combined Allow / Throttle / Block call.
 */
 
 package signals
@@ -43,11 +44,19 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
+// BruteForceMetrics is the evidence this detector emits for a given IP.
+// The decision engine consumes this; the detector never acts on it itself.
+type BruteForceMetrics struct {
+	FailedLogins   int    `json:"failedLogins"`   // failures inside the current window
+	DistinctUsers  int    `json:"distinctUsers"`  // distinct emails tried (spraying indicator)
+	ThresholdCross bool   `json:"thresholdCross"` // failures >= configured max
+	AttackType     string `json:"attackType"`     // "brute_force", "password_spraying", or "" when clean
+}
+
 // bruteForceClient tracks the recent login failures for a single IP.
 type bruteForceClient struct {
-	Failures    []time.Time         // timestamps of failed login attempts inside the window
-	Emails      map[string]struct{} // distinct emails this IP has tried (spraying indicator)
-	LockedUntil time.Time           // zero value means "not locked"
+	Failures []time.Time         // timestamps of failed login attempts inside the window
+	Emails   map[string]struct{} // distinct emails this IP has tried (spraying indicator)
 }
 
 // BruteForceDetector tracks failed login attempts per IP.
@@ -55,9 +64,8 @@ type bruteForceClient struct {
 // map + mutex is enough here (no sharding needed like the flood detector).
 type BruteForceDetector struct {
 	enabled     bool
-	maxFailures int             // failures allowed inside the window before alerting
+	maxFailures int             // failures inside the window before the signal fires
 	window      time.Duration   // sliding window for counting failures
-	lockout     time.Duration   // how long to block the IP after crossing the threshold (0 = detect only)
 	loginPaths  map[string]bool // exact request paths that count as "login"
 
 	mu      sync.Mutex
@@ -86,7 +94,6 @@ func NewBruteForceDetector(cfg config.BruteForceConfig) *BruteForceDetector {
 		enabled:     cfg.Enabled,
 		maxFailures: cfg.MaxFailures,
 		window:      cfg.Window,
-		lockout:     cfg.LockoutDuration,
 		loginPaths:  paths,
 		clients:     make(map[string]*bruteForceClient),
 	}
@@ -104,10 +111,8 @@ func (bd *BruteForceDetector) startCleanupTimer() {
 		now := time.Now()
 		bd.mu.Lock()
 		for ip, client := range bd.clients {
-			stillLocked := now.Before(client.LockedUntil)
-			recentFailure := len(client.Failures) > 0 &&
-				now.Sub(client.Failures[len(client.Failures)-1]) <= bd.window
-			if !stillLocked && !recentFailure {
+			if len(client.Failures) == 0 ||
+				now.Sub(client.Failures[len(client.Failures)-1]) > bd.window {
 				delete(bd.clients, ip)
 			}
 		}
@@ -135,6 +140,7 @@ func (sr *statusRecorder) Flush() {
 }
 
 // Middleware inspects login traffic for brute force patterns.
+// It always forwards the request; enforcement belongs to the decision engine.
 func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only login endpoints matter — everything else passes straight through
@@ -145,18 +151,11 @@ func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 
 		ip := netutil.ClientIP(r.RemoteAddr)
 
-		// If this IP is currently locked out, reject before touching the backend
-		if bd.isLockedOut(ip) {
-			w.Header().Set("Retry-After", fmt.Sprintf("%.0f", bd.lockout.Seconds()))
-			http.Error(w, "Too many failed login attempts. Try again later.", http.StatusTooManyRequests)
-			return
-		}
-
 		// Best-effort: pull the attempted email out of the JSON body
 		// so we can tell brute force from password spraying
 		email := extractEmail(r)
 
-		// Let the request through, but record what the backend answered
+		// Forward the request, but record what the backend answered
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rec, r)
 
@@ -170,16 +169,8 @@ func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// isLockedOut reports whether the IP is inside an active lockout period.
-func (bd *BruteForceDetector) isLockedOut(ip string) bool {
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
-	client, exists := bd.clients[ip]
-	return exists && time.Now().Before(client.LockedUntil)
-}
-
-// recordFailure adds a failed attempt and raises an alert (and lockout)
-// once the threshold is crossed.
+// recordFailure adds a failed attempt and raises an alert once the
+// threshold is crossed. The request itself has already been forwarded.
 func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
 	now := time.Now()
 
@@ -208,16 +199,42 @@ func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
 
 	failureCount := len(client.Failures)
 	distinctEmails := len(client.Emails)
-
-	crossed := failureCount >= bd.maxFailures
-	if crossed && bd.lockout > 0 {
-		client.LockedUntil = now.Add(bd.lockout)
-	}
 	bd.mu.Unlock()
 
-	if crossed {
+	if failureCount >= bd.maxFailures {
 		bd.logAlert(ip, r, failureCount, distinctEmails)
 	}
+}
+
+// Metrics returns the current evidence for an IP so the decision engine
+// can fold it into a combined risk score. Safe to call concurrently.
+func (bd *BruteForceDetector) Metrics(ip string) BruteForceMetrics {
+	bd.mu.Lock()
+	defer bd.mu.Unlock()
+
+	client, exists := bd.clients[ip]
+	if !exists {
+		return BruteForceMetrics{}
+	}
+
+	// Count only failures still inside the window
+	cutoff := time.Now().Add(-bd.window)
+	failures := 0
+	for _, t := range client.Failures {
+		if t.After(cutoff) {
+			failures++
+		}
+	}
+
+	m := BruteForceMetrics{
+		FailedLogins:   failures,
+		DistinctUsers:  len(client.Emails),
+		ThresholdCross: failures >= bd.maxFailures,
+	}
+	if m.ThresholdCross {
+		m.AttackType = classifyAttack(len(client.Emails))
+	}
+	return m
 }
 
 // reset clears the failure history for an IP (called after a successful login).
@@ -225,6 +242,15 @@ func (bd *BruteForceDetector) reset(ip string) {
 	bd.mu.Lock()
 	delete(bd.clients, ip)
 	bd.mu.Unlock()
+}
+
+// classifyAttack labels the attack shape: many distinct accounts from one IP
+// looks like spraying, hammering a single account is classic brute force.
+func classifyAttack(distinctEmails int) string {
+	if distinctEmails > 3 {
+		return "password_spraying"
+	}
+	return "brute_force"
 }
 
 // extractEmail reads the request body (and restores it for the next handler)
@@ -253,16 +279,9 @@ func (bd *BruteForceDetector) logAlert(ip string, r *http.Request, failures, dis
 		severity = "MEDIUM"
 	}
 
-	// Many distinct emails from one IP looks like password spraying,
-	// hammering one account looks like a classic brute force
 	attackType := "BRUTE FORCE (single account)"
-	if distinctEmails > 3 {
+	if classifyAttack(distinctEmails) == "password_spraying" {
 		attackType = "PASSWORD SPRAYING (multiple accounts)"
-	}
-
-	action := "DETECTED (ALLOWING REQUEST)"
-	if bd.lockout > 0 {
-		action = fmt.Sprintf("IP LOCKED OUT FOR %s", bd.lockout)
 	}
 
 	fmt.Printf(`
@@ -278,7 +297,7 @@ func (bd *BruteForceDetector) logAlert(ip string, r *http.Request, failures, dis
 			User-Agent     : %s
 			Severity       : %s
 			Timestamp      : %s
-			ACTION         : %s
+			ACTION         : DETECTED (ALLOWING REQUEST)
 			========================================
 			`,
 		ip,
@@ -290,6 +309,5 @@ func (bd *BruteForceDetector) logAlert(ip string, r *http.Request, failures, dis
 		r.Header.Get("User-Agent"),
 		severity,
 		time.Now().Format(time.RFC3339),
-		action,
 	)
 }

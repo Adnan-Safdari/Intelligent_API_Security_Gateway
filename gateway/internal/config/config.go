@@ -82,11 +82,10 @@ type EnforcementConfig struct {
 }
 
 type BruteForceConfig struct {
-	Enabled         bool          `yaml:"enabled"`
-	MaxFailures     int           `yaml:"max_failures"`     // failed logins allowed inside the window
-	Window          time.Duration `yaml:"window"`           // sliding window for counting failures
-	LockoutDuration time.Duration `yaml:"lockout_duration"` // 0 = detect and log only, never block
-	LoginPaths      []string      `yaml:"login_paths"`      // request paths treated as login endpoints
+	Enabled     bool          `yaml:"enabled"`
+	MaxFailures int           `yaml:"max_failures"` // failed logins inside the window before the signal fires
+	Window      time.Duration `yaml:"window"`       // sliding window for counting failures
+	LoginPaths  []string      `yaml:"login_paths"`  // request paths treated as login endpoints
 }
 
 type AttackDetectionConfig struct {

@@ -62,12 +62,11 @@ enforcement:
       - "UNION"
       - " OR 1=1"
   
-  # Brute force login detection
+  # Brute force login detection (detect + emit metrics only; no blocking)
   brute_force:
     enabled: true
-    max_failures: 5        # failed logins allowed inside the window
-    window: 60s            # sliding window for counting failures
-    lockout_duration: 120s # set to 0s to detect + log without blocking
+    max_failures: 5 # failed logins inside the window before the signal fires
+    window: 60s     # sliding window for counting failures
     login_paths:
       - "/api/login"
 
