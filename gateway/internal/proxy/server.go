@@ -95,6 +95,8 @@ func (s *Server) Start() error {
 		SQLPatterns: s.config.AttackDetection.SQLPatterns,
 	})
 
+	traversalEnumDetector := signals.NewTraversalEnumDetector(signals.DefaultTraversalEnumConfig())
+
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)
 	handler := ChainMiddleware(
@@ -102,6 +104,7 @@ func (s *Server) Start() error {
 		RequestInspectionMiddleware,
 		floodDetector.Middleware,
 		sqliDetector.Middleware,
+		traversalEnumDetector.Middleware,
 	)(proxy)
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler
