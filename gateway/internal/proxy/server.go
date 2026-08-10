@@ -99,6 +99,8 @@ func (s *Server) Start() error {
 	})
 	bruteForceDetector := signals.NewBruteForceDetector(s.config.BruteForce)
 
+	traversalEnumDetector := signals.NewTraversalEnumDetector(signals.DefaultTraversalEnumConfig())
+
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)
 	// The brute force detector sits closest to the proxy because it needs to
@@ -108,6 +110,7 @@ func (s *Server) Start() error {
 		RequestInspectionMiddleware,
 		floodDetector.Middleware,
 		sqliDetector.Middleware,
+		traversalEnumDetector.Middleware,
 		bruteForceDetector.Middleware,
 	)(proxy)
 
