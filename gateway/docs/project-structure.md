@@ -10,17 +10,17 @@ This page shows which directories contain active code and which directories curr
 
 ## Architecture Explanation
 
-`cmd/gateway` contains the executable entrypoint. `internal/proxy` contains the implemented server, middleware, and reverse proxy logic. The other directories under `internal/` exist in the repository but do not currently contain Go source files. `configs/` holds the shared YAML configuration used by both local runs and Docker Compose, while `docker-compose.yml` wires the services together.
+`cmd/server` contains the executable entrypoint. `internal/proxy` contains the implemented server, middleware, and reverse proxy logic. The other directories under `internal/` currently hold support packages or placeholders. `configs/` holds the shared YAML configuration used by both local runs and Docker Compose, while `docker-compose.yml` wires the services together.
 
 ## Code References
 
 | Path | Role |
 | --- | --- |
-| `cmd/gateway/` | Executable bootstrap for the gateway binary. |
+| `cmd/server/` | Executable bootstrap for the gateway binary. |
 | `internal/proxy/` | Implemented reverse proxy server and middleware. |
-| `internal/context/` | Present in the repository but currently empty. |
+| `internal/netutil/` | Shared helpers used by middleware and context-free request handling. |
 | `internal/enforcement/` | Present in the repository but currently empty. |
-| `internal/signals/` | Present in the repository but currently empty. |
+| `internal/signals/` | Request attack-detection middleware for flooding and SQLi. |
 | `internal/storage/` | Present in the repository with empty adapter directories. |
 | `internal/trust/` | Present in the repository but currently empty. |
 | `configs/` | Contains the shared configuration template and the local runtime config. |
@@ -45,7 +45,7 @@ flowchart TD
 ```text
 .
 ├── cmd/
-│   └── gateway/
+│   └── server/
 │       └── main.go
 ├── configs/
 │   ├── config.yaml.example
@@ -63,7 +63,7 @@ flowchart TD
 │       └── proxy-module.md
 ├── internal/
 │   ├── config/
-│   ├── context/
+│   ├── netutil/
 │   ├── enforcement/
 │   ├── proxy/
 │   ├── signals/

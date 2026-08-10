@@ -57,10 +57,10 @@ docker ps
 go mod download
 
 # Run the gateway
-go run cmd/gateway/main.go
+go run ./cmd/server
 ```
 
-The gateway will start on `http://localhost:8080` (or the port specified in your config).
+The gateway will start on `http://localhost:8082` (or the port specified in your config).
 
 ## Architecture
 
@@ -68,6 +68,11 @@ The gateway will start on `http://localhost:8080` (or the port specified in your
 - **Enforcement**: Applies adaptive policies (block, throttle, allow)
 - **Storage**: PostgreSQL for persistent data, Redis for caching
 - **Proxy**: Forwards legitimate traffic to backend API
+
+## Documentation
+
+- [Reverse proxy logic](gateway/docs/reverse-proxy-logic.md)
+- [Project structure](gateway/docs/project-structure.md)
 
 ## Development
 

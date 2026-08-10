@@ -48,6 +48,9 @@ type Config struct {
 
 	// AttackDetection holds SQL injection detection settings.
 	AttackDetection config.AttackDetectionConfig
+
+	// BruteForce holds brute force login detection settings.
+	BruteForce config.BruteForceConfig
 }
 
 // Server represents the API gateway proxy server instance.
@@ -94,17 +97,21 @@ func (s *Server) Start() error {
 		Enabled:     s.config.AttackDetection.Enabled,
 		SQLPatterns: s.config.AttackDetection.SQLPatterns,
 	})
+	bruteForceDetector := signals.NewBruteForceDetector(s.config.BruteForce)
 
 	traversalEnumDetector := signals.NewTraversalEnumDetector(signals.DefaultTraversalEnumConfig())
 
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)
+	// The brute force detector sits closest to the proxy because it needs to
+	// observe the backend's response status (401 = failed login)
 	handler := ChainMiddleware(
 		LoggingMiddleware,
 		RequestInspectionMiddleware,
 		floodDetector.Middleware,
 		sqliDetector.Middleware,
 		traversalEnumDetector.Middleware,
+		bruteForceDetector.Middleware,
 	)(proxy)
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler
