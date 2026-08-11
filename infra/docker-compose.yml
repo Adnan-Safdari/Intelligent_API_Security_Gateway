@@ -141,7 +141,7 @@ services:
       - gateway_dashboard_api
 
   gateway:
-    image: golang:1.23-alpine
+    image: golang:1.24-alpine
     restart: unless-stopped
     working_dir: /app
     volumes:
