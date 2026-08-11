@@ -1,0 +1,180 @@
+"""
+The Correlation Agent.
+
+Answers "what is actually happening?" -- never "should this be blocked?".
+Turns scattered per-IP evidence into named campaigns with a confidence score.
+Entirely deterministic: no LLM is involved in any of this.
+"""
+
+from __future__ import annotations
+
+from iasg.correlation.cluster import cluster
+from iasg.correlation.features import IPProfile, build_profiles, common_traits
+from iasg.models import (
+    DETECTOR_BRUTE_FORCE,
+    DETECTOR_ENUMERATION,
+    DETECTOR_FLOOD,
+    DETECTOR_SQLI,
+    DETECTOR_TRAVERSAL,
+    SEVERITY_HIGH,
+    SEVERITY_LOW,
+    SEVERITY_MEDIUM,
+    Campaign,
+    Evidence,
+)
+
+# Below this, a single IP acting alone is filed as noise rather than a campaign.
+MIN_SOLO_EVENTS = 3
+
+# How much each shared trait contributes to confidence.
+TRAIT_WEIGHTS = {
+    "user_agent": 0.25,
+    "endpoint": 0.20,
+    "attack_type": 0.15,
+    "subnet": 0.20,
+    "timing": 0.10,
+}
+
+
+class CorrelationAgent:
+    def __init__(self, min_shared: int = 2, window_seconds: int = 300) -> None:
+        self._min_shared = min_shared
+        self._window_seconds = window_seconds
+
+    def analyse(self, evidence: list[Evidence]) -> list[Campaign]:
+        """Build campaigns from a batch of evidence."""
+        if not evidence:
+            return []
+
+        profiles = build_profiles(evidence)
+        clusters = cluster(profiles, self._min_shared, self._window_seconds)
+
+        campaigns = []
+        for ips, _pairwise in clusters:
+            members = [profiles[ip] for ip in ips]
+
+            # A lone IP with a couple of events is an incident, not a campaign.
+            # Without this the agent files a campaign for every stray detection
+            # and its memory fills with noise.
+            if len(members) == 1 and members[0].event_count < MIN_SOLO_EVENTS:
+                continue
+
+            # Report and score on what the whole group shares, not on what some
+            # pair happened to share.
+            traits = common_traits(members, self._window_seconds)
+            campaigns.append(self._build(members, traits))
+
+        # Most confident first, so the policy agent sees the clearest cases first.
+        campaigns.sort(key=lambda c: c.confidence, reverse=True)
+        return campaigns
+
+    def _build(self, members: list[IPProfile], traits: list[str]) -> Campaign:
+        ips = [m.ip for m in members]
+        events = sum(m.event_count for m in members)
+        confidence = self._confidence(members, traits)
+
+        return Campaign(
+            campaign_id="",  # assigned by the repository when it is stored
+            type=self._classify(members),
+            confidence=confidence,
+            ips=ips,
+            reason=self._reason(members, traits),
+            severity=self._severity(members, confidence),
+            first_seen=min(m.first_seen for m in members if m.first_seen),
+            last_seen=max(m.last_seen for m in members if m.last_seen),
+            event_count=events,
+            signature={
+                "traits": traits,
+                "endpoint": members[0].top_endpoint,
+                "user_agent": members[0].top_user_agent,
+                "detector": _dominant_detector(members),
+                "subnet": members[0].subnet,
+            },
+        )
+
+    def _confidence(self, members: list[IPProfile], traits: list[str]) -> float:
+        """
+        Weighted sum of shared traits, plus a nudge for scale.
+
+        A single IP acting alone can never score highly on traits, so volume
+        carries it instead -- one machine making 500 failed logins is still
+        obviously an attack.
+        """
+        score = sum(TRAIT_WEIGHTS.get(t, 0.0) for t in traits)
+
+        # More coordinated machines is stronger evidence of a campaign.
+        if len(members) >= 5:
+            score += 0.15
+        elif len(members) >= 3:
+            score += 0.10
+
+        # Sustained volume matters even without coordination.
+        events = sum(m.event_count for m in members)
+        if events >= 50:
+            score += 0.15
+        elif events >= 10:
+            score += 0.08
+
+        return round(min(score, 1.0), 3)
+
+    def _classify(self, members: list[IPProfile]) -> str:
+        """Name the campaign from its dominant detector and its shape."""
+        detector = _dominant_detector(members)
+        multi_ip = len(members) >= 3
+        sprayed = any(m.distinct_users > 3 for m in members)
+
+        if detector == DETECTOR_BRUTE_FORCE:
+            if multi_ip and sprayed:
+                return "Credential Stuffing"
+            if sprayed:
+                return "Password Spraying"
+            return "Brute Force"
+        if detector == DETECTOR_FLOOD:
+            return "Distributed Flood" if multi_ip else "API Flooding"
+        if detector == DETECTOR_SQLI:
+            return "SQL Injection Probing"
+        if detector in (DETECTOR_TRAVERSAL, DETECTOR_ENUMERATION):
+            return "Reconnaissance"
+        return "Unclassified Activity"
+
+    def _severity(self, members: list[IPProfile], confidence: float) -> str:
+        worst = "low"
+        for m in members:
+            if m.worst_severity == SEVERITY_HIGH:
+                worst = SEVERITY_HIGH
+                break
+            if m.worst_severity == SEVERITY_MEDIUM:
+                worst = SEVERITY_MEDIUM
+
+        # A wide, confident campaign is serious even if each detector shrugged.
+        if worst != SEVERITY_HIGH and len(members) >= 5 and confidence >= 0.8:
+            return SEVERITY_HIGH
+        return worst or SEVERITY_LOW
+
+    def _reason(self, members: list[IPProfile], traits: list[str]) -> str:
+        if len(members) == 1:
+            m = members[0]
+            return (
+                f"single IP, {m.event_count} events from "
+                f"{m.top_detector or 'detector'} on {m.top_endpoint or 'unknown path'}"
+            )
+
+        readable = {
+            "user_agent": f"same User-Agent ({members[0].top_user_agent or 'n/a'})",
+            "endpoint": f"same endpoint ({members[0].top_endpoint or 'n/a'})",
+            "attack_type": f"same attack type ({_dominant_detector(members)})",
+            "subnet": f"same subnet ({members[0].subnet or 'n/a'})",
+            "timing": "overlapping timing",
+        }
+        shared = ", ".join(readable[t] for t in traits if t in readable)
+        return f"{len(members)} IPs sharing {shared}"
+
+
+def _dominant_detector(members: list[IPProfile]) -> str:
+    totals: dict[str, int] = {}
+    for m in members:
+        for detector, count in m.detectors.items():
+            totals[detector] = totals.get(detector, 0) + count
+    if not totals:
+        return ""
+    return max(totals, key=lambda k: totals[k])

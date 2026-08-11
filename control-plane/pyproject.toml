@@ -22,3 +22,6 @@ include = ["iasg*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Put the project root on sys.path so tests import iasg without relying on the
+# editable install, which setuptools does not wire up correctly on Python 3.14.
+pythonpath = ["."]
