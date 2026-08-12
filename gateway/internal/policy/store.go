@@ -169,22 +169,7 @@ func (s *Store) refresh(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-
-			for i, v := range values {
-				raw, ok := v.(string)
-				if !ok {
-					continue // expired between the SCAN and the MGET
-				}
-
-				var d Decision
-				if err := json.Unmarshal([]byte(raw), &d); err != nil {
-					// One malformed key must not discard every good one.
-					log.Printf("[policy] ignoring unparseable key %s: %v", keys[i], err)
-					continue
-				}
-
-				next[strings.TrimPrefix(keys[i], s.prefix)] = d
-			}
+			collect(next, keys, values, s.prefix)
 		}
 
 		cursor = cur
@@ -195,6 +180,30 @@ func (s *Store) refresh(ctx context.Context) error {
 
 	s.snapshot.Store(&next)
 	return nil
+}
+
+// collect decodes one SCAN batch into the snapshot being built. Split out
+// from refresh so the decoding rules can be tested without a Redis server.
+func collect(into map[string]Decision, keys []string, values []any, prefix string) {
+	for i, v := range values {
+		if i >= len(keys) {
+			return
+		}
+
+		raw, ok := v.(string)
+		if !ok {
+			continue // nil: the key expired between the SCAN and the MGET
+		}
+
+		var d Decision
+		if err := json.Unmarshal([]byte(raw), &d); err != nil {
+			// One malformed key must not discard every good one.
+			log.Printf("[policy] ignoring unparseable key %s: %v", keys[i], err)
+			continue
+		}
+
+		into[strings.TrimPrefix(keys[i], prefix)] = d
+	}
 }
 
 func (s *Store) size() int {

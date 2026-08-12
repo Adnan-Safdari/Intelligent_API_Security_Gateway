@@ -58,7 +58,7 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 
 		bodyBytes, _ := readAndRestoreBody(r)
 		if sd.isSQLi(string(bodyBytes)) {
-			ip := netutil.ClientIP(r.RemoteAddr)
+			ip := netutil.ClientIP(r)
 			sd.logAlert(ip, r, "matched SQLi signature in request body")
 		}
 

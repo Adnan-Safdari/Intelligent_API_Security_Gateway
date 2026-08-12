@@ -24,7 +24,7 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 
 		fmt.Println("------ Incoming Request ------")
 		fmt.Println("Method:", r.Method)

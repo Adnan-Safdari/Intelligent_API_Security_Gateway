@@ -130,7 +130,7 @@ func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 		}
 
 		// Extract IP without port to ensure accurate tracking
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 
 		now := time.Now()
 		shard := fd.getShard(ip)

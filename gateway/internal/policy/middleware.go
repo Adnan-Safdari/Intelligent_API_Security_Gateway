@@ -37,7 +37,7 @@ func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 
 		decision, found := e.lookup.Lookup(ip)
 		if !found {

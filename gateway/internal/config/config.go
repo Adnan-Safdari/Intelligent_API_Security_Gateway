@@ -25,6 +25,12 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration `yaml:"read_timeout"`
 	WriteTimeout time.Duration `yaml:"write_timeout"`
 	IdleTimeout  time.Duration `yaml:"idle_timeout"`
+
+	// TrustedProxies lists the CIDRs whose X-Forwarded-For header may be
+	// believed. Empty means trust nothing and always use the peer address,
+	// which is the safe default: anyone can set the header, so trusting it
+	// unconditionally would let an attacker pin blame on another IP.
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 type ProxyConfig struct {

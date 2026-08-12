@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
@@ -63,6 +64,9 @@ type Config struct {
 
 	// Redis is where the control plane publishes policy:<ip> keys.
 	Redis config.RedisConfig
+
+	// TrustedProxies lists CIDRs whose X-Forwarded-For header is believed.
+	TrustedProxies []string
 }
 
 // Server represents the API gateway proxy server instance.
@@ -113,6 +117,13 @@ func (s *Server) Start() error {
 
 	traversalEnumDetector := signals.NewTraversalEnumDetector(signals.DefaultTraversalEnumConfig())
 
+	// Works out the real client IP before anything else looks at it, so the
+	// detectors and the enforcer cannot disagree about who the caller is.
+	resolver, err := netutil.NewResolver(s.config.TrustedProxies)
+	if err != nil {
+		return err
+	}
+
 	// Enforcement of control-plane decisions. The store keeps a local snapshot
 	// of policy:<ip>, so the middleware never makes a network call per request.
 	enforcer := s.newEnforcer()
@@ -125,6 +136,7 @@ func (s *Server) Start() error {
 	// The brute force detector sits closest to the proxy because it needs to
 	// observe the backend's response status (401 = failed login)
 	handler := ChainMiddleware(
+		resolver.Middleware,
 		LoggingMiddleware,
 		enforcer.Middleware,
 		RequestInspectionMiddleware,

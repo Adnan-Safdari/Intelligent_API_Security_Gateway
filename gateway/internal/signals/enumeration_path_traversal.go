@@ -75,7 +75,7 @@ func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 		
 		// 1. Check for Path Traversal in the Path and Query Parameters
 		if ted.isPathTraversal(r.URL.Path) || ted.isPathTraversal(r.URL.RawQuery) {
