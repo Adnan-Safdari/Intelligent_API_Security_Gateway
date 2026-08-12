@@ -43,6 +43,7 @@ nav:
       - Request Lifecycle: request-lifecycle.md
       - Project Structure: project-structure.md
       - Reverse Proxy Logic: reverse-proxy-logic.md
+      - Identifying the Client: client-ip.md
   - Modules:
       - Proxy Module: modules/proxy-module.md
   - Operations:
