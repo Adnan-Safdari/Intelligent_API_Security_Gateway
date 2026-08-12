@@ -4,10 +4,13 @@
 package proxy
 
 import (
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
 
@@ -51,6 +54,15 @@ type Config struct {
 
 	// BruteForce holds brute force login detection settings.
 	BruteForce config.BruteForceConfig
+
+	// Policy controls enforcement of control-plane decisions.
+	Policy config.PolicyConfig
+
+	// Throttle sets the delay applied to throttled clients.
+	Throttle config.ThrottleConfig
+
+	// Redis is where the control plane publishes policy:<ip> keys.
+	Redis config.RedisConfig
 }
 
 // Server represents the API gateway proxy server instance.
@@ -101,12 +113,20 @@ func (s *Server) Start() error {
 
 	traversalEnumDetector := signals.NewTraversalEnumDetector(signals.DefaultTraversalEnumConfig())
 
+	// Enforcement of control-plane decisions. The store keeps a local snapshot
+	// of policy:<ip>, so the middleware never makes a network call per request.
+	enforcer := s.newEnforcer()
+
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)
+	// Policy enforcement runs directly after logging, so an IP the control
+	// plane has already blocked is turned away before any detector spends
+	// work on it.
 	// The brute force detector sits closest to the proxy because it needs to
 	// observe the backend's response status (401 = failed login)
 	handler := ChainMiddleware(
 		LoggingMiddleware,
+		enforcer.Middleware,
 		RequestInspectionMiddleware,
 		floodDetector.Middleware,
 		sqliDetector.Middleware,
@@ -126,4 +146,32 @@ func (s *Server) Start() error {
 	// Start the HTTP server and listen for incoming connections
 	// This is a blocking call that returns only on error or shutdown
 	return server.ListenAndServe()
+}
+
+// newEnforcer builds the policy enforcement middleware.
+//
+// When enforcement is disabled, no Redis client is created at all and the
+// middleware becomes a pass-through. That is the default, and it is what keeps
+// the gateway able to run with the control plane switched off entirely.
+func (s *Server) newEnforcer() *policy.Enforcer {
+	if !s.config.Policy.Enabled {
+		return policy.NewEnforcer(nil, false, 0)
+	}
+
+	store := policy.NewStore(policy.Config{
+		Addr:            net.JoinHostPort(s.config.Redis.Host, strconv.Itoa(s.config.Redis.Port)),
+		Password:        s.config.Redis.Password,
+		DB:              s.config.Redis.DB,
+		PoolSize:        s.config.Redis.PoolSize,
+		KeyPrefix:       s.config.Policy.KeyPrefix,
+		RefreshInterval: s.config.Policy.RefreshInterval,
+	})
+	store.Start()
+
+	delay := time.Duration(s.config.Throttle.DelayMS) * time.Millisecond
+	if !s.config.Throttle.Enabled {
+		delay = 0
+	}
+
+	return policy.NewEnforcer(store, true, delay)
 }

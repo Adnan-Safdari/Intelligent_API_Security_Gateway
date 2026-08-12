@@ -79,6 +79,16 @@ type EnforcementConfig struct {
 	BruteForce      BruteForceConfig      `yaml:"brute_force"`
 	Throttle        ThrottleConfig        `yaml:"throttle"`
 	Block           BlockConfig           `yaml:"block"`
+	Policy          PolicyConfig          `yaml:"policy"`
+}
+
+// PolicyConfig controls whether the gateway acts on decisions written by the
+// Python control plane. Disabled by default: enabling it is what turns the
+// control plane from an observer into something that can refuse traffic.
+type PolicyConfig struct {
+	Enabled         bool          `yaml:"enabled"`
+	KeyPrefix       string        `yaml:"key_prefix"`
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
 }
 
 type BruteForceConfig struct {

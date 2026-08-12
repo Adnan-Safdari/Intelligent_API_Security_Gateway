@@ -80,6 +80,14 @@ enforcement:
     enabled: true
     duration: 300s # 5 minutes
 
+  # Acting on decisions written by the Python control plane at policy:<ip>.
+  # Off by default: turning this on is what lets the control plane refuse
+  # live traffic, so it should be a deliberate choice.
+  policy:
+    enabled: false
+    key_prefix: "policy:"
+    refresh_interval: 5s # how stale an enforcement decision may be
+
 signals:
   ip_reputation:
     enabled: true

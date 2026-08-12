@@ -42,6 +42,9 @@ func main() {
 		RateLimit:       cfg.Enforcement.RateLimit,
 		AttackDetection: cfg.Enforcement.AttackDetection,
 		BruteForce:      cfg.Enforcement.BruteForce,
+		Policy:          cfg.Enforcement.Policy,
+		Throttle:        cfg.Enforcement.Throttle,
+		Redis:           cfg.Storage.Redis,
 	})
 
 	log.Printf("Gateway starting on %s (backend: %s, config: %s)", listenAddr, cfg.Proxy.BackendURL, cfgPath)
