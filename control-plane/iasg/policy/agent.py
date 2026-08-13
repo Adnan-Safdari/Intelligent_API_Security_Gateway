@@ -33,9 +33,16 @@ LARGE_CAMPAIGN = 5
 
 
 class PolicyAgent:
-    def decide(self, campaign: Campaign) -> list[PolicyDecision]:
-        """One decision per IP in the campaign."""
-        action = self._action(campaign)
+    def decide(self, campaign: Campaign, bias: int = 0) -> list[PolicyDecision]:
+        """
+        One decision per IP in the campaign.
+
+        `bias` is what humans have repeatedly done to this kind of campaign,
+        in rungs -- see feedback/memory.py. It moves the starting point and
+        nothing else; the collateral checks and address rails run afterwards
+        and are not learnable.
+        """
+        action = self._action(campaign, bias)
         reason = (
             f"{campaign.type} (campaign {campaign.campaign_id}), "
             f"confidence {campaign.confidence:.2f}, severity {campaign.severity}"
@@ -59,9 +66,9 @@ class PolicyAgent:
             for ip in campaign.ips
         ]
 
-    def _action(self, campaign: Campaign) -> str:
+    def _action(self, campaign: Campaign, bias: int = 0) -> str:
         """What the evidence asks for, then what our own history argues for."""
-        return _promote(self._from_evidence(campaign), campaign)
+        return _promote(self._from_evidence(campaign), campaign, bias)
 
     def _from_evidence(self, campaign: Campaign) -> str:
         confidence = campaign.confidence
@@ -76,7 +83,7 @@ class PolicyAgent:
         return ACTION_MONITOR
 
 
-def _promote(action: str, campaign: Campaign) -> str:
+def _promote(action: str, campaign: Campaign, bias: int = 0) -> str:
     """
     Two reasons to answer more firmly than the evidence alone asked for.
 
@@ -91,11 +98,20 @@ def _promote(action: str, campaign: Campaign) -> str:
     Promotion lengthens the policy TTL as a side effect, because each rung is
     held for longer than the one below it.
 
-    Escalation stays reserved for high severity by either route. It asks a
-    human to look and holds an address for an hour, which is too much to reach
-    on a campaign the evidence never called severe.
+    A learned bias: humans who keep correcting this kind of campaign in the
+    same direction move it one rung that way, and only one, ever.
+
+    Escalation stays reserved for high severity by any of these routes. It asks
+    a human to look and holds an address for an hour, which is too much to
+    reach on a campaign the evidence never called severe.
     """
-    earned = campaign.persistence + max(0, len(campaign.stages) - 1)
+    earned = (
+        campaign.persistence
+        + max(0, len(campaign.stages) - 1)
+        # Clamped rather than trusted: bias reaches this from stored state, and
+        # one rung is the most it is ever allowed to be worth.
+        + max(-1, min(1, bias))
+    )
     if not earned:
         return action
 
@@ -104,5 +120,6 @@ def _promote(action: str, campaign: Campaign) -> str:
         if campaign.severity == SEVERITY_HIGH
         else ACTION_LADDER.index(ACTION_TEMP_BLOCK)
     )
+    # A negative bias can pull below monitor, which is not a rung.
     rung = ACTION_LADDER.index(action) + earned
-    return ACTION_LADDER[min(rung, ceiling)]
+    return ACTION_LADDER[max(0, min(rung, ceiling))]

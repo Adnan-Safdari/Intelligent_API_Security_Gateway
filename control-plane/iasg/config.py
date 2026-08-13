@@ -21,6 +21,14 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in ("1","true","yes","on")
 
 
+def _env_tuple(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    """A comma-separated list, e.g. IASG_ALLOWLIST=10.0.0.0/8,203.0.113.9"""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     redis_url: str = "redis://localhost:6379/0"
@@ -35,6 +43,25 @@ class Settings:
     policy_prefix : str = "policy:"
     max_ips_per_cycle : int = 50
     dry_run : bool = False
+
+    # Addresses and ranges this system will never write policy for, whatever
+    # the evidence says. Your own monitoring, health checks and office range.
+    allowlist : tuple[str, ...] = ()
+    # Ranges known to be shared by many people -- an office NAT, a campus
+    # gateway, carrier-grade NAT. Never blocked outright, only slowed.
+    shared_ranges : tuple[str, ...] = ()
+    # Distinct user agents from one address before it is *suspected* of being
+    # shared. Inferred rather than declared, so it only ever softens the
+    # ambiguous cases -- see policy/simulation.py.
+    shared_address_agents : int = 5
+
+    # Human overrides, and what the agent remembers from them.
+    override_stream : str = "iasg_overrides"
+    override_group : str = "iasg-overrides"
+    feedback_prefix : str = "feedback:"
+    # Consistent overrides in one direction before the agent shifts its own
+    # recommendation. Two so a single unusual call cannot retrain it.
+    feedback_min_samples : int = 2
 
     llm_provider : str = "null"
     ollama_url : str = "http://localhost:11434"
@@ -54,6 +81,17 @@ class Settings:
             policy_prefix=os.getenv("IASG_POLICY_PREFIX", cls.policy_prefix),
             max_ips_per_cycle=_env_int("IASG_MAX_IPS_PER_CYCLE", cls.max_ips_per_cycle),
             dry_run=_env_bool("IASG_DRY_RUN", cls.dry_run),
+            allowlist=_env_tuple("IASG_ALLOWLIST", cls.allowlist),
+            shared_ranges=_env_tuple("IASG_SHARED_RANGES", cls.shared_ranges),
+            shared_address_agents=_env_int(
+                "IASG_SHARED_ADDRESS_AGENTS", cls.shared_address_agents
+            ),
+            override_stream=os.getenv("IASG_OVERRIDE_STREAM", cls.override_stream),
+            override_group=os.getenv("IASG_OVERRIDE_GROUP", cls.override_group),
+            feedback_prefix=os.getenv("IASG_FEEDBACK_PREFIX", cls.feedback_prefix),
+            feedback_min_samples=_env_int(
+                "IASG_FEEDBACK_MIN_SAMPLES", cls.feedback_min_samples
+            ),
             llm_provider=os.getenv("IASG_LLM_PROVIDER", cls.llm_provider),
             ollama_url=os.getenv("IASG_OLLAMA_URL", cls.ollama_url),
             ollama_model=os.getenv("IASG_OLLAMA_MODEL", cls.ollama_model),
