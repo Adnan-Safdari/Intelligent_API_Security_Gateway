@@ -107,8 +107,9 @@ prompt-injected assessment can mislead a human reader; it cannot unblock an atta
 Default provider is `null`, which renders templates offline. To use a real model:
 
 ```bash
-brew install ollama && ollama serve
-ollama pull llama3.2
+brew install ollama
+brew services start ollama   # runs in the background, restarts at login
+ollama pull llama3.2         # ~2GB, stored in ~/.ollama (not in this repo)
 IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg --once
 ```
 
