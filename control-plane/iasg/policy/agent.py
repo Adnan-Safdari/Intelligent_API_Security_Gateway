@@ -40,6 +40,8 @@ class PolicyAgent:
             f"{campaign.type} (campaign {campaign.campaign_id}), "
             f"confidence {campaign.confidence:.2f}, severity {campaign.severity}"
         )
+        if len(campaign.stages) > 1:
+            reason += f", progressed through {' -> '.join(campaign.stages)}"
         if campaign.persistence:
             rounds = "round" if campaign.persistence == 1 else "rounds"
             reason += (
@@ -76,17 +78,25 @@ class PolicyAgent:
 
 def _promote(action: str, campaign: Campaign) -> str:
     """
-    Close the loop: an action that demonstrably failed is not repeated as-is.
+    Two reasons to answer more firmly than the evidence alone asked for.
 
-    Every enforcement round the campaign survived moves it one rung up the
-    ladder, which lengthens the policy TTL as a side effect because each rung
-    is held for longer than the one below it.
+    Enforcement that failed: every round the campaign survived moves it one
+    rung up the ladder, so an action that did not work is not simply repeated.
 
-    Escalation is reserved for high severity even here. It asks a human to
-    look and holds an address for an hour, which is too much to reach by
-    persistence alone on a campaign the evidence never called severe.
+    An attacker that progressed: each phase beyond the first moves it another
+    rung. Someone who scanned for secrets, then attacked the login they found,
+    then probed the database has shown intent that a single-phase attacker has
+    not, and answering the loudest phase alone under-reacts to all of it.
+
+    Promotion lengthens the policy TTL as a side effect, because each rung is
+    held for longer than the one below it.
+
+    Escalation stays reserved for high severity by either route. It asks a
+    human to look and holds an address for an hour, which is too much to reach
+    on a campaign the evidence never called severe.
     """
-    if not campaign.persistence:
+    earned = campaign.persistence + max(0, len(campaign.stages) - 1)
+    if not earned:
         return action
 
     ceiling = (
@@ -94,5 +104,5 @@ def _promote(action: str, campaign: Campaign) -> str:
         if campaign.severity == SEVERITY_HIGH
         else ACTION_LADDER.index(ACTION_TEMP_BLOCK)
     )
-    rung = ACTION_LADDER.index(action) + campaign.persistence
+    rung = ACTION_LADDER.index(action) + earned
     return ACTION_LADDER[min(rung, ceiling)]

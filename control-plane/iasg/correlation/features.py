@@ -24,6 +24,9 @@ class IPProfile:
     user_agents: Counter = field(default_factory=Counter)
     detectors: Counter = field(default_factory=Counter)
     severities: Counter = field(default_factory=Counter)
+    # When each detector first fired on this address. Lets a campaign say which
+    # phase came first rather than assuming attacks arrive in textbook order.
+    detector_first_seen: dict = field(default_factory=dict)
     first_seen: datetime | None = None
     last_seen: datetime | None = None
     event_count: int = 0
@@ -39,6 +42,9 @@ class IPProfile:
             self.user_agents[ev.user_agent] += 1
         if ev.detector:
             self.detectors[ev.detector] += 1
+            earliest = self.detector_first_seen.get(ev.detector)
+            if earliest is None or ev.timestamp < earliest:
+                self.detector_first_seen[ev.detector] = ev.timestamp
         if ev.severity:
             self.severities[ev.severity] += 1
 

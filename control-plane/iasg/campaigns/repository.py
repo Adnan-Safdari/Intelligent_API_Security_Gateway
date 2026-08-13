@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from iasg.models import ENFORCEMENT_ACTIONS, Campaign
+from iasg.models import CAMPAIGN_MULTI_STAGE, ENFORCEMENT_ACTIONS, Campaign
 from iasg.store.base import Store
 
 # How much IP overlap counts as "the same campaign".
@@ -245,14 +245,25 @@ def _absorb(existing: Campaign, fresh: Campaign) -> None:
     existing.last_seen = max(existing.last_seen, fresh.last_seen)
     existing.severity = _worst(existing.severity, fresh.severity)
 
-    # The fresh reason describes this sighting, not the campaign, and after a
-    # rotation the campaign is bigger than its latest sighting -- so say which
-    # of the two the sentence is talking about rather than appearing to
-    # contradict the address count next to it.
+    # Phases accumulate. An actor that scanned in one cycle and attacked the
+    # login in the next is staged even though neither cycle looked it alone,
+    # and that is the case worth catching -- a real intrusion is slower than
+    # one 30-second window. Merged before the reason is written, since whether
+    # the campaign has outgrown this sighting depends on the result.
+    for stage in fresh.stages:
+        if stage not in existing.stages:
+            existing.stages.append(stage)
+
+    # The fresh reason describes this sighting, not the campaign. Once the
+    # campaign covers more addresses or more phases than the sighting does,
+    # the sentence would otherwise appear to contradict the figures printed
+    # beside it, so it says which of the two it is talking about.
+    outgrown = (
+        len(existing.ips) > len(fresh.ips)
+        or len(existing.stages) > len(fresh.stages)
+    )
     existing.reason = (
-        f"latest sighting: {fresh.reason}"
-        if len(existing.ips) > len(fresh.ips)
-        else fresh.reason
+        f"latest sighting: {fresh.reason}" if outgrown else fresh.reason
     )
     existing.signature = fresh.signature or existing.signature
 
@@ -261,7 +272,9 @@ def _absorb(existing: Campaign, fresh: Campaign) -> None:
         min(1.0, max(existing.confidence, fresh.confidence) + 0.05), 3
     )
 
-    if fresh.type != "Unclassified Activity":
+    if len(existing.stages) > 1:
+        existing.type = CAMPAIGN_MULTI_STAGE
+    elif fresh.type != "Unclassified Activity":
         existing.type = fresh.type
 
 
@@ -292,6 +305,7 @@ def _to_json(c: Campaign) -> str:
             "explanation": c.explanation,
             "assessment": c.assessment,
             "signature": c.signature,
+            "stages": c.stages,
         }
     )
 
@@ -318,6 +332,7 @@ def _from_json(raw: str) -> Campaign:
         explanation=d.get("explanation", ""),
         assessment=d.get("assessment", ""),
         signature=d.get("signature", {}),
+        stages=d.get("stages", []),
     )
 
 

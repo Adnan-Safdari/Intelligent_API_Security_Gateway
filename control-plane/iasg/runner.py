@@ -150,6 +150,11 @@ def report(result: CycleResult) -> None:
             f"confidence {c.confidence:.2f}, {c.severity}"
         )
         print(f"              {c.reason}")
+        if len(c.stages) > 1:
+            print(
+                f"[stages]      {' -> '.join(c.stages)} "
+                f"({len(c.stages)} phases, not {len(c.stages)} separate attacks)"
+            )
         if c.rotations:
             changes = "change" if c.rotations == 1 else "changes"
             print(

@@ -11,6 +11,7 @@ from __future__ import annotations
 from iasg.correlation.cluster import cluster
 from iasg.correlation.features import IPProfile, build_profiles, common_traits
 from iasg.models import (
+    CAMPAIGN_MULTI_STAGE,
     DETECTOR_BRUTE_FORCE,
     DETECTOR_ENUMERATION,
     DETECTOR_FLOOD,
@@ -19,12 +20,18 @@ from iasg.models import (
     SEVERITY_HIGH,
     SEVERITY_LOW,
     SEVERITY_MEDIUM,
+    STAGE_OF,
     Campaign,
     Evidence,
 )
 
 # Below this, a single IP acting alone is filed as noise rather than a campaign.
 MIN_SOLO_EVENTS = 3
+
+# Events a phase needs before it counts as a phase. One stray detection from
+# another detector should not turn a single-purpose attack into a staged
+# intrusion, because staging raises enforcement.
+MIN_STAGE_EVENTS = 3
 
 # How much each shared trait contributes to confidence.
 TRAIT_WEIGHTS = {
@@ -50,9 +57,14 @@ SOLO_VOLUME = (
 # What a detector already thought of the traffic, worth a nudge either way.
 SOLO_SEVERITY_BONUS = {SEVERITY_HIGH: 0.07, SEVERITY_MEDIUM: 0.03}
 
-# Kept under 0.9 so a single address can be blocked but never escalated --
-# escalation means "wake a human about a coordinated campaign", and one
-# machine is not that.
+# Kept under 0.9 so volume alone can get a single address blocked but never
+# escalated: escalation on the evidence path means "wake a human about a
+# coordinated campaign", and one machine repeating itself is not that.
+#
+# One machine that moves through phases is, though, and the policy ladder can
+# still promote it there -- a lone actor who scanned for secrets, attacked the
+# login it found and then probed the database is a likelier real intrusion than
+# any amount of the same request repeated.
 SOLO_CEILING = 0.87
 
 
@@ -92,14 +104,16 @@ class CorrelationAgent:
         ips = [m.ip for m in members]
         events = sum(m.event_count for m in members)
         confidence = self._confidence(members, traits)
+        stages = _stages(members)
 
         return Campaign(
             campaign_id="",  # assigned by the repository when it is stored
-            type=self._classify(members),
+            type=self._classify(members, stages),
             confidence=confidence,
             ips=ips,
-            reason=self._reason(members, traits),
+            reason=self._reason(members, traits, stages),
             severity=self._severity(members, confidence),
+            stages=stages,
             first_seen=min(m.first_seen for m in members if m.first_seen),
             last_seen=max(m.last_seen for m in members if m.last_seen),
             event_count=events,
@@ -158,8 +172,14 @@ class CorrelationAgent:
         score += SOLO_SEVERITY_BONUS.get(member.worst_severity, 0.0)
         return round(min(score, SOLO_CEILING), 3)
 
-    def _classify(self, members: list[IPProfile]) -> str:
+    def _classify(self, members: list[IPProfile], stages: list[str]) -> str:
         """Name the campaign from its dominant detector and its shape."""
+        # An actor that moved from one phase to another is doing something the
+        # dominant detector cannot describe on its own. Naming it after that
+        # detector would report the loudest phase and hide the rest.
+        if len(stages) > 1:
+            return CAMPAIGN_MULTI_STAGE
+
         detector = _dominant_detector(members)
         multi_ip = len(members) >= 3
         sprayed = any(m.distinct_users > 3 for m in members)
@@ -192,7 +212,20 @@ class CorrelationAgent:
             return SEVERITY_HIGH
         return worst or SEVERITY_LOW
 
-    def _reason(self, members: list[IPProfile], traits: list[str]) -> str:
+    def _reason(
+        self, members: list[IPProfile], traits: list[str], stages: list[str]
+    ) -> str:
+        events = sum(m.event_count for m in members)
+
+        # Said first, because naming only the dominant detector here would
+        # describe one phase of the attack and silently drop the others.
+        if len(stages) > 1:
+            who = "single IP" if len(members) == 1 else f"{len(members)} IPs"
+            return (
+                f"{who}, {events} events progressing through "
+                f"{' -> '.join(stages)}"
+            )
+
         if len(members) == 1:
             m = members[0]
             return (
@@ -209,6 +242,33 @@ class CorrelationAgent:
         }
         shared = ", ".join(readable[t] for t in traits if t in readable)
         return f"{len(members)} IPs sharing {shared}"
+
+
+def _stages(members: list[IPProfile]) -> list[str]:
+    """
+    The intrusion phases this group went through, earliest first.
+
+    Ordered by when each phase was actually first observed rather than by any
+    textbook sequence, because real attackers do not read the textbook and a
+    claim of progression should be something we saw.
+    """
+    counts: dict[str, int] = {}
+    started: dict[str, object] = {}
+
+    for m in members:
+        for detector, count in m.detectors.items():
+            stage = STAGE_OF.get(detector)
+            if not stage:
+                continue
+            counts[stage] = counts.get(stage, 0) + count
+
+            at = m.detector_first_seen.get(detector)
+            if at is not None and (stage not in started or at < started[stage]):
+                started[stage] = at
+
+    seen = [s for s, n in counts.items() if n >= MIN_STAGE_EVENTS and s in started]
+    seen.sort(key=lambda s: started[s])
+    return seen
 
 
 def _dominant_detector(members: list[IPProfile]) -> str:

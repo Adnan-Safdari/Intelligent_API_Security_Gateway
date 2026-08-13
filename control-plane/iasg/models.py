@@ -9,6 +9,26 @@ DETECTOR_SQLI = "sqli"
 DETECTOR_TRAVERSAL = "traversal"
 DETECTOR_ENUMERATION = "enumeration"
 
+# The phase of an intrusion each detector belongs to. Several detectors can
+# describe the same phase -- guessing filenames and climbing out of a directory
+# are both someone looking around -- so phases are coarser than detectors, and
+# a campaign only counts as staged when genuinely different ones appear.
+STAGE_RECON = "reconnaissance"
+STAGE_CREDENTIAL = "credential attack"
+STAGE_INJECTION = "injection"
+STAGE_ABUSE = "abuse"
+
+STAGE_OF = {
+    DETECTOR_ENUMERATION: STAGE_RECON,
+    DETECTOR_TRAVERSAL: STAGE_RECON,
+    DETECTOR_BRUTE_FORCE: STAGE_CREDENTIAL,
+    DETECTOR_SQLI: STAGE_INJECTION,
+    DETECTOR_FLOOD: STAGE_ABUSE,
+}
+
+# What a campaign is called once it spans more than one phase.
+CAMPAIGN_MULTI_STAGE = "Multi-Stage Intrusion"
+
 SEVERITY_LOW = "low"
 SEVERITY_MEDIUM = "medium"
 SEVERITY_HIGH = "high"
@@ -143,6 +163,10 @@ class Campaign:
     assessment : str = ""
 
     signature : dict = field(default_factory=dict)
+    # Intrusion phases seen from this campaign, earliest first. More than one
+    # means the actor moved on rather than repeating itself, which is worse
+    # than any single phase and is what the policy ladder reacts to.
+    stages : list = field(default_factory=list)
 
 
 @dataclass
