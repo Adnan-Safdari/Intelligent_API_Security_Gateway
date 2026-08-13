@@ -29,8 +29,14 @@ class AssessmentAgent:
         self._provider = provider
 
     def review(self, campaign: Campaign) -> str:
-        """Returns the review, or "" when no LLM is configured."""
-        return self._provider.generate(SYSTEM, _prompt(campaign))
+        """Returns the review, or "" when no LLM is configured or it fails."""
+        # Same reasoning as the explanation agent: this is commentary written
+        # after the decision, and no commentary is worth failing a cycle for.
+        try:
+            return self._provider.generate(SYSTEM, _prompt(campaign))
+        except Exception as err:  # noqa: BLE001 - any provider failure means no review
+            print(f"[llm] assessment failed ({err})")
+            return ""
 
 
 def _prompt(campaign: Campaign) -> str:

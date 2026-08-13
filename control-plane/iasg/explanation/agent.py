@@ -31,8 +31,19 @@ class ExplanationAgent:
     def explain(self, campaign: Campaign, decisions: list[PolicyDecision]) -> str:
         template = _template(campaign, decisions)
 
-        generated = self._provider.generate(SYSTEM, _prompt(campaign, decisions))
-        return generated or template
+        # Providers are meant to return "" rather than raise, but this one is
+        # third-party code reached over a network. Narration is advisory and
+        # runs after policy is already written, so nothing here is worth
+        # losing a cycle over.
+        try:
+            generated = self._provider.generate(SYSTEM, _prompt(campaign, decisions))
+        except Exception as err:  # noqa: BLE001 - any provider failure degrades to the template
+            print(f"[llm] explanation failed ({err}); using template")
+            return template
+
+        # Strip before testing: "   " is truthy, and returning it would leave
+        # the dashboard showing a blank incident note instead of the template.
+        return (generated or "").strip() or template
 
 
 def _template(campaign: Campaign, decisions: list[PolicyDecision]) -> str:
