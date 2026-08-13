@@ -156,6 +156,12 @@ def report(result: CycleResult) -> None:
                 f"[continuity]  re-identified by behaviour through "
                 f"{c.rotations} address {changes}"
             )
+        if c.persistence:
+            rounds = "round" if c.persistence == 1 else "rounds"
+            print(
+                f"[adapt]       survived {c.persistence} enforcement {rounds} "
+                f"-- responding with {c.last_action or 'no action'}"
+            )
         if c.explanation:
             print(f"[explain]     {c.explanation}")
         if c.assessment:

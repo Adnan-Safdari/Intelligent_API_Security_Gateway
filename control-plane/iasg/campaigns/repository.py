@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from iasg.models import Campaign
+from iasg.models import ENFORCEMENT_ACTIONS, Campaign
 from iasg.store.base import Store
 
 # How much IP overlap counts as "the same campaign".
@@ -82,6 +82,17 @@ class CampaignRepository:
                 rotated = len(set(candidate.ips) - set(match.ips))
                 if matched_on == "behaviour":
                     match.rotations += 1
+
+                # We restrained this campaign and it is back regardless, either
+                # by outlasting the policy or by moving to new addresses. Either
+                # way the action we chose did not end it, which is the one
+                # signal here that is not circular: a campaign going quiet after
+                # a block proves little, but one continuing through a block
+                # proves the block was not enough.
+                if match.last_action in ENFORCEMENT_ACTIONS and (
+                    match.status == "contained" or matched_on == "behaviour"
+                ):
+                    match.persistence += 1
 
                 _absorb(match, candidate)
 
@@ -276,6 +287,7 @@ def _to_json(c: Campaign) -> str:
             "last_action": c.last_action,
             "outcome": c.outcome,
             "rotations": c.rotations,
+            "persistence": c.persistence,
             "alerted": c.alerted,
             "explanation": c.explanation,
             "assessment": c.assessment,
@@ -301,6 +313,7 @@ def _from_json(raw: str) -> Campaign:
         last_action=d.get("last_action", ""),
         outcome=d.get("outcome", ""),
         rotations=d.get("rotations", 0),
+        persistence=d.get("persistence", 0),
         alerted=d.get("alerted", False),
         explanation=d.get("explanation", ""),
         assessment=d.get("assessment", ""),

@@ -18,6 +18,15 @@ ACTION_THROTTLE = "throttle"
 ACTION_TEMP_BLOCK = "temp_block"
 ACTION_ESCALATE = "escalate"
 
+# The ladder, weakest first. The order is meaningful: a campaign that survives
+# enforcement is promoted one rung along it.
+ACTION_LADDER = (ACTION_MONITOR, ACTION_THROTTLE, ACTION_TEMP_BLOCK, ACTION_ESCALATE)
+
+# Actions that actually restrain traffic. Monitor is deliberately excluded --
+# a monitored campaign carrying on says nothing about whether enforcement
+# works, because nothing was enforced.
+ENFORCEMENT_ACTIONS = frozenset({ACTION_THROTTLE, ACTION_TEMP_BLOCK, ACTION_ESCALATE})
+
 def _now() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -123,6 +132,10 @@ class Campaign:
     # How many times this campaign was re-identified after the attacker moved
     # to addresses we had never seen. Evidence that tracking survived a rotation.
     rotations : int = 0
+    # How many times this campaign came back after we enforced against it, by
+    # waiting the policy out or by moving. This is the honest measure of
+    # enforcement failing, and it is what pushes the next action up the ladder.
+    persistence : int = 0
     # Whether a human has already been told about this one.
     alerted : bool = False
 
