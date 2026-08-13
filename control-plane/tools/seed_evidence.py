@@ -19,6 +19,7 @@ from iasg.models import (
     DETECTOR_ENUMERATION,
     DETECTOR_FLOOD,
     DETECTOR_SQLI,
+    DETECTOR_TRAVERSAL,
     SEVERITY_HIGH,
     SEVERITY_LOW,
     SEVERITY_MEDIUM,
@@ -83,26 +84,112 @@ def flood() -> list[Evidence]:
     return events
 
 
-def recon() -> list[Evidence]:
-    """One scanner walking sensitive paths."""
-    base = datetime.now(timezone.utc) - timedelta(minutes=3)
-    paths = ["/.env", "/.git/config", "/etc/passwd", "/wp-admin", "/.ssh/id_rsa"]
+def brute_force() -> list[Evidence]:
+    """
+    One machine grinding away at one account.
 
-    events = []
-    for n, path in enumerate(paths):
-        events.append(
-            Evidence(
-                timestamp=base + timedelta(seconds=n * 6),
-                ip="192.0.2.77",
-                endpoint=path,
-                method="GET",
-                detector=DETECTOR_ENUMERATION,
-                severity=SEVERITY_MEDIUM,
-                user_agent="Nikto/2.5.0",
-                details={"matchedPattern": path, "attackType": "enumeration"},
-            )
+    Deliberately a single IP on a single username, which is what makes the
+    correlator call this Brute Force rather than Credential Stuffing -- the
+    difference is the shape, not the detector. Sustained enough to be worth
+    blocking, which a lone attacker could not be before solo confidence
+    existed.
+    """
+    base = datetime.now(timezone.utc) - timedelta(minutes=10)
+
+    return [
+        Evidence(
+            timestamp=base + timedelta(seconds=n * 10),
+            ip="203.0.113.201",
+            endpoint="/api/login",
+            method="POST",
+            detector=DETECTOR_BRUTE_FORCE,
+            severity=SEVERITY_HIGH,
+            user_agent="Hydra/9.5",
+            details={
+                "failedLogins": 5 + n,
+                "distinctUsers": 1,
+                "targetUser": "admin@x.com",
+                "attackType": "brute_force",
+                "window": "60s",
+            },
         )
-    return events
+        for n in range(60)
+    ]
+
+
+def enumeration() -> list[Evidence]:
+    """One scanner guessing filenames that should never be reachable."""
+    base = datetime.now(timezone.utc) - timedelta(minutes=3)
+    paths = [
+        "/.env", "/.git/config", "/etc/passwd", "/wp-admin", "/.ssh/id_rsa",
+        "/backup.sql", "/config.json", "/.aws/credentials", "/admin", "/phpinfo.php",
+        "/.bash_history", "/server-status",
+    ]
+
+    return [
+        Evidence(
+            timestamp=base + timedelta(seconds=n * 6),
+            ip="192.0.2.77",
+            endpoint=path,
+            method="GET",
+            detector=DETECTOR_ENUMERATION,
+            # Reaching for a credentials file is worse than poking at /admin.
+            severity=SEVERITY_HIGH if any(
+                s in path for s in (".env", "passwd", "id_rsa", "credentials")
+            ) else SEVERITY_MEDIUM,
+            user_agent="Nikto/2.5.0",
+            details={"matchedPattern": path, "attackType": "enumeration"},
+        )
+        for n, path in enumerate(paths)
+    ]
+
+
+def path_traversal() -> list[Evidence]:
+    """
+    One host climbing out of the directory it was given.
+
+    Enumeration guesses names; traversal escapes upward from a path the app
+    handed it. Both are reconnaissance, which is why the correlator files them
+    under the same campaign type.
+    """
+    base = datetime.now(timezone.utc) - timedelta(minutes=4)
+    # A real scanner works through a long list of encodings and depths rather
+    # than trying a handful, so this is sized to look like one.
+    payloads = [
+        "../../etc/passwd",
+        "../../../etc/passwd",
+        "../../../../etc/passwd",
+        "../../../etc/shadow",
+        "..%2f..%2fetc%2fhosts",
+        "%2e%2e%2f%2e%2e%2froot%2f.ssh%2fid_rsa",
+        "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+        "....//....//etc/passwd",
+        "..%252f..%252fetc%252fpasswd",
+        "../../../../var/log/auth.log",
+        "..\\..\\windows\\win.ini",
+        "..\\..\\..\\boot.ini",
+        "../../app/.env",
+        "../../../home/app/.ssh/id_rsa",
+    ]
+
+    return [
+        Evidence(
+            timestamp=base + timedelta(seconds=n * 7),
+            ip="192.0.2.91",
+            endpoint=f"/api/files?path={payload}",
+            method="GET",
+            detector=DETECTOR_TRAVERSAL,
+            severity=SEVERITY_HIGH,
+            user_agent="Nikto/2.5.0",
+            details={"matchedPattern": payload, "attackType": "path_traversal"},
+        )
+        for n, payload in enumerate(payloads)
+    ]
+
+
+def recon() -> list[Evidence]:
+    """Both halves of reconnaissance together: guessing names and climbing out."""
+    return enumeration() + path_traversal()
 
 
 def sqli() -> list[Evidence]:
@@ -148,7 +235,10 @@ def noise() -> list[Evidence]:
 
 SCENARIOS = {
     "credential-stuffing": credential_stuffing,
+    "brute-force": brute_force,
     "flood": flood,
+    "enumeration": enumeration,
+    "path-traversal": path_traversal,
     "recon": recon,
     "sqli": sqli,
     "noise": noise,
@@ -178,7 +268,9 @@ def main() -> None:
             pass
 
     if args.scenario == "mixed":
-        events = credential_stuffing() + flood() + recon() + noise()
+        events = (
+            credential_stuffing() + brute_force() + flood() + recon() + noise()
+        )
     else:
         events = SCENARIOS[args.scenario]()
 
