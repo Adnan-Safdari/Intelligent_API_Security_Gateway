@@ -35,6 +35,26 @@ TRAIT_WEIGHTS = {
     "timing": 0.10,
 }
 
+# A lone attacker shares traits with nobody, so the weights above can never
+# score one. Its own volume is the evidence instead: how many times a detector
+# fired on this single address, coarsely banded rather than curve-fitted.
+SOLO_VOLUME = (
+    (100, 0.80),
+    (50, 0.72),
+    (25, 0.62),
+    (10, 0.50),
+    (5, 0.40),
+    (3, 0.30),
+)
+
+# What a detector already thought of the traffic, worth a nudge either way.
+SOLO_SEVERITY_BONUS = {SEVERITY_HIGH: 0.07, SEVERITY_MEDIUM: 0.03}
+
+# Kept under 0.9 so a single address can be blocked but never escalated --
+# escalation means "wake a human about a coordinated campaign", and one
+# machine is not that.
+SOLO_CEILING = 0.87
+
 
 class CorrelationAgent:
     def __init__(self, min_shared: int = 2, window_seconds: int = 300) -> None:
@@ -96,10 +116,13 @@ class CorrelationAgent:
         """
         Weighted sum of shared traits, plus a nudge for scale.
 
-        A single IP acting alone can never score highly on traits, so volume
-        carries it instead -- one machine making 500 failed logins is still
-        obviously an attack.
+        Coordination is the strongest signal available, but it needs at least
+        two addresses to exist. A lone attacker is scored on its own volume
+        instead -- see _solo_confidence.
         """
+        if len(members) == 1:
+            return self._solo_confidence(members[0])
+
         score = sum(TRAIT_WEIGHTS.get(t, 0.0) for t in traits)
 
         # More coordinated machines is stronger evidence of a campaign.
@@ -116,6 +139,24 @@ class CorrelationAgent:
             score += 0.08
 
         return round(min(score, 1.0), 3)
+
+    def _solo_confidence(self, member: IPProfile) -> float:
+        """
+        Score one address on the evidence it actually produces.
+
+        Before this existed a single IP could never exceed 0.15 and so could
+        never be throttled or blocked, no matter how many times a detector
+        fired on it -- which left the most ordinary attack of all, one machine
+        grinding away at a login form, permanently unactionable.
+        """
+        score = 0.0
+        for threshold, banded in SOLO_VOLUME:
+            if member.event_count >= threshold:
+                score = banded
+                break
+
+        score += SOLO_SEVERITY_BONUS.get(member.worst_severity, 0.0)
+        return round(min(score, SOLO_CEILING), 3)
 
     def _classify(self, members: list[IPProfile]) -> str:
         """Name the campaign from its dominant detector and its shape."""

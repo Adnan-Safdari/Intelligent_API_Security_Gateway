@@ -112,7 +112,16 @@ class Campaign:
     first_seen : datetime = field(default_factory=_now)
     last_seen  : datetime = field(default_factory=_now)
     event_count : int = 0
+
+    # How the campaign is going, updated each cycle by the repository's review.
+    # "active"    still producing evidence
+    # "contained" nothing further since we acted
     status : str = "active"
+    quiet_cycles : int = 0
+    last_action : str = ""
+    outcome : str = ""
+    # Whether a human has already been told about this one.
+    alerted : bool = False
 
     explanation : str = ""
     assessment : str = ""

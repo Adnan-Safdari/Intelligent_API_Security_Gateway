@@ -18,6 +18,10 @@ from iasg.store.base import Store
 # How much IP overlap counts as "the same campaign".
 MERGE_OVERLAP = 0.4
 
+# Quiet cycles before a campaign is considered contained. Three keeps a short
+# lull from being mistaken for success.
+CONTAINED_AFTER = 3
+
 
 class CampaignRepository:
     def __init__(self, store: Store, prefix: str = "campaign:") -> None:
@@ -59,11 +63,55 @@ class CampaignRepository:
                 result.append(candidate)
             else:
                 _absorb(match, candidate)
+                if match.status == "contained":
+                    # We thought this was over and it started again. Almost
+                    # always means the block expired and the attacker resumed.
+                    match.status = "active"
+                    match.alerted = False
+                    match.outcome = (
+                        f"resumed after {match.quiet_cycles} quiet cycles "
+                        f"following {match.last_action or 'no action'}"
+                    )
+                match.quiet_cycles = 0
                 result.append(match)
 
         for campaign in result:
             self.save(campaign)
         return result
+
+    def review(self, seen_ids: set[str]) -> list[Campaign]:
+        """
+        Close the loop: notice whether acting on a campaign changed anything.
+
+        A campaign that stops producing evidence after we acted is marked
+        contained; one that keeps producing it is not. Called once per cycle
+        with the ids that saw fresh evidence.
+
+        What "contained" honestly means: no further evidence reached us. When
+        the action was a block that is largely circular, because a blocked
+        address never reaches the detectors in the first place -- so this
+        confirms enforcement is holding rather than that the attacker gave up.
+        For monitor and throttle, where traffic still flows, it is a real
+        signal that the campaign stopped.
+        """
+        changed = []
+
+        for campaign in self.all():
+            if campaign.campaign_id in seen_ids or campaign.status != "active":
+                continue
+
+            campaign.quiet_cycles += 1
+            if campaign.quiet_cycles >= CONTAINED_AFTER:
+                campaign.status = "contained"
+                campaign.outcome = (
+                    f"no further evidence for {campaign.quiet_cycles} cycles "
+                    f"after {campaign.last_action or 'no action'}"
+                )
+            changed.append(campaign)
+
+        for campaign in changed:
+            self.save(campaign)
+        return changed
 
     def _next_id(self) -> str:
         current = self._store.get(self._counter_key)
@@ -77,8 +125,8 @@ def _best_match(candidate: Campaign, known: list[Campaign]) -> Campaign | None:
     """The stored campaign this cluster most likely continues."""
     best, best_score = None, 0.0
     for existing in known:
-        if existing.status != "active":
-            continue
+        # Contained campaigns stay matchable so a resumed attack reopens the
+        # one we already know about instead of starting a duplicate.
         score = _overlap(set(candidate.ips), set(existing.ips))
         if score > best_score:
             best, best_score = existing, score
@@ -127,6 +175,10 @@ def _to_json(c: Campaign) -> str:
             "last_seen": c.last_seen.isoformat(),
             "event_count": c.event_count,
             "status": c.status,
+            "quiet_cycles": c.quiet_cycles,
+            "last_action": c.last_action,
+            "outcome": c.outcome,
+            "alerted": c.alerted,
             "explanation": c.explanation,
             "assessment": c.assessment,
             "signature": c.signature,
@@ -147,6 +199,10 @@ def _from_json(raw: str) -> Campaign:
         last_seen=_parse(d.get("last_seen")),
         event_count=d.get("event_count", 0),
         status=d.get("status", "active"),
+        quiet_cycles=d.get("quiet_cycles", 0),
+        last_action=d.get("last_action", ""),
+        outcome=d.get("outcome", ""),
+        alerted=d.get("alerted", False),
         explanation=d.get("explanation", ""),
         assessment=d.get("assessment", ""),
         signature=d.get("signature", {}),

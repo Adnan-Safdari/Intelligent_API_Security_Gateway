@@ -128,3 +128,47 @@ def test_timing_gap_prevents_grouping():
     ]
     campaigns = CorrelationAgent().analyse(events)
     assert len(campaigns) == 2
+
+
+# A lone attacker shares traits with nobody, so coordination cannot score it.
+# Before the solo path existed this capped at 0.15 and could never be actioned.
+def test_single_ip_confidence_rises_with_volume():
+    def confidence(n):
+        events = [evidence("203.0.113.5", offset=i) for i in range(n)]
+        return CorrelationAgent().analyse(events)[0].confidence
+
+    low, mid, high = confidence(5), confidence(25), confidence(100)
+
+    assert low < mid < high, "volume must move the score"
+    assert high >= 0.75, "a machine with 100 detections must be blockable"
+
+
+def test_single_ip_is_capped_below_escalation():
+    events = [evidence("203.0.113.5", offset=i) for i in range(500)]
+    (campaign,) = CorrelationAgent().analyse(events)
+
+    assert campaign.confidence < 0.9, "one machine must never reach escalation"
+
+
+def test_single_ip_severity_shifts_the_score():
+    def confidence(severity):
+        events = [evidence("203.0.113.5", offset=i, severity=severity)
+                  for i in range(25)]
+        return CorrelationAgent().analyse(events)[0].confidence
+
+    assert confidence("high") > confidence("low")
+
+
+# Coordination should still outrank a lone machine at the same volume.
+def test_a_coordinated_group_outscores_one_ip():
+    solo = [evidence("203.0.113.5", offset=i) for i in range(30)]
+    group = [
+        evidence(f"203.0.113.{n}", offset=i, distinctUsers=5)
+        for n in (5, 9, 14, 21, 33)
+        for i in range(6)
+    ]
+
+    solo_score = CorrelationAgent().analyse(solo)[0].confidence
+    group_score = CorrelationAgent().analyse(group)[0].confidence
+
+    assert group_score > solo_score

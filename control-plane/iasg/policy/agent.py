@@ -23,7 +23,9 @@ TTL = {
     ACTION_MONITOR: 300,
     ACTION_THROTTLE: 900,
     ACTION_TEMP_BLOCK: 1800,
-    ACTION_ESCALATE: 1800,
+    # Escalation outlasts an ordinary block: a human has been asked to look,
+    # and the block should still be there when they do.
+    ACTION_ESCALATE: 3600,
 }
 
 LARGE_CAMPAIGN = 5
