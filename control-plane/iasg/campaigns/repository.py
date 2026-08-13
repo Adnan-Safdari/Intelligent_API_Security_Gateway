@@ -10,7 +10,7 @@ investigation instead of a script starting over every 30 seconds.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from iasg.models import Campaign
 from iasg.store.base import Store
@@ -21,6 +21,21 @@ MERGE_OVERLAP = 0.4
 # Quiet cycles before a campaign is considered contained. Three keeps a short
 # lull from being mistaken for success.
 CONTAINED_AFTER = 3
+
+# What the behavioural fingerprint is worth when no addresses are shared.
+# Endpoint and user agent carry most of it: together they clear the threshold,
+# and neither alone can. The subnet is a bonus rather than a requirement --
+# rotating out of it is exactly the move this is meant to survive.
+SIGNATURE_WEIGHTS = {"endpoint": 0.4, "user_agent": 0.4, "subnet": 0.2}
+SIGNATURE_MATCH = 0.7
+
+# Fields without which there is nothing worth comparing.
+_SIGNATURE_REQUIRED = ("endpoint", "user_agent", "detector")
+
+# How long an attacker can be quiet and still be the same campaign returning.
+# Comfortably longer than the longest policy TTL, so a block expiring and the
+# attacker coming back on fresh addresses is recognised rather than renumbered.
+CONTINUATION_WINDOW = timedelta(hours=2)
 
 
 class CampaignRepository:
@@ -56,13 +71,20 @@ class CampaignRepository:
         result = []
 
         for candidate in fresh:
-            match = _best_match(candidate, known)
+            match, matched_on = _best_match(candidate, known)
             if match is None:
                 candidate.campaign_id = self._next_id()
                 known.append(candidate)
                 result.append(candidate)
             else:
+                # Counted before absorbing, while the address sets are still
+                # distinguishable.
+                rotated = len(set(candidate.ips) - set(match.ips))
+                if matched_on == "behaviour":
+                    match.rotations += 1
+
                 _absorb(match, candidate)
+
                 if match.status == "contained":
                     # We thought this was over and it started again. Almost
                     # always means the block expired and the attacker resumed.
@@ -72,6 +94,17 @@ class CampaignRepository:
                         f"resumed after {match.quiet_cycles} quiet cycles "
                         f"following {match.last_action or 'no action'}"
                     )
+                    if matched_on == "behaviour":
+                        match.outcome += (
+                            f", on {rotated} previously unseen "
+                            f"addresses -- recognised by behaviour"
+                        )
+                elif matched_on == "behaviour":
+                    match.outcome = (
+                        f"still active on {rotated} previously unseen "
+                        f"addresses -- recognised by behaviour"
+                    )
+
                 match.quiet_cycles = 0
                 result.append(match)
 
@@ -121,8 +154,16 @@ class CampaignRepository:
         return str(nxt)
 
 
-def _best_match(candidate: Campaign, known: list[Campaign]) -> Campaign | None:
-    """The stored campaign this cluster most likely continues."""
+def _best_match(
+    candidate: Campaign, known: list[Campaign]
+) -> tuple[Campaign | None, str]:
+    """
+    The stored campaign this cluster most likely continues, and how we decided.
+
+    Two ways in, tried in that order. Shared addresses are the strongest
+    evidence available, so they are checked first and behaviour is only
+    consulted when there are none in common.
+    """
     best, best_score = None, 0.0
     for existing in known:
         # Contained campaigns stay matchable so a resumed attack reopens the
@@ -130,7 +171,54 @@ def _best_match(candidate: Campaign, known: list[Campaign]) -> Campaign | None:
         score = _overlap(set(candidate.ips), set(existing.ips))
         if score > best_score:
             best, best_score = existing, score
-    return best if best_score >= MERGE_OVERLAP else None
+    if best_score >= MERGE_OVERLAP:
+        return best, "ips"
+
+    # Not one address in common. Blocking works, so an attacker who can afford
+    # to will simply move -- and matching on addresses alone means every
+    # rotation looks like a brand new campaign and the investigation restarts.
+    # What they cannot cheaply change is the behaviour: same endpoint, same
+    # tooling, same attack. That is what we fall back to.
+    best, best_score = None, 0.0
+    for existing in known:
+        score = _behaviour_match(candidate, existing)
+        if score > best_score:
+            best, best_score = existing, score
+    if best_score >= SIGNATURE_MATCH:
+        return best, "behaviour"
+
+    return None, ""
+
+
+def _behaviour_match(candidate: Campaign, existing: Campaign) -> float:
+    """
+    How strongly two campaigns look like the same operation on new hardware.
+
+    Deliberately strict. Wrongly merging two unrelated attackers hides one of
+    them behind the other's campaign, which is worse than carrying a duplicate.
+    """
+    a, b = candidate.signature or {}, existing.signature or {}
+
+    # An empty or partial signature must not match everything it meets.
+    if not all(a.get(k) and b.get(k) for k in _SIGNATURE_REQUIRED):
+        return 0.0
+
+    # A SQL injection probe is not the continuation of a flood, however much
+    # the rest of the fingerprint agrees.
+    if a["detector"] != b["detector"]:
+        return 0.0
+
+    # The same tooling pointed at the same endpoint next month is a new
+    # campaign, not this one resuming. The window is wide enough that a block
+    # expiring and the attacker returning still counts as a continuation.
+    if abs(candidate.last_seen - existing.last_seen) > CONTINUATION_WINDOW:
+        return 0.0
+
+    return sum(
+        weight
+        for field, weight in SIGNATURE_WEIGHTS.items()
+        if a.get(field) and a.get(field) == b.get(field)
+    )
 
 
 def _overlap(a: set[str], b: set[str]) -> float:
@@ -145,7 +233,16 @@ def _absorb(existing: Campaign, fresh: Campaign) -> None:
     existing.event_count += fresh.event_count
     existing.last_seen = max(existing.last_seen, fresh.last_seen)
     existing.severity = _worst(existing.severity, fresh.severity)
-    existing.reason = fresh.reason
+
+    # The fresh reason describes this sighting, not the campaign, and after a
+    # rotation the campaign is bigger than its latest sighting -- so say which
+    # of the two the sentence is talking about rather than appearing to
+    # contradict the address count next to it.
+    existing.reason = (
+        f"latest sighting: {fresh.reason}"
+        if len(existing.ips) > len(fresh.ips)
+        else fresh.reason
+    )
     existing.signature = fresh.signature or existing.signature
 
     # Repeated sightings raise confidence, but never past certainty.
@@ -178,6 +275,7 @@ def _to_json(c: Campaign) -> str:
             "quiet_cycles": c.quiet_cycles,
             "last_action": c.last_action,
             "outcome": c.outcome,
+            "rotations": c.rotations,
             "alerted": c.alerted,
             "explanation": c.explanation,
             "assessment": c.assessment,
@@ -202,6 +300,7 @@ def _from_json(raw: str) -> Campaign:
         quiet_cycles=d.get("quiet_cycles", 0),
         last_action=d.get("last_action", ""),
         outcome=d.get("outcome", ""),
+        rotations=d.get("rotations", 0),
         alerted=d.get("alerted", False),
         explanation=d.get("explanation", ""),
         assessment=d.get("assessment", ""),

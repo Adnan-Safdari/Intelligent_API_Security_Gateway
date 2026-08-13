@@ -150,6 +150,12 @@ def report(result: CycleResult) -> None:
             f"confidence {c.confidence:.2f}, {c.severity}"
         )
         print(f"              {c.reason}")
+        if c.rotations:
+            changes = "change" if c.rotations == 1 else "changes"
+            print(
+                f"[continuity]  re-identified by behaviour through "
+                f"{c.rotations} address {changes}"
+            )
         if c.explanation:
             print(f"[explain]     {c.explanation}")
         if c.assessment:

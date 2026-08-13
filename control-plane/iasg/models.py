@@ -120,6 +120,9 @@ class Campaign:
     quiet_cycles : int = 0
     last_action : str = ""
     outcome : str = ""
+    # How many times this campaign was re-identified after the attacker moved
+    # to addresses we had never seen. Evidence that tracking survived a rotation.
+    rotations : int = 0
     # Whether a human has already been told about this one.
     alerted : bool = False
 
