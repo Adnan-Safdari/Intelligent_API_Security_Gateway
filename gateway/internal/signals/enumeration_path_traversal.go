@@ -68,7 +68,7 @@ func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 		path := r.URL.Path
 		query := r.URL.RawQuery
 		traversalHits := findPatternHits(path+" "+query, ted.traversalPatterns)

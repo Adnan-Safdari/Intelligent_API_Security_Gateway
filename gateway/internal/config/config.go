@@ -26,6 +26,12 @@ type ServerConfig struct {
 	ReadTimeout  time.Duration `yaml:"read_timeout"`
 	WriteTimeout time.Duration `yaml:"write_timeout"`
 	IdleTimeout  time.Duration `yaml:"idle_timeout"`
+
+	// TrustedProxies lists the CIDRs whose X-Forwarded-For header may be
+	// believed. Empty means trust nothing and always use the peer address,
+	// which is the safe default: anyone can set the header, so trusting it
+	// unconditionally would let an attacker pin blame on another IP.
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 type ProxyConfig struct {
@@ -97,6 +103,16 @@ type EnforcementConfig struct {
 	Enumeration     EnumerationConfig     `yaml:"enumeration_path_traversal"`
 	Throttle        ThrottleConfig        `yaml:"throttle"`
 	Block           BlockConfig           `yaml:"block"`
+	Policy          PolicyConfig          `yaml:"policy"`
+}
+
+// PolicyConfig controls whether the gateway acts on decisions written by the
+// Python control plane. Disabled by default: enabling it is what turns the
+// control plane from an observer into something that can refuse traffic.
+type PolicyConfig struct {
+	Enabled         bool          `yaml:"enabled"`
+	KeyPrefix       string        `yaml:"key_prefix"`
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
 }
 
 type BruteForceConfig struct {
@@ -197,6 +213,12 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Storage.Redis.PoolSize <= 0 {
 		cfg.Storage.Redis.PoolSize = 10
+	}
+	if cfg.Enforcement.Policy.KeyPrefix == "" {
+		cfg.Enforcement.Policy.KeyPrefix = "policy:"
+	}
+	if cfg.Enforcement.Policy.RefreshInterval <= 0 {
+		cfg.Enforcement.Policy.RefreshInterval = 5 * time.Second
 	}
 
 	return cfg, nil

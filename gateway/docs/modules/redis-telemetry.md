@@ -34,7 +34,9 @@ Event payload (field `event` on the stream):
 }
 ```
 
-Passwords and token-like JSON fields are redacted. Bodies are truncated to 512 bytes. `decision` is always `allow` until the decision engine exists; `riskScore` is the sum of detector `Metrics()` scores.
+Passwords and token-like JSON fields are redacted. Bodies are truncated to 512 bytes. `decision` is `allow` unless the optional policy enforcer applied `throttle`, `temp_block`, or `escalate`. `riskScore` is the sum of detector `Metrics()` scores.
+
+The Python control plane consumes this same stream (`IASG_EVIDENCE_STREAM=iasg:events`). Clean requests are ignored; each fired signal becomes one Evidence record. Policy keys are written separately as `policy:<ip>` and do not collide with `iasg:*`.
 
 If Redis is down, the gateway still proxies. It logs `redis telemetry write failed` and continues.
 

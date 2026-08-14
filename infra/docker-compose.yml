@@ -14,7 +14,8 @@ services:
         echo "- MkDocs:               http://localhost:8000" &&
         echo "- Postgres (Gateway):   localhost:5434" &&
         echo "- Postgres (Vuln API):  localhost:5435" &&
-        echo "- Redis:                localhost:6379"
+        echo "- Redis:                localhost:6379" &&
+        echo "- Control plane:        python agent (no HTTP port)"
 
   postgres:
     image: postgres:18.2
@@ -147,6 +148,23 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+
+  control_plane:
+    image: python:3.12-alpine
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ../control-plane:/app
+    environment:
+      IASG_REDIS_URL: redis://redis:6379/0
+      IASG_EVIDENCE_STREAM: iasg:events
+      IASG_DRY_RUN: "false"
+    command: sh -c "pip install --no-cache-dir redis && PYTHONPATH=/app python -m iasg"
+    depends_on:
+      redis:
+        condition: service_healthy
+      gateway:
+        condition: service_started
 
   docs:
     image: python:3.12-alpine

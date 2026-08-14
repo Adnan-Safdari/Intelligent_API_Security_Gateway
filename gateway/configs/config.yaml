@@ -7,6 +7,14 @@ server:
   write_timeout: 30s
   idle_timeout: 120s
 
+  # CIDRs whose X-Forwarded-For header is believed. Leave empty unless the
+  # gateway really does sit behind a proxy: anyone can set the header, so
+  # trusting it from arbitrary callers would let an attacker have someone
+  # else's IP detected and blocked. When empty, the TCP peer address is used.
+  trusted_proxies: []
+    # - 127.0.0.1/32     # local testing
+    # - 10.0.0.0/8       # load balancer subnet
+
 proxy:
   # Backend API to protect
   backend_url: "http://localhost:5002"
@@ -103,6 +111,14 @@ enforcement:
   block:
     enabled: true
     duration: 300s # 5 minutes
+
+  # Acting on decisions written by the Python control plane at policy:<ip>.
+  # Off by default: turning this on is what lets the control plane refuse
+  # live traffic, so it should be a deliberate choice.
+  policy:
+    enabled: false
+    key_prefix: "policy:"
+    refresh_interval: 5s # how stale an enforcement decision may be
 
 signals:
   ip_reputation:

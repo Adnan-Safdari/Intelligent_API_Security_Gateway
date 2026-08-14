@@ -65,3 +65,7 @@ cmd/gateway/gateway
 # Py related
 .venv/
 requirements.txt
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/

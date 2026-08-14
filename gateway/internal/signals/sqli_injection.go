@@ -63,7 +63,7 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 		bodyBytes, _ := readAndRestoreBody(r)
 		haystack := r.URL.Path + " " + r.URL.RawQuery + " " + string(bodyBytes)
 		matched := sd.findMatches(haystack)

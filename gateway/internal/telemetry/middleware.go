@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
 
@@ -60,6 +61,7 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 			requestID := newRequestID()
 			r.Header.Set("X-Request-ID", requestID)
 			w.Header().Set("X-Request-ID", requestID)
+			r = policy.AttachOutcome(r)
 
 			body, _ := readBody(r)
 			snippet := RedactSnippet(body)
@@ -67,7 +69,7 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
 
-			ip := netutil.ClientIP(r.RemoteAddr)
+			ip := netutil.ClientIP(r)
 			snap := collector.Snapshot(ip)
 			status := rec.status
 			if status == 0 {
@@ -83,7 +85,7 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 				Query:     truncate(r.URL.RawQuery, 256),
 				Status:    status,
 				UserAgent: truncate(r.UserAgent(), 256),
-				Decision:  "allow",
+				Decision:  policy.Applied(r),
 				RiskScore: snap.TotalScore,
 				Fired:     uniqueFired(snap.Fired),
 				Signals:   snap.Evidence,

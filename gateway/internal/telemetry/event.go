@@ -18,7 +18,7 @@ type Event struct {
 	Query     string             `json:"query,omitempty"`
 	Status    int                `json:"status"`
 	UserAgent string             `json:"userAgent,omitempty"`
-	Decision  string             `json:"decision"`
+	Decision  string             `json:"decision"` // allow, throttle, temp_block, or escalate
 	RiskScore int                `json:"riskScore"`
 	Fired     []string           `json:"fired"`
 	Signals   []signals.Evidence `json:"signals"`

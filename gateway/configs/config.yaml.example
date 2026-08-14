@@ -7,6 +7,10 @@ server:
   write_timeout: 30s
   idle_timeout: 120s
 
+  # CIDRs whose X-Forwarded-For header is believed. Leave empty unless the
+  # gateway sits behind a proxy you control.
+  trusted_proxies: []
+
 proxy:
   # Backend API to protect
   backend_url: "http://localhost:5002"
@@ -102,6 +106,13 @@ enforcement:
   block:
     enabled: true
     duration: 300s # 5 minutes
+
+  # Acting on decisions written by the Python control plane at policy:<ip>.
+  # Off by default so detectors stay recommend-only until you opt in.
+  policy:
+    enabled: false
+    key_prefix: "policy:"
+    refresh_interval: 5s
 
 signals:
   ip_reputation:

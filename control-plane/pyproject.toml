@@ -1,0 +1,27 @@
+[project]
+name = "iasg-control-plane"
+version = "0.1.0"
+description = "Agentic security control plane for the Intelligent API Security Gateway"
+requires-python = ">=3.11"
+
+# The ONLY runtime dependency. Everything else is Python's standard library.
+dependencies = [
+    "redis>=5.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+postgres = ["psycopg[binary]>=3.1"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["iasg*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Put the project root on sys.path so tests import iasg without relying on the
+# editable install, which setuptools does not wire up correctly on Python 3.14.
+pythonpath = ["."]

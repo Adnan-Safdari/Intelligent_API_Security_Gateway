@@ -1,97 +1,184 @@
-
 # Intelligent API Security Gateway
 
-A smart API gateway that uses trust scoring and adaptive enforcement to protect backend APIs from malicious traffic.
+An API gateway that detects attacks in the request path and decides what to do about them
+out of it — a fast Go proxy that enforces, and a Python agent that watches, correlates and
+adapts.
+
+## How it works
+
+Two lanes, deliberately separate.
+
+```
+                    ┌──────────────────────────────────────────┐
+   request ────────▶│  Go gateway (data plane)                 │────▶ backend API
+                    │  detect · check policy · allow/slow/block │
+                    └───────────────┬──────────────────────────┘
+                                    │ evidence            ▲ policy:<ip>
+                                    ▼                     │
+                    ┌──────────────────────────────────────────┐
+                    │  Redis                                   │
+                    └───────────────┬──────────────────────────┘
+                                    │                     ▲
+                                    ▼                     │
+                    ┌──────────────────────────────────────────┐
+                    │  Python control plane (every 30s)        │
+                    │  correlate · remember · decide · explain  │
+                    └──────────────────────────────────────────┘
+```
+
+The **gateway** handles every request and must be fast, so it only ever reads a cached
+answer — never waits on Redis, never waits on the agent, never waits on a model.
+
+The **control plane** never touches a live request. It reads what the detectors saw, groups
+it into attack campaigns, decides enforcement, and writes it back as `policy:<ip>` keys
+with a TTL.
+
+Stop the control plane and the gateway keeps serving traffic exactly as before. That
+independence is the point of the split.
+
+## Layout
+
+| Path | What it is |
+|---|---|
+| `gateway/` | Go reverse proxy, detectors, policy enforcement |
+| `control-plane/` | Python agent — correlation, policy, narration |
+| `vulnerable-app/` | Deliberately insecure API to attack |
+| `gateway-dashboard/` | Next.js operations console |
+| `infra/` | Docker Compose for everything |
+| `testing/` | Load and attack scripts |
 
 ## Prerequisites
 
 - Docker and Docker Compose
-- Go 1.22.2 or higher (for local development)
+- Go 1.22.2+ and Python 3.11+ for local development
+- Redis (via Compose, or `brew install redis`)
 
-## Quick Start
+## Quick start
 
-### 1. Clone and Setup
-
-```bash
-# Navigate to project directory
-cd Intelligent_API_Security_Gateway
-
-# Copy environment file
-cp .env.example .env
-
-# Copy configuration file
-cp configs/config.yaml.example configs/config.yaml
-```
-
-### 2. Configure
-
-Edit `.env` if you want to change default credentials:
-
-```
-POSTGRES_USER=iasg_user
-POSTGRES_PASSWORD=iasg_password
-POSTGRES_DB=iasg_db
-```
-
-Edit `configs/config.yaml` to configure:
-
-- Backend API URL to protect
-- Trust scoring thresholds
-- Rate limiting rules
-- Database connections
-
-### 3. Start Services
+### Everything at once
 
 ```bash
-# Start PostgreSQL and Redis
-docker compose up -d
-
-# Verify services are running
+docker compose -f infra/docker-compose.yml up -d
 docker ps
 ```
 
-### 4. Run the Gateway
+Ports:
+
+| Service | URL |
+|---|---|
+| Gateway | http://localhost:8082 |
+| Vulnerable API | http://localhost:5002 |
+| Vulnerable web | http://localhost:5175 |
+| Dashboard | http://localhost:5177 |
+| Docs | http://localhost:8000 |
+| Redis | localhost:6379 |
+
+### Gateway only
 
 ```bash
-# Install Go dependencies
+cd gateway
+cp configs/config.yaml.example configs/config.yaml
 go mod download
-
-# Run the gateway
 go run ./cmd/server
 ```
 
-The gateway will start on `http://localhost:8082` (or the port specified in your config).
+### Control plane only
 
-## Architecture
+Needs Redis running; nothing else.
 
-- **Trust Engine**: Scores requests based on multiple signals
-- **Enforcement**: Applies adaptive policies (block, throttle, allow)
-- **Storage**: PostgreSQL for persistent data, Redis for caching
-- **Proxy**: Forwards legitimate traffic to backend API
+```bash
+cd control-plane
+python3 -m venv .venv
+.venv/bin/pip install -e ".[dev]"
+
+.venv/bin/python -m iasg --once     # one cycle
+.venv/bin/python -m iasg            # every 30s
+.venv/bin/python -m iasg --dry-run  # decide everything, write nothing
+```
+
+Every setting has a working default, so that runs with no configuration at all.
+`control-plane/.env.example` documents the `IASG_*` variables and what they do — they are
+read from the environment, so export the ones you want to change rather than copying the
+file:
+
+```bash
+IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg --once
+```
+
+## See it work without an attacker
+
+The seeder writes realistic attack evidence straight into Redis, so the whole pipeline is
+demonstrable in a second:
+
+```bash
+cd control-plane
+.venv/bin/python -m tools.seed_evidence --scenario credential-stuffing
+.venv/bin/python -m iasg --once
+
+redis-cli KEYS 'policy:*'
+redis-cli GET policy:203.0.113.5
+```
+
+Scenarios: `credential-stuffing`, `brute-force`, `flood`, `enumeration`, `path-traversal`,
+`recon`, `sqli`, `mixed`, and `noise` — which must *not* form a campaign.
+
+## What each side does
+
+**Gateway (Go)**
+
+- Reverse proxy to the backend
+- Detectors: brute force, API flooding, SQL injection, enumeration and path traversal
+- Resolves the real client IP from `X-Forwarded-For`, but only from proxies configured as
+  trusted, so the header cannot be spoofed to frame another address
+- Reads `policy:<ip>` from a background-refreshed snapshot, so the request path does no
+  Redis I/O. A dead Redis means "no policy", never added latency. Unknown actions fail open
+
+**Control plane (Python)**
+
+- Groups IPs into campaigns by shared behaviour — subnet, user agent, endpoint, detector,
+  timing
+- Remembers campaigns between cycles, and keeps tracking one after the attacker moves to
+  addresses never seen before
+- Notices whether acting worked, and answers an action that failed with a stronger one
+- Reads several attack phases from one actor as one intrusion rather than separate attacks
+- Writes `monitor` / `throttle` / `temp_block` / `escalate`, always by rule
+- Checks the response is safe before writing it — allowlisted and shared ranges are
+  protected, and a standing policy is never traded for a weaker one
+- Takes instructions from a human, and learns from being overruled
+
+An LLM writes the human-readable incident note and nothing else. It runs *after* the
+decision is made and written, so a hallucinated or prompt-injected note can mislead a
+reader but cannot change enforcement. It is optional — the default provider is an offline
+template.
+
+## Testing
+
+```bash
+cd gateway && go test ./...
+cd control-plane && .venv/bin/pytest
+```
+
+## Not built yet
+
+Honest about the gaps, since the config file implies more than exists:
+
+- **Trust engine** — `trust_engine` in `gateway/configs/config.yaml` is parsed but not
+  used. Nothing scores requests by trust today; the detectors and the control plane decide.
+- **Postgres** — configured and running in Compose, but the control plane persists
+  campaigns in Redis. Not yet wired up.
 
 ## Documentation
 
+- [Client IP resolution](gateway/docs/client-ip.md)
 - [Reverse proxy logic](gateway/docs/reverse-proxy-logic.md)
+- [Request lifecycle](gateway/docs/request-lifecycle.md)
+- [System architecture](gateway/docs/system-architecture.md)
 - [Project structure](gateway/docs/project-structure.md)
+- [Control plane README](control-plane/README.md) and [guide](control-plane/GUIDE.md)
+- [Demo walkthrough](DEMO.md)
 
-## Development
-
-```bash
-# Run tests
-go test ./...
-
-# List all packages
-go list ./...
-
-# Build binary
-go build -o gateway cmd/gateway/main.go
-```
-
-## Stopping Services
+## Stopping
 
 ```bash
-docker compose down
+docker compose -f infra/docker-compose.yml down
 ```
-
-
-// docker compose -f docker-compose.yml logs -f gateway

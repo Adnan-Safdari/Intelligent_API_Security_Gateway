@@ -103,7 +103,7 @@ func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 		now := time.Now()
 		shard := fd.getShard(ip)
 

@@ -142,7 +142,7 @@ func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		ip := netutil.ClientIP(r.RemoteAddr)
+		ip := netutil.ClientIP(r)
 
 		// Best-effort: pull the attempted email out of the JSON body
 		// so we can tell brute force from password spraying
