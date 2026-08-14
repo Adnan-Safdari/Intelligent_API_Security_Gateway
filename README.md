@@ -143,6 +143,9 @@ Scenarios: `credential-stuffing`, `brute-force`, `flood`, `enumeration`, `path-t
 - Notices whether acting worked, and answers an action that failed with a stronger one
 - Reads several attack phases from one actor as one intrusion rather than separate attacks
 - Writes `monitor` / `throttle` / `temp_block` / `escalate`, always by rule
+- Checks the response is safe before writing it — allowlisted and shared ranges are
+  protected, and a standing policy is never traded for a weaker one
+- Takes instructions from a human, and learns from being overruled
 
 An LLM writes the human-readable incident note and nothing else. It runs *after* the
 decision is made and written, so a hallucinated or prompt-injected note can mislead a

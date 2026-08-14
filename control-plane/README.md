@@ -69,7 +69,7 @@ Other options:
 ```bash
 .venv/bin/python -m iasg                  # loop forever, every 30s
 .venv/bin/python -m iasg --once --dry-run # decide everything, write nothing
-.venv/bin/pytest                          # 193 tests, no Redis needed
+.venv/bin/pytest                          # 236 tests, no Redis needed
 ```
 
 Scenarios: `credential-stuffing`, `brute-force`, `flood`, `enumeration`, `path-traversal`,
@@ -128,6 +128,63 @@ its readable explanation, and its block outlasts an ordinary one — a human has
 to look, and it should still be in place when they do. Once per campaign, not once per
 cycle.
 
+## Before a policy is written
+
+Deciding whether traffic is malicious and deciding whether the response is safe are
+different questions, and `policy/simulation.py` asks the second one. It runs last, so
+nothing reaches the gateway without passing it.
+
+Its limit is stated in the module rather than hidden: the gateway reports attacks and
+never ordinary traffic, so nothing here can measure how many real users sit behind an
+address. It does not invent a percentage. It works with what is observable:
+
+```bash
+# never policed, whatever the evidence says and whoever asks
+IASG_ALLOWLIST=10.0.0.0/8,203.0.113.9
+# an office NAT or campus gateway: slowed if it attacks, never cut off
+IASG_SHARED_RANGES=198.51.100.0/24
+```
+
+It also refuses to trade a standing policy for a weaker one — campaigns are re-decided
+every cycle, so otherwise the quiet caused by a block could downgrade the block that
+caused it.
+
+One check is inference rather than configuration: an address speaking with many distinct
+user agents looks shared. That one only softens campaigns the evidence was unsure about.
+Softening a confident campaign would be an evasion route — rotate the header enough and a
+block becomes a throttle — so above 0.9 confidence the action stands and the doubt is
+reported instead.
+
+## When a human disagrees
+
+An admin instructs the agent by writing to a stream, from a dashboard, a script, or
+`redis-cli`:
+
+```bash
+redis-cli XADD iasg_overrides '*' \
+    ip 203.0.113.5 action temp_block actor pranav reason "confirmed attack"
+```
+
+An instruction about an address no campaign mentioned still writes policy — blocking
+something the agent has not noticed is the plainest use of this. An unparseable action is
+refused rather than written.
+
+Precedence is decided rather than left to ordering, and the two kinds of check answer to
+different people. **Declared configuration binds everyone**, including a human at a
+console: an operator who allowlisted a range has already answered, and an instruction
+typed in a hurry should not quietly undo it. **The inferred checks bind only the agent**,
+since someone who says block anyway has seen something a heuristic cannot.
+
+Disagreement is tallied per campaign type, and after enough consistent corrections in one
+direction the agent starts making that correction itself. Bounded hard: one rung ever,
+several samples before it moves at all, opposing corrections cancel, and it shifts only
+the starting recommendation — the checks above run afterwards and are not learnable, since
+a system that could learn its way past its own rails eventually would. There is no model
+and nothing is trained; it is a tally.
+
+Both features are off until configured. With nothing set, the ladder behaves exactly as it
+did before they existed, and a test pins that.
+
 ## Where the AI is, and is not
 
 Grouping, confidence scoring and the block/throttle decision are **plain deterministic
@@ -170,7 +227,10 @@ there together:
 | `iasg/evidence/ingest.py` | parses the gateway's `SECURITY ALERT` blocks |
 | `iasg/correlation/` | **groups IPs into campaigns** — union-find over shared traits |
 | `iasg/campaigns/` | memory: campaigns persist, merge, and are reviewed for outcome |
-| `iasg/policy/` | the block/throttle ladder, and the rails around it |
+| `iasg/policy/agent.py` | the block/throttle ladder |
+| `iasg/policy/simulation.py` | is the response safe? collateral checks, run last |
+| `iasg/policy/writer.py` | the only code that writes policy, and its rails |
+| `iasg/feedback/` | human overrides, and what the agent learns from them |
 | `iasg/alerts.py` | escalation to a human, on its own stream |
 | `iasg/reasoning/` | LLM providers — offline template by default, Ollama opt-in |
 | `iasg/explanation/` | the admin-facing paragraph |
