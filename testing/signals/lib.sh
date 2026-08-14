@@ -13,10 +13,15 @@ fail() {
 }
 
 require_gateway() {
-	if ! curl -sS -o /dev/null --connect-timeout 2 "$GATEWAY_URL/" >/dev/null 2>&1; then
-		fail "gateway not reachable at $GATEWAY_URL (start Compose: docker compose -f infra/docker-compose.yml up -d)"
-	fi
-	echo "Gateway: $GATEWAY_URL"
+	local i code
+	for i in $(seq 1 30); do
+		if curl -sS -o /dev/null --connect-timeout 2 "$GATEWAY_URL/" >/dev/null 2>&1; then
+			echo "Gateway: $GATEWAY_URL"
+			return 0
+		fi
+		sleep 1
+	done
+	fail "gateway not reachable at $GATEWAY_URL after 30s (start Compose: docker compose -f infra/docker-compose.yml up -d, then wait until it prints 'Gateway starting')"
 }
 
 # Detectors must not enforce. 429 means the gateway throttled; that is a failure.

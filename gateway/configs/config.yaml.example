@@ -30,11 +30,15 @@ trust_engine:
 
 storage:
   redis:
+    enabled: true
     host: localhost
     port: 6379
     password: ""
     db: 0
     pool_size: 10
+    stream_key: iasg:events
+    stream_maxlen: 2000
+    ip_latest_ttl: 24h
   
   postgres:
     host: localhost

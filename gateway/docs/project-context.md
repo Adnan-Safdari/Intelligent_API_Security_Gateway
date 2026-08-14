@@ -104,7 +104,7 @@ AI → Allow / Block
 | **FR3** | Adaptive rate limiting as a **decision outcome** | **Not wired** | Config exists; flood detector only logs; no adaptive limits |
 | **FR4** | Risk scoring + centralized decision engine | **Not implemented** | YAML `trust_engine` loaded but unused at runtime |
 | **FR5** | Forward valid / reject blocked / throttle | **Forward only** | Proxy always forwards; no 403/429 enforcement path |
-| **FR6** | Logging & monitoring (Postgres + dashboard) | **Not started (gateway)** | Console `fmt.Println` / alert banners only |
+| **FR6** | Logging & monitoring (Postgres + dashboard) | **Partial** | Redis hot telemetry is wired (capped event stream + counters). Postgres history and dashboard UI are not started. |
 | **FR7** | Admin configuration (thresholds, detectors, lists) | **Not started** | Static YAML at startup; no live admin API |
 
 **Overall progress estimate:** ~45–55% of the intended product. Proxy + three detect-and-log detectors are done (brute force is the closest to the target metrics pattern); the security brain (scoring, decisions, enforcement, persistence, admin) is still ahead.
@@ -146,11 +146,13 @@ Used when building/starting the server:
 - `enforcement.rate_limit` → flood detector
 - `enforcement.attack_detection` → SQLi patterns / enabled flag
 - `enforcement.brute_force` → enabled / max_failures / window / login_paths
+- `enforcement.enumeration_path_traversal` → traversal/enum detector
+- `storage.redis` → hot telemetry (stream, stats, per-IP latest)
 
 Loaded into structs but **not consumed by request handling yet**:
 
 - `trust_engine` (thresholds + weights)
-- `storage` (postgres / redis)
+- `storage.postgres`
 - `enforcement.throttle` / `enforcement.block`
 - `signals.*` (ip reputation, geo, payload, behavioral placeholders)
 - `logging.*`

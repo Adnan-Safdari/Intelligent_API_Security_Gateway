@@ -149,6 +149,7 @@ services:
     environment:
       IASG_CONFIG: configs/config.yaml
       IASG_BACKEND_URL: http://vulnerable_api:5002
+      IASG_REDIS_HOST: redis
     command: sh -c "go run ./cmd/server"
     ports:
       - "8082:8082"

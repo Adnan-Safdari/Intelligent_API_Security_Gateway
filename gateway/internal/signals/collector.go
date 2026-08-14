@@ -25,11 +25,29 @@ func (c *Collector) Collect(ip string) []Evidence {
 	return out
 }
 
+// Snapshot is one Collect() plus derived totals for telemetry / scoring.
+type Snapshot struct {
+	Evidence   []Evidence
+	TotalScore int
+	Fired      []string
+}
+
+func (c *Collector) Snapshot(ip string) Snapshot {
+	evs := c.Collect(ip)
+	snap := Snapshot{Evidence: evs}
+	for _, ev := range evs {
+		snap.TotalScore += ev.Score
+		if ev.ThresholdCross {
+			snap.Fired = append(snap.Fired, ev.Signal)
+			if ev.AttackType != "" && ev.AttackType != ev.Signal {
+				snap.Fired = append(snap.Fired, ev.AttackType)
+			}
+		}
+	}
+	return snap
+}
+
 // TotalScore sums detector scores. Useful as a first-pass risk input.
 func (c *Collector) TotalScore(ip string) int {
-	total := 0
-	for _, ev := range c.Collect(ip) {
-		total += ev.Score
-	}
-	return total
+	return c.Snapshot(ip).TotalScore
 }

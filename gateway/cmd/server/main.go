@@ -17,6 +17,7 @@ func main() {
 	}
 
 	backendURLOverride := os.Getenv("IASG_BACKEND_URL")
+	redisHostOverride := os.Getenv("IASG_REDIS_HOST")
 
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -26,6 +27,10 @@ func main() {
 	if backendURLOverride != "" {
 		cfg.Proxy.BackendURL = backendURLOverride
 		log.Printf("Overriding backend URL from IASG_BACKEND_URL: %s", backendURLOverride)
+	}
+	if redisHostOverride != "" {
+		cfg.Storage.Redis.Host = redisHostOverride
+		log.Printf("Overriding Redis host from IASG_REDIS_HOST: %s", redisHostOverride)
 	}
 
 	listenAddr := net.JoinHostPort(cfg.Server.Host, fmt.Sprintf("%d", cfg.Server.Port))
@@ -43,6 +48,7 @@ func main() {
 		AttackDetection: cfg.Enforcement.AttackDetection,
 		BruteForce:      cfg.Enforcement.BruteForce,
 		Enumeration:     cfg.Enforcement.Enumeration,
+		Redis:           cfg.Storage.Redis,
 	})
 
 	log.Printf("Gateway starting on %s (backend: %s, config: %s)", listenAddr, cfg.Proxy.BackendURL, cfgPath)
