@@ -183,6 +183,10 @@ class PolicyDecision:
     confidence : float
     ttl_seconds : int
     reason: str = ""
+    # "agent" or "human". Decides whose judgement the safety checks defer to:
+    # a person outranks the agent's guesses, but not the operator's declared
+    # configuration. See policy/simulation.py.
+    source : str = "agent"
     issued_at : datetime = field(default_factory=_now)
 
     def to_json(self) -> str:
@@ -198,6 +202,7 @@ class PolicyDecision:
                 "campaign_id": self.campaign_id,
                 "confidence": round(self.confidence, 3),
                 "reason": self.reason,
+                "source": self.source,
                 "issued_at": self.issued_at.astimezone(timezone.utc).isoformat(),
                 "expires_in": self.ttl_seconds,
             }
