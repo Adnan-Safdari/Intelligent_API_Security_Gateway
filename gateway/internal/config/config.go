@@ -77,6 +77,7 @@ type EnforcementConfig struct {
 	RateLimit       RateLimitConfig       `yaml:"rate_limit"`
 	AttackDetection AttackDetectionConfig `yaml:"attack_detection"`
 	BruteForce      BruteForceConfig      `yaml:"brute_force"`
+	Enumeration     EnumerationConfig     `yaml:"enumeration_path_traversal"`
 	Throttle        ThrottleConfig        `yaml:"throttle"`
 	Block           BlockConfig           `yaml:"block"`
 }
@@ -91,6 +92,12 @@ type BruteForceConfig struct {
 type AttackDetectionConfig struct {
 	Enabled     bool     `yaml:"enabled"`
 	SQLPatterns []string `yaml:"sql_patterns"`
+}
+
+type EnumerationConfig struct {
+	Enabled             bool     `yaml:"enabled"`
+	TraversalPatterns   []string `yaml:"traversal_patterns"`
+	EnumerationPatterns []string `yaml:"enumeration_patterns"`
 }
 
 type RateLimitConfig struct {

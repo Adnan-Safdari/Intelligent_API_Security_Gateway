@@ -51,6 +51,9 @@ type Config struct {
 
 	// BruteForce holds brute force login detection settings.
 	BruteForce config.BruteForceConfig
+
+	// Enumeration holds path-traversal and forced-browsing detection settings.
+	Enumeration config.EnumerationConfig
 }
 
 // Server represents the API gateway proxy server instance.
@@ -58,6 +61,9 @@ type Config struct {
 type Server struct {
 	// config stores the server configuration settings
 	config Config
+
+	// collector gathers Metrics() from every detector for a future decision engine.
+	collector *signals.Collector
 }
 
 // NewServer creates and initializes a new proxy server instance with the provided configuration.
@@ -93,13 +99,11 @@ func (s *Server) Start() error {
 
 	// Create the flood detector signal engine
 	floodDetector := signals.NewFloodDetector(s.config.RateLimit)
-	sqliDetector := signals.NewSQLiDetector(signals.SQLiDetectorConfig{
-		Enabled:     s.config.AttackDetection.Enabled,
-		SQLPatterns: s.config.AttackDetection.SQLPatterns,
-	})
+	sqliDetector := signals.NewSQLiDetector(signals.SQLiDetectorConfigFrom(s.config.AttackDetection))
 	bruteForceDetector := signals.NewBruteForceDetector(s.config.BruteForce)
+	traversalEnumDetector := signals.NewTraversalEnumDetector(s.config.Enumeration)
 
-	traversalEnumDetector := signals.NewTraversalEnumDetector(signals.DefaultTraversalEnumConfig())
+	s.collector = signals.NewCollector(floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector)
 
 	// Build the middleware chain and wrap the reverse proxy handler
 	// Middleware is applied in reverse order (last middleware listed executes first)

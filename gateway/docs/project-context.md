@@ -100,14 +100,14 @@ AI → Allow / Block
 | ID | Requirement | Status | Reality in code |
 | --- | --- | --- | --- |
 | **FR1** | Intercept API requests (reverse proxy + middleware) | **Complete** | Working |
-| **FR2** | Analyze request behavior (detectors → metrics) | **Partial** | Flood + SQLi detect-and-log; not metrics-to-engine yet |
+| **FR2** | Analyze request behavior (detectors → metrics) | **Partial** | Flood + SQLi + Brute Force detect-and-log; brute force has `Metrics(ip)` but no engine consumes it yet |
 | **FR3** | Adaptive rate limiting as a **decision outcome** | **Not wired** | Config exists; flood detector only logs; no adaptive limits |
 | **FR4** | Risk scoring + centralized decision engine | **Not implemented** | YAML `trust_engine` loaded but unused at runtime |
 | **FR5** | Forward valid / reject blocked / throttle | **Forward only** | Proxy always forwards; no 403/429 enforcement path |
 | **FR6** | Logging & monitoring (Postgres + dashboard) | **Not started (gateway)** | Console `fmt.Println` / alert banners only |
 | **FR7** | Admin configuration (thresholds, detectors, lists) | **Not started** | Static YAML at startup; no live admin API |
 
-**Overall progress estimate:** ~40–50% of the intended product. Proxy + basic detect-and-log are done; the security brain (scoring, decisions, enforcement, persistence, admin) is still ahead.
+**Overall progress estimate:** ~45–55% of the intended product. Proxy + three detect-and-log detectors are done (brute force is the closest to the target metrics pattern); the security brain (scoring, decisions, enforcement, persistence, admin) is still ahead.
 
 ---
 
@@ -132,9 +132,10 @@ Order in `gateway/internal/proxy/server.go` (outer → inner):
 2. `RequestInspectionMiddleware` — headers + body (body restored for upstream)
 3. `FloodDetector.Middleware` — per-IP sliding 1-minute window; **logs alert if over threshold; still allows**
 4. `SQLiDetector.Middleware` — body signature match; **logs alert; still allows**
-5. `NewReverseProxy` — `httputil.NewSingleHostReverseProxy` + `X-Gateway: IASG`
+5. `BruteForceDetector.Middleware` — watches login paths; counts 401/403 failures after proxying; classifies brute force vs password spraying; exposes `Metrics(ip)`; **logs alert; still allows**
+6. `NewReverseProxy` — `httputil.NewSingleHostReverseProxy` + `X-Gateway: IASG`
 
-**Current behavior summary:** detect-and-log gateway. Every request that reaches the proxy is forwarded. There is no Allow/Throttle/Block branch yet.
+**Current behavior summary:** detect-and-log gateway with three signals. Every request is still forwarded. There is no Allow/Throttle/Block branch yet. Brute force is the first detector with a structured `Metrics()` API for a future decision engine.
 
 ### 5.3 Config that is actually used at runtime
 
@@ -144,6 +145,7 @@ Used when building/starting the server:
 - `proxy.*` (backend_url, timeout, connection limits)
 - `enforcement.rate_limit` → flood detector
 - `enforcement.attack_detection` → SQLi patterns / enabled flag
+- `enforcement.brute_force` → enabled / max_failures / window / login_paths
 
 Loaded into structs but **not consumed by request handling yet**:
 
@@ -194,11 +196,16 @@ Intelligent_API_Security_Gateway/
 │       │   └── security.go             # legacy SQLi adapter
 │       └── signals/
 │           ├── api_flooding.go         # flood detect-and-log
-│           └── sqli_injection.go       # SQLi detect-and-log
+│           ├── sqli_injection.go       # SQLi detect-and-log
+│           ├── brute_force.go          # brute force detect-and-log + Metrics()
+├── testing/
+│   ├── jmeter/                         # JMeter demo plans
+│   └── signals/                        # HTTP test scripts for detectors (not in the gateway module)
 ├── gateway-dashboard/
 │   ├── api/                            # Node dashboard API (Compose :4004)
 │   └── web/                            # Vite dashboard UI (Compose :5177)
 ├── vulnerable-app/                     # intentional vulnerable demo API/UI
+├── DEMO.md                             # brute force demo guide
 ├── vulnerable-app2/
 └── vulnerable-application/
 ```
@@ -225,17 +232,41 @@ Intelligent_API_Security_Gateway/
 
 ### 7.2 Signals (`internal/signals`)
 
-| Detector | Mechanism | Output today | Enforcement |
-| --- | --- | --- | --- |
-| **API Flooding** | Sharded in-memory per-IP timestamps; 1-minute window; threshold = `requests_per_minute` | Console SECURITY ALERT (LOW/MEDIUM/HIGH by multiples of threshold) | None (allows) |
-| **SQL Injection** | Case-insensitive substring match on body vs configured patterns | Console SECURITY ALERT | None (allows) |
+#### Implemented now
 
-**Planned / discussed detectors (not in current tree or not wired):**
+Every detector implements `Name()` + `Metrics(ip) Evidence` (shared contract in `evidence.go`). None of them block. A `Collector` can call `Collect(ip)` / `TotalScore(ip)` for the future decision engine.
 
-- Enumeration / path traversal
-- Credential stuffing (discussed as previously worked on elsewhere)
-- Brute force
-- XSS explicitly **deprioritized** (too WAF-like; stay API-behavior-centric)
+| Attack | File | Mechanism | Metrics() | Enforcement |
+| --- | --- | --- | --- | --- |
+| **API Flooding** | `api_flooding.go` | Per-IP sliding window; threshold = `requests_per_minute` | Yes — `requestRate`, `threshold`, `window`; Score 0–100 | None — logs alert, allows |
+| **SQL Injection** | `sqli_injection.go` | Signatures in path, query, and body | Yes — `matchCount`, `matchedPatterns`; last-request evidence per IP | None — logs alert, allows |
+| **Path Traversal + Enumeration** | `enumeration_path_traversal.go` | URL/query signatures (`../`, `/.env`, …) | Yes — `pathTraversalDetected`, `enumerationDetected`, match counts | None — logs alert, allows |
+| **Brute Force** | `brute_force.go` | Login-path 401/403 failures; spraying vs brute force | Yes — `failedLogins`, `distinctUsers`, `maxFailures` | None — logs alert, allows |
+
+Shared type (`internal/signals/evidence.go`):
+
+```go
+type Evidence struct {
+    Signal         string         // api_flooding | sql_injection | enumeration_path_traversal | brute_force
+    Score          int            // 0-100 contribution
+    ThresholdCross bool
+    AttackType     string
+    Details        map[string]any
+}
+```
+
+#### Pending / not in current tree
+
+| Attack | Status | Notes |
+| --- | --- | --- |
+| **Credential Stuffing (dedicated)** | Pending (partial overlap) | Brute force already labels `password_spraying` |
+| **XSS** | Deprioritized | Too WAF-like; stay API-centric |
+
+Around all detectors, still pending: centralized decision engine that consumes `Collector.Collect(ip)`, adaptive RL, persistent logging.
+
+**Reference pattern:** `Metrics(ip) Evidence` + never block. `brute_force.go` remains the response-aware example; flood/SQLi/traversal now share the same evidence shape.
+
+Unit tests are **not** stored next to detectors. HTTP test scripts live in `testing/signals/` at the repo root. See [Signal Test Scripts](modules/signal-tests.md).
 
 ### 7.3 Config (`internal/config` + `configs/`)
 
@@ -402,11 +433,11 @@ When docs conflict with code, **trust the Go sources and `reverse-proxy-logic.md
 
 ## 13. Next Development Priorities (Recommended Order)
 
-1. **Define a shared metrics / request-security context** (replace the deleted unused context package with something detectors actually write into).  
+1. **Define a shared metrics / request-security context** (all detectors write into it; brute force `Metrics()` is the template).  
 2. **Centralized risk scoring + decision engine** (consume metrics → Allow/Throttle/Block).  
 3. **Wire enforcement** in the proxy (403 / 429 / forward) after the engine.  
-4. **Refactor flood + SQLi** to emit scores/metrics instead of owning “allow forever.”  
-5. **Add missing detectors** (enumeration, path traversal, brute force / credential stuffing) as metric producers.  
+4. **Refactor flood + SQLi** to expose `Metrics()` like brute force.  
+5. **Add missing detectors** (enumeration, path traversal; optional dedicated credential stuffing) as metric producers.  
 6. **Connect adaptive rate limiting** to risk bands.  
 7. **Persistent structured logging** to Postgres.  
 8. **Dashboard** consumption of those logs.  
@@ -424,9 +455,10 @@ When docs conflict with code, **trust the Go sources and `reverse-proxy-logic.md
 - Compose and Dockerfile expect `./cmd/server`.  
 - Healthcheck in Dockerfile hits `/api/health` — that path is expected from the **backend**, not implemented as a gateway-local route today.  
 - Prefer extending `internal/signals` + new `internal/trust` or `internal/decision` packages rather than bloating middleware with one-off blocks.
+- Use `brute_force.go` as the reference detector pattern (detect + metrics + never block).
 
 ---
 
 ## 15. One-Paragraph Absolute Truth
 
-IASG is intended to be an intelligent, behavior-driven API security reverse proxy with detectors feeding a centralized risk/decision engine that can allow, throttle, or block, plus logging, dashboarding, and admin config. **Today** it is a Go reverse proxy on port 8082 that logs requests, inspects bodies, runs in-memory flood detection and SQLi signature detection as **alerts only**, and always forwards traffic to the configured backend. Config scaffolding for trust scoring, storage, and enforcement exists in YAML, but those subsystems are not yet implemented or wired.
+IASG is intended to be an intelligent, behavior-driven API security reverse proxy with detectors feeding a centralized risk/decision engine that can allow, throttle, or block, plus logging, dashboarding, and admin config. **Today** it is a Go reverse proxy on port 8082 that logs requests, inspects bodies, and runs three detect-and-log signals — API flooding, SQL injection, and brute force (with password-spraying classification and a `Metrics(ip)` API) — then always forwards traffic to the configured backend. Config scaffolding for trust scoring, storage, and enforcement exists in YAML, but those subsystems are not yet implemented or wired. Enumeration and path traversal detectors remain pending.

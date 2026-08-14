@@ -44,14 +44,7 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
-// BruteForceMetrics is the evidence this detector emits for a given IP.
-// The decision engine consumes this; the detector never acts on it itself.
-type BruteForceMetrics struct {
-	FailedLogins   int    `json:"failedLogins"`   // failures inside the current window
-	DistinctUsers  int    `json:"distinctUsers"`  // distinct emails tried (spraying indicator)
-	ThresholdCross bool   `json:"thresholdCross"` // failures >= configured max
-	AttackType     string `json:"attackType"`     // "brute_force", "password_spraying", or "" when clean
-}
+func (bd *BruteForceDetector) Name() string { return SignalBruteForce }
 
 // bruteForceClient tracks the recent login failures for a single IP.
 type bruteForceClient struct {
@@ -206,18 +199,26 @@ func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
 	}
 }
 
-// Metrics returns the current evidence for an IP so the decision engine
-// can fold it into a combined risk score. Safe to call concurrently.
-func (bd *BruteForceDetector) Metrics(ip string) BruteForceMetrics {
+// Metrics returns brute-force evidence for an IP. Safe to call concurrently.
+func (bd *BruteForceDetector) Metrics(ip string) Evidence {
 	bd.mu.Lock()
 	defer bd.mu.Unlock()
 
-	client, exists := bd.clients[ip]
-	if !exists {
-		return BruteForceMetrics{}
+	ev := Evidence{
+		Signal: SignalBruteForce,
+		Details: map[string]any{
+			"failedLogins":  0,
+			"distinctUsers": 0,
+			"maxFailures":   bd.maxFailures,
+			"window":        bd.window.String(),
+		},
 	}
 
-	// Count only failures still inside the window
+	client, exists := bd.clients[ip]
+	if !exists {
+		return ev
+	}
+
 	cutoff := time.Now().Add(-bd.window)
 	failures := 0
 	for _, t := range client.Failures {
@@ -225,16 +226,25 @@ func (bd *BruteForceDetector) Metrics(ip string) BruteForceMetrics {
 			failures++
 		}
 	}
+	distinct := len(client.Emails)
+	crossed := failures >= bd.maxFailures
 
-	m := BruteForceMetrics{
-		FailedLogins:   failures,
-		DistinctUsers:  len(client.Emails),
-		ThresholdCross: failures >= bd.maxFailures,
+	ev.Details["failedLogins"] = failures
+	ev.Details["distinctUsers"] = distinct
+	ev.Score = bruteForceScore(failures, bd.maxFailures, distinct)
+	ev.ThresholdCross = crossed
+	if crossed {
+		ev.AttackType = classifyAttack(distinct)
 	}
-	if m.ThresholdCross {
-		m.AttackType = classifyAttack(len(client.Emails))
+	return ev
+}
+
+func bruteForceScore(failures, maxFailures, distinctEmails int) int {
+	score := ratioScore(failures, maxFailures)
+	if failures >= maxFailures && distinctEmails > 3 {
+		score = clampScore(score + 10)
 	}
-	return m
+	return score
 }
 
 // reset clears the failure history for an IP (called after a successful login).

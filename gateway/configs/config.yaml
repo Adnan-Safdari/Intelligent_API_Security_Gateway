@@ -70,6 +70,25 @@ enforcement:
     login_paths:
       - "/api/login"
 
+  # Path traversal + forced-browsing enumeration (detect + emit metrics only)
+  enumeration_path_traversal:
+    enabled: true
+    traversal_patterns:
+      - "../"
+      - "..\\"
+      - "%2e%2e%2f"
+      - "%2e%2e/"
+      - "..%2f"
+      - "%2e%2e%5c"
+    enumeration_patterns:
+      - "/.env"
+      - "/.git"
+      - "/.aws"
+      - "/wp-admin"
+      - "/etc/passwd"
+      - "/.bash_history"
+      - "/.ssh"
+
   # Throttling
   throttle:
     enabled: true

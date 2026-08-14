@@ -20,7 +20,8 @@ This page shows which directories contain active code and which directories curr
 | `internal/proxy/` | Implemented reverse proxy server and middleware. |
 | `internal/netutil/` | Shared helpers used by middleware and context-free request handling. |
 | `internal/enforcement/` | Present in the repository but currently empty. |
-| `internal/signals/` | Request attack-detection middleware for flooding and SQLi. |
+| `internal/signals/` | Attack detectors (flood, SQLi, traversal/enum, brute force). No test files in this package. |
+| `testing/signals/` (repo root) | HTTP test scripts that hit a running gateway. See [Signal Test Scripts](modules/signal-tests.md). |
 | `internal/storage/` | Present in the repository with empty adapter directories. |
 | `internal/trust/` | Present in the repository but currently empty. |
 | `configs/` | Contains the shared configuration template and the local runtime config. |

@@ -1,13 +1,12 @@
 package signals
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
@@ -17,7 +16,6 @@ type SQLiDetectorConfig struct {
 	SQLPatterns []string
 }
 
-// DefaultSQLiDetectorConfig returns default SQLi signatures.
 func DefaultSQLiDetectorConfig() SQLiDetectorConfig {
 	return SQLiDetectorConfig{
 		Enabled: true,
@@ -30,13 +28,20 @@ func DefaultSQLiDetectorConfig() SQLiDetectorConfig {
 	}
 }
 
-// SQLiDetector inspects request bodies and logs SQLi alerts.
+func SQLiDetectorConfigFrom(cfg config.AttackDetectionConfig) SQLiDetectorConfig {
+	return SQLiDetectorConfig{
+		Enabled:     cfg.Enabled,
+		SQLPatterns: cfg.SQLPatterns,
+	}
+}
+
+// SQLiDetector inspects request path, query, and body for SQLi signatures.
 type SQLiDetector struct {
 	enabled     bool
 	sqlPatterns []string
+	last        *lastEvidenceStore
 }
 
-// NewSQLiDetector creates a SQLi detector from configuration.
 func NewSQLiDetector(cfg SQLiDetectorConfig) *SQLiDetector {
 	if len(cfg.SQLPatterns) == 0 {
 		cfg.SQLPatterns = DefaultSQLiDetectorConfig().SQLPatterns
@@ -45,10 +50,12 @@ func NewSQLiDetector(cfg SQLiDetectorConfig) *SQLiDetector {
 	return &SQLiDetector{
 		enabled:     cfg.Enabled,
 		sqlPatterns: cfg.SQLPatterns,
+		last:        newLastEvidenceStore(lastEvidenceTTL),
 	}
 }
 
-// Middleware detects SQLi patterns and logs alerts; it does not block requests.
+func (sd *SQLiDetector) Name() string { return SignalSQLi }
+
 func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !sd.enabled {
@@ -56,24 +63,59 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		ip := netutil.ClientIP(r.RemoteAddr)
 		bodyBytes, _ := readAndRestoreBody(r)
-		if sd.isSQLi(string(bodyBytes)) {
-			ip := netutil.ClientIP(r.RemoteAddr)
-			sd.logAlert(ip, r, "matched SQLi signature in request body")
+		haystack := r.URL.Path + " " + r.URL.RawQuery + " " + string(bodyBytes)
+		matched := sd.findMatches(haystack)
+		ev := sd.evidenceFrom(matched)
+		sd.last.Put(ip, ev)
+
+		if ev.ThresholdCross {
+			sd.logAlert(ip, r, strings.Join(matched, ", "))
 		}
 
 		next.ServeHTTP(w, r)
 	})
 }
 
-func (sd *SQLiDetector) isSQLi(body string) bool {
-	body = strings.ToUpper(body)
+// Metrics returns the latest SQLi evidence for an IP.
+func (sd *SQLiDetector) Metrics(ip string) Evidence {
+	return sd.last.Get(ip, SignalSQLi)
+}
+
+func (sd *SQLiDetector) findMatches(text string) []string {
+	upper := strings.ToUpper(text)
+	var matched []string
 	for _, pattern := range sd.sqlPatterns {
-		if strings.Contains(body, strings.ToUpper(pattern)) {
-			return true
+		if strings.Contains(upper, strings.ToUpper(pattern)) {
+			matched = append(matched, pattern)
 		}
 	}
-	return false
+	return matched
+}
+
+func (sd *SQLiDetector) evidenceFrom(matched []string) Evidence {
+	ev := Evidence{
+		Signal: SignalSQLi,
+		Details: map[string]any{
+			"matchCount":      len(matched),
+			"matchedPatterns": matched,
+		},
+	}
+	if len(matched) == 0 {
+		return ev
+	}
+	ev.ThresholdCross = true
+	ev.AttackType = SignalSQLi
+	switch {
+	case len(matched) >= 3:
+		ev.Score = 100
+	case len(matched) == 2:
+		ev.Score = 85
+	default:
+		ev.Score = 70
+	}
+	return ev
 }
 
 func (sd *SQLiDetector) logAlert(ip string, r *http.Request, details string) {
@@ -97,13 +139,4 @@ func (sd *SQLiDetector) logAlert(ip string, r *http.Request, details string) {
 		details,
 		time.Now().Format(time.RFC3339),
 	)
-}
-
-func readAndRestoreBody(r *http.Request) ([]byte, error) {
-	if r.Body == nil {
-		return nil, nil
-	}
-	bodyBytes, err := io.ReadAll(r.Body)
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-	return bodyBytes, err
 }

@@ -45,5 +45,6 @@ nav:
       - Reverse Proxy Logic: reverse-proxy-logic.md
   - Modules:
       - Proxy Module: modules/proxy-module.md
+      - Signal Test Scripts: modules/signal-tests.md
   - Operations:
       - Running the Gateway Locally: running-locally.md
