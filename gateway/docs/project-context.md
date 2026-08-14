@@ -27,7 +27,7 @@ Stack focus:
 - **Module**: `github.com/Adnan-Safdari/Intelligent_API_Security_Gateway`
 - **Core runtime**: `gateway/` (Go reverse proxy)
 - **Demo backend**: `vulnerable-app/` (Node API + web)
-- **Admin UI (planned/early)**: `gateway-dashboard/` (Node API + web)
+- **Admin UI**: `gateway-dashboard/` (Next.js command center on :5177, reads Redis)
 - **Compose stack**: `infra/docker-compose.yml`
 - **Docs site**: MkDocs (`mkdocs.yml` → `gateway/docs/`)
 
@@ -203,9 +203,9 @@ Intelligent_API_Security_Gateway/
 ├── testing/
 │   ├── jmeter/                         # JMeter demo plans
 │   └── signals/                        # HTTP test scripts for detectors (not in the gateway module)
-├── gateway-dashboard/
-│   ├── api/                            # Node dashboard API (Compose :4004)
-│   └── web/                            # Vite dashboard UI (Compose :5177)
+├── gateway-dashboard/                  # Next.js command center (UI + /api/overview)
+│   ├── app/
+│   └── lib/
 ├── vulnerable-app/                     # intentional vulnerable demo API/UI
 ├── DEMO.md                             # brute force demo guide
 ├── vulnerable-app2/
