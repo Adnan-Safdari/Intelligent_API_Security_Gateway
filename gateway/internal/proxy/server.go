@@ -4,11 +4,14 @@
 package proxy
 
 import (
+	"log"
 	"net/http"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
+	redisstore "github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/storage/redis"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/telemetry"
 )
 
 // Config holds the configuration settings for the proxy server.
@@ -51,6 +54,12 @@ type Config struct {
 
 	// BruteForce holds brute force login detection settings.
 	BruteForce config.BruteForceConfig
+
+	// Enumeration holds path-traversal and forced-browsing detection settings.
+	Enumeration config.EnumerationConfig
+
+	// Redis holds hot telemetry settings. Empty/disabled means events are not stored.
+	Redis config.RedisConfig
 }
 
 // Server represents the API gateway proxy server instance.
@@ -58,6 +67,9 @@ type Config struct {
 type Server struct {
 	// config stores the server configuration settings
 	config Config
+
+	// collector gathers Metrics() from every detector for a future decision engine.
+	collector *signals.Collector
 }
 
 // NewServer creates and initializes a new proxy server instance with the provided configuration.
@@ -93,19 +105,26 @@ func (s *Server) Start() error {
 
 	// Create the flood detector signal engine
 	floodDetector := signals.NewFloodDetector(s.config.RateLimit)
-	sqliDetector := signals.NewSQLiDetector(signals.SQLiDetectorConfig{
-		Enabled:     s.config.AttackDetection.Enabled,
-		SQLPatterns: s.config.AttackDetection.SQLPatterns,
-	})
+	sqliDetector := signals.NewSQLiDetector(signals.SQLiDetectorConfigFrom(s.config.AttackDetection))
 	bruteForceDetector := signals.NewBruteForceDetector(s.config.BruteForce)
+	traversalEnumDetector := signals.NewTraversalEnumDetector(s.config.Enumeration)
 
-	traversalEnumDetector := signals.NewTraversalEnumDetector(signals.DefaultTraversalEnumConfig())
+	s.collector = signals.NewCollector(floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector)
 
-	// Build the middleware chain and wrap the reverse proxy handler
-	// Middleware is applied in reverse order (last middleware listed executes first)
-	// The brute force detector sits closest to the proxy because it needs to
-	// observe the backend's response status (401 = failed login)
+	var eventWriter telemetry.Writer
+	if s.config.Redis.Enabled {
+		store, err := redisstore.New(s.config.Redis)
+		if err != nil {
+			log.Printf("Redis telemetry disabled: %v", err)
+		} else {
+			eventWriter = store
+		}
+	}
+
+	// Telemetry is outermost so it records after every detector, including
+	// brute force which inspects the backend response status.
 	handler := ChainMiddleware(
+		telemetry.Middleware(eventWriter, s.collector),
 		LoggingMiddleware,
 		RequestInspectionMiddleware,
 		floodDetector.Middleware,

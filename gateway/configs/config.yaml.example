@@ -30,11 +30,15 @@ trust_engine:
 
 storage:
   redis:
+    enabled: true
     host: localhost
     port: 6379
     password: ""
     db: 0
     pool_size: 10
+    stream_key: iasg:events
+    stream_maxlen: 2000
+    ip_latest_ttl: 24h
   
   postgres:
     host: localhost
@@ -69,6 +73,25 @@ enforcement:
     window: 60s     # sliding window for counting failures
     login_paths:
       - "/api/login"
+
+  # Path traversal + forced-browsing enumeration (detect + emit metrics only)
+  enumeration_path_traversal:
+    enabled: true
+    traversal_patterns:
+      - "../"
+      - "..\\"
+      - "%2e%2e%2f"
+      - "%2e%2e/"
+      - "..%2f"
+      - "%2e%2e%5c"
+    enumeration_patterns:
+      - "/.env"
+      - "/.git"
+      - "/.aws"
+      - "/wp-admin"
+      - "/etc/passwd"
+      - "/.bash_history"
+      - "/.ssh"
 
   # Throttling
   throttle:

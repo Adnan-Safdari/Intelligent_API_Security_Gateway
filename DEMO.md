@@ -29,17 +29,23 @@ java -version   # openjdk 21.0.12
 
 ---
 
-## 1. Quick test (30 seconds, no servers needed)
+## 1. Quick test (live gateway)
 
-Proves the detection logic with unit tests:
+Detectors are detect-only. From the **repository root**, with the gateway already running:
 
 ```bash
-cd ~/Intelligent_API_Security_Gateway/gateway
-go test ./internal/signals/ -v
+bash testing/signals/brute_force.sh
 ```
 
-Expected: 6 tests `PASS`, including `TestBruteForceNeverBlocks` which asserts that
-every request still reaches the backend.
+Or every detector:
+
+```bash
+bash testing/signals/run_all.sh
+```
+
+A pass means the gateway did **not** return `429`. Proof of detection is the `SECURITY ALERT` in the gateway console.
+
+See `testing/signals/README.md`.
 
 ---
 

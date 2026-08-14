@@ -25,7 +25,8 @@ Inside `gateway/internal/proxy/server.go`, the server builds the request pipelin
 2. `RequestInspectionMiddleware`
 3. API flooding detector middleware
 4. SQL injection detector middleware
-5. Reverse proxy handler
+5. Brute force detector middleware (closest to proxy; needs response status)
+6. Reverse proxy handler
 
 The middleware order matters. The outer middleware sees the request first, and the inner proxy runs last.
 
@@ -68,7 +69,7 @@ It also restores the request body afterward so the reverse proxy can still forwa
 
 ## Attack Detection Layer
 
-The gateway currently has two detection middlewares in `internal/signals`:
+The gateway currently has three detection middlewares in `internal/signals`:
 
 ### API Flood Detection
 
@@ -97,6 +98,21 @@ This reads the request body and looks for known SQLi signatures such as:
 
 If it finds a match, it logs a formatted alert and still allows the request through.
 
+### Brute Force Detection
+
+File: `gateway/internal/signals/brute_force.go`
+
+This watches configured login paths (default `/api/login`), forwards the request, then inspects the backend status:
+
+- `401` / `403` → record a failed login for that IP
+- `2xx` → reset the failure counter
+- threshold crossed → log SECURITY ALERT (still allows)
+- also classifies classic brute force vs password spraying
+- exposes `Metrics(ip)` for a future decision engine
+- unit tests + `DEMO.md` + JMeter plan exist
+
+Config comes from `enforcement.brute_force` (`enabled`, `max_failures`, `window`, `login_paths`).
+
 ## Configuration Folder
 
 Yes, the `configs` folder is used.
@@ -122,6 +138,7 @@ Then `main.go` passes those values into the proxy server:
 - timeouts
 - rate limit config
 - attack detection config
+- brute force config
 
 So the config folder is not just documentation. It directly controls how the gateway starts and behaves.
 
@@ -170,7 +187,8 @@ The gateway now does exactly this at runtime:
 3. Print headers and body.
 4. Detect API flooding and print an alert.
 5. Detect SQL injection and print an alert.
-6. Forward the request to the backend API on `5002`.
+6. For login paths, detect brute force / password spraying after the backend responds, print an alert, and keep Metrics(ip) available.
+7. Forward the request to the backend API on `5002`.
 
 It is currently a detect-and-log gateway, not a blocking gateway.
 

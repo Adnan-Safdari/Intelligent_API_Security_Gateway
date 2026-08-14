@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -55,11 +56,27 @@ type StorageConfig struct {
 }
 
 type RedisConfig struct {
-	Host     string `yaml:"host"`
-	Port     int    `yaml:"port"`
-	Password string `yaml:"password"`
-	DB       int    `yaml:"db"`
-	PoolSize int    `yaml:"pool_size"`
+	Enabled      bool          `yaml:"enabled"`
+	Host         string        `yaml:"host"`
+	Port         int           `yaml:"port"`
+	Password     string        `yaml:"password"`
+	DB           int           `yaml:"db"`
+	PoolSize     int           `yaml:"pool_size"`
+	StreamKey    string        `yaml:"stream_key"`
+	StreamMaxLen int64         `yaml:"stream_maxlen"`
+	IPLatestTTL  time.Duration `yaml:"ip_latest_ttl"`
+}
+
+func (c RedisConfig) Addr() string {
+	host := c.Host
+	if host == "" {
+		host = "localhost"
+	}
+	port := c.Port
+	if port <= 0 {
+		port = 6379
+	}
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
 }
 
 type PostgresConfig struct {
@@ -77,6 +94,7 @@ type EnforcementConfig struct {
 	RateLimit       RateLimitConfig       `yaml:"rate_limit"`
 	AttackDetection AttackDetectionConfig `yaml:"attack_detection"`
 	BruteForce      BruteForceConfig      `yaml:"brute_force"`
+	Enumeration     EnumerationConfig     `yaml:"enumeration_path_traversal"`
 	Throttle        ThrottleConfig        `yaml:"throttle"`
 	Block           BlockConfig           `yaml:"block"`
 }
@@ -91,6 +109,12 @@ type BruteForceConfig struct {
 type AttackDetectionConfig struct {
 	Enabled     bool     `yaml:"enabled"`
 	SQLPatterns []string `yaml:"sql_patterns"`
+}
+
+type EnumerationConfig struct {
+	Enabled             bool     `yaml:"enabled"`
+	TraversalPatterns   []string `yaml:"traversal_patterns"`
+	EnumerationPatterns []string `yaml:"enumeration_patterns"`
 }
 
 type RateLimitConfig struct {
@@ -160,6 +184,19 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Proxy.BackendURL == "" {
 		return nil, fmt.Errorf("proxy.backend_url must be set")
+	}
+
+	if cfg.Storage.Redis.StreamKey == "" {
+		cfg.Storage.Redis.StreamKey = "iasg:events"
+	}
+	if cfg.Storage.Redis.StreamMaxLen <= 0 {
+		cfg.Storage.Redis.StreamMaxLen = 2000
+	}
+	if cfg.Storage.Redis.IPLatestTTL <= 0 {
+		cfg.Storage.Redis.IPLatestTTL = 24 * time.Hour
+	}
+	if cfg.Storage.Redis.PoolSize <= 0 {
+		cfg.Storage.Redis.PoolSize = 10
 	}
 
 	return cfg, nil

@@ -45,5 +45,8 @@ nav:
       - Reverse Proxy Logic: reverse-proxy-logic.md
   - Modules:
       - Proxy Module: modules/proxy-module.md
+      - Signal Test Scripts: modules/signal-tests.md
+      - Redis Telemetry: modules/redis-telemetry.md
+      - Command Center Dashboard: modules/dashboard.md
   - Operations:
       - Running the Gateway Locally: running-locally.md

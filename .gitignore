@@ -49,6 +49,7 @@ logs/
 tmp/
 temp/
 *.tmp
+.next/
 
 # Database
 *.db

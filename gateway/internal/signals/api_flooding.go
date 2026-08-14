@@ -1,38 +1,15 @@
 /*
-	API Flood detection Middleware
-		- Sits on he backend server
-		- Moniors incomming request
-		- Detects if someone is sending too many requests
-		- Blocks wih a 429 Too Many Requests
-		- Logs a security alert
-
+	API Flood detection signal
+		- Tracks how many requests each IP sends inside a sliding window
+		- If the count exceeds the configured threshold, logs a security alert
+		- Exposes Metrics(ip) for the future decision engine
+		- DOES NOT BLOCK. Every request is forwarded to the backend.
 
 	Core Idea
-		“ For each IP address, track how many requests they send within a time window.
-		If it exceeds a limit -> block them. ”
+		“ For each IP address, track how many requests they send within a time window. ”
 
-	Sharding architecute (in FloodDetector & floodShard)
-		Instead of putting all IP address into a giant map
-		We are breaking it into multiple buckets using an architecture called sharding
-		Splitting into 32 smaller "buckets"
-
-		Each shard has its own lock "mu" (mutex) where it only locks its own data preventing race conditions
-		
-
-
-	func (fd *FloodDetector) getShard(ip string) *floodShard 
-
-		similiar to String.hashCode() in jaba (polynomial rolling hash)
-		starts with hash = 0, for each char in string multiplies hash with x (31 in our case)
-		adds the ascii value of the character
-	
-		It iterates over the characters in the IP string, calculates a mathematical hash, 
-		and then uses the modulo operator (%) to pin it safely between 0 and 31.
-
-		ensures same ip goes to the same shard
-
-
-
+	Sharding
+		IPs are split across 32 buckets so each bucket has its own mutex.
 */
 
 package signals
@@ -47,45 +24,45 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
-// ClientData stores the timestamps of recent requests for a specific IP.
-type ClientData struct {
+// floodClientData stores the timestamps of recent requests for a specific IP.
+type floodClientData struct {
 	Requests []time.Time
 }
 
 // FloodDetector manages request tracking across multiple shards to reduce lock contention.
 type FloodDetector struct {
-	shards    []*floodShard	// Instead of one big map, we are breaking it into multiple buckets
-	threshold int			// Maximum number of requests allowed in the time window
-	window    time.Duration	// The time window duration
-
-	/*
-		So if
-		threshold => 100 and window is 1
-		:> 100 requests in 1 minute => Block
-	*/
+	enabled   bool
+	shards    []*floodShard
+	threshold int
+	window    time.Duration
 }
 
-// floodShard represents a single bucket of IP data with its own mutex.
 type floodShard struct {
-	mu      sync.Mutex				// Mutex to protect the clients map
-	clients map[string]*ClientData	// Map to store client data - modifying directly
+	mu      sync.Mutex
+	clients map[string]*floodClientData
 }
 
-// FloodDetector initializes a sharded detector based on the provided configuration.
 func NewFloodDetector(cfg config.RateLimitConfig) *FloodDetector {
 	if !cfg.Enabled {
-		return &FloodDetector{threshold: 0}
+		return &FloodDetector{enabled: false}
 	}
+
+	threshold := cfg.RequestsPerMinute
+	if threshold <= 0 {
+		threshold = 100
+	}
+
 	numShards := 32
 	fd := &FloodDetector{
+		enabled:   true,
 		shards:    make([]*floodShard, numShards),
-		threshold: cfg.RequestsPerMinute, // Using RPM as threshold for demo
-		window:    time.Minute,           // Default to 1 minute to match RPM
+		threshold: threshold,
+		window:    time.Minute,
 	}
 
 	for i := 0; i < numShards; i++ {
 		fd.shards[i] = &floodShard{
-			clients: make(map[string]*ClientData),
+			clients: make(map[string]*floodClientData),
 		}
 	}
 
@@ -93,7 +70,8 @@ func NewFloodDetector(cfg config.RateLimitConfig) *FloodDetector {
 	return fd
 }
 
-// getShard returns the specific shard for a given IP using a simple hash.
+func (fd *FloodDetector) Name() string { return SignalFlood }
+
 func (fd *FloodDetector) getShard(ip string) *floodShard {
 	var hash uint32
 	for i := 0; i < len(ip); i++ {
@@ -102,81 +80,113 @@ func (fd *FloodDetector) getShard(ip string) *floodShard {
 	return fd.shards[hash%uint32(len(fd.shards))]
 }
 
-// startCleanupTimer runs a background task to remove inactive IPs every 5 minutes.
 func (fd *FloodDetector) startCleanupTimer() {
 	ticker := time.NewTicker(1 * time.Minute)
 	for range ticker.C {
 		now := time.Now()
 		for _, shard := range fd.shards {
-			shard.mu.Lock()				// Locking the shard so that no race condition occurs
+			shard.mu.Lock()
 			for ip, client := range shard.clients {
-				// If the last request was longer than the window ago, delete the entry
 				if len(client.Requests) == 0 || now.Sub(client.Requests[len(client.Requests)-1]) > fd.window {
 					delete(shard.clients, ip)
 				}
 			}
-			shard.mu.Unlock()			// unlocking after critical phase is over 
+			shard.mu.Unlock()
 		}
 	}
 }
 
-// Middleware returns an http.Handler that inspects requests for flooding attacks.
 func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// If the detector is disabled, skip inspection
-		if fd.threshold <= 0 {
+		if !fd.enabled || fd.threshold <= 0 {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Extract IP without port to ensure accurate tracking
 		ip := netutil.ClientIP(r.RemoteAddr)
-
 		now := time.Now()
 		shard := fd.getShard(ip)
 
 		shard.mu.Lock()
 		if _, exists := shard.clients[ip]; !exists {
-			shard.clients[ip] = &ClientData{}
+			shard.clients[ip] = &floodClientData{}
 		}
 		client := shard.clients[ip]
-
-		// O(1) cleanup: Remove expired timestamps from the beginning of the slice
-		cutoff := now.Add(-fd.window)
-		firstValid := 0
-		for i, t := range client.Requests {
-			if t.After(cutoff) {
-				firstValid = i
-				break
-			}
-			// If all are expired, the loop will finish and firstValid will stay 0 or be set correctly
-			if i == len(client.Requests)-1 {
-				firstValid = len(client.Requests)
-			}
-		}
-		client.Requests = client.Requests[firstValid:]
-
-		// Add current request and check against threshold
+		client.Requests = trimExpired(client.Requests, now.Add(-fd.window))
 		client.Requests = append(client.Requests, now)
 		requestCount := len(client.Requests)
+		shard.mu.Unlock()
 
 		if requestCount > fd.threshold {
-			shard.mu.Unlock()
 			fd.logAlert(ip, r, requestCount)
-			next.ServeHTTP(w, r)
-			return
 		}
-		shard.mu.Unlock()
 
 		next.ServeHTTP(w, r)
 	})
 }
 
-// logAlert prints a high-visibility security alert to the console.
+// Metrics returns flood evidence for an IP. Safe to call concurrently.
+func (fd *FloodDetector) Metrics(ip string) Evidence {
+	ev := Evidence{Signal: SignalFlood, Details: map[string]any{
+		"requestRate": 0,
+		"threshold":   fd.threshold,
+		"window":      fd.window.String(),
+	}}
+	if !fd.enabled || len(fd.shards) == 0 {
+		return ev
+	}
+
+	shard := fd.getShard(ip)
+	shard.mu.Lock()
+	client, exists := shard.clients[ip]
+	count := 0
+	if exists {
+		count = len(trimExpired(client.Requests, time.Now().Add(-fd.window)))
+	}
+	shard.mu.Unlock()
+
+	crossed := count > fd.threshold
+	ev.Details["requestRate"] = count
+	ev.Score = floodScore(count, fd.threshold)
+	ev.ThresholdCross = crossed
+	if crossed {
+		ev.AttackType = SignalFlood
+	}
+	return ev
+}
+
+func floodScore(count, threshold int) int {
+	if threshold <= 0 || count <= 0 {
+		return 0
+	}
+	// Flood fires when count > threshold, so equal-to-threshold is still clean.
+	if count <= threshold {
+		return count * 30 / threshold
+	}
+	if count >= threshold*5 {
+		return 100
+	}
+	if count >= threshold*2 {
+		return 80
+	}
+	return 60
+}
+
+func trimExpired(times []time.Time, cutoff time.Time) []time.Time {
+	firstValid := len(times)
+	for i, t := range times {
+		if t.After(cutoff) {
+			firstValid = i
+			break
+		}
+	}
+	return times[firstValid:]
+}
+
 func (fd *FloodDetector) logAlert(ip string, r *http.Request, count int) {
 	severity := "LOW"
 	if count > fd.threshold*5 {
-		severity = "HIGH "
+		severity = "HIGH"
 	} else if count > fd.threshold*2 {
 		severity = "MEDIUM"
 	}
