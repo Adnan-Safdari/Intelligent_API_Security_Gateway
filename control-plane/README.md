@@ -5,17 +5,24 @@ The Python half of the Intelligent API Security Gateway — Lane 2 of the propos
 The Go gateway is the **data plane**: it sees every request and decides allow/block in
 microseconds. This is the **control plane**: it never touches a live request, wakes up
 every 30 seconds, works out which attackers are acting together, and writes policy the
-gateway can read later.
+gateway enforces.
 
-Kill this process and the gateway keeps protecting traffic. It just stops getting smarter.
+Kill this process and the gateway keeps protecting traffic, using the last policy it was
+given until those keys expire. It just stops getting smarter.
 
 ```
-Go gateway  ->  attack_events (Redis stream)  ->  control plane
-                        ^                              |
-                        |                    correlate -> decide -> explain
-                    ingest.py                          |
-                                                 policy:<ip> (Redis)
+                 evidence
+   Go gateway  ──────────▶  attack_events (Redis stream)
+       ▲                              │
+       │                              ▼
+       │                    correlate → remember → decide → explain
+       │                              │
+       └──────────────────────────────┘
+              policy:<ip> (Redis, TTL)
 ```
+
+The gateway prints its detections; `iasg.evidence.ingest` parses them into the stream. The
+gateway itself writes nothing to Redis — it only reads policy.
 
 ## Setup
 
@@ -47,13 +54,14 @@ Expected output:
 [cycle] read 36 events
 [correlation] Campaign #1 -- Credential Stuffing
               6 IPs, confidence 1.00, high
-              6 IPs sharing same attack type (bruteforce), same endpoint
-              (/api/login), same subnet (203.0.113.0/24), overlapping timing,
-              same User-Agent (curl/8.4.0)
+              6 IPs sharing same endpoint (/api/login), same User-Agent
+              (curl/8.4.0), same attack type (bruteforce), same subnet
+              (203.0.113.0/24), overlapping timing
 [explain]     Between 16:48 and 16:49, the system detected a coordinated
               credential stuffing campaign involving 6 IP addresses targeting
               /api/login...
 [policy]      wrote 6 policy keys
+[escalate]    Campaign #1 raised for human review -- 6 IPs, confidence 1.00
 ```
 
 Other options:
@@ -61,15 +69,19 @@ Other options:
 ```bash
 .venv/bin/python -m iasg                  # loop forever, every 30s
 .venv/bin/python -m iasg --once --dry-run # decide everything, write nothing
-.venv/bin/pytest                          # 50 tests, no Redis needed
+.venv/bin/pytest                          # 193 tests, no Redis needed
 ```
 
-Scenarios: `credential-stuffing`, `flood`, `recon`, `sqli`, `noise`, `mixed`.
-Add `--clear` to wipe the stream first.
+Scenarios: `credential-stuffing`, `brute-force`, `flood`, `enumeration`, `path-traversal`,
+`recon`, `sqli`, `noise`, `mixed`. Add `--clear` to wipe the stream first.
+
+`noise` is the one that must produce *nothing*. Unrelated traffic being reported as a
+campaign is worse than missing a real one, so there is a scenario whose whole job is to be
+rejected.
 
 ## Against the real gateway
 
-The gateway is not modified, so its detections only reach stdout. Pipe them in:
+The gateway prints its detections to stdout. Pipe them in:
 
 ```bash
 cd ../gateway && go run ./cmd/server 2>&1 | ../control-plane/.venv/bin/python -m iasg.evidence.ingest
@@ -77,21 +89,44 @@ cd ../gateway && go run ./cmd/server 2>&1 | ../control-plane/.venv/bin/python -m
 
 Then attack `localhost:8082/api/login` and run `python -m iasg --once` in another terminal.
 
-## Layout
+One thing that bites here: if the gateway sits behind a proxy it must be configured with
+`trusted_proxies`, or every request is attributed to `127.0.0.1` — which the writer refuses
+as a non-public address, so no policy is ever written. See
+[client-ip.md](../gateway/docs/client-ip.md).
 
-| path | what it does |
-|---|---|
-| `iasg/config.py` | settings from `IASG_*` env vars, all with defaults |
-| `iasg/models.py` | `Evidence` → `Campaign` → `PolicyDecision` |
-| `iasg/store/` | Redis access, plus an in-memory fake for tests |
-| `iasg/evidence/consumer.py` | reads the stream via a consumer group |
-| `iasg/evidence/ingest.py` | parses the gateway's `SECURITY ALERT` blocks |
-| `iasg/correlation/` | **groups IPs into campaigns** — union-find over shared traits |
-| `iasg/campaigns/` | memory: campaigns persist and merge across cycles |
-| `iasg/policy/` | the block/throttle ladder, and the rails around it |
-| `iasg/explanation/` | the admin-facing paragraph |
-| `iasg/assessment/` | the LLM's review of what the rules concluded |
-| `iasg/runner.py` | the loop |
+## What it actually works out
+
+Beyond grouping addresses, the parts worth knowing about:
+
+**A lone attacker can be actioned.** Confidence is built from traits shared *between*
+addresses, and one machine shares traits with nobody — so a single IP could never exceed
+0.15 and never be blocked, however many times a detector fired. Solo campaigns are now
+scored on their own volume and severity instead, capped below the level that wakes a human.
+
+**Campaigns survive the attacker moving.** Matching on addresses alone meant every
+rotation opened a new campaign and the investigation restarted. When no addresses are
+shared, the behavioural signature — endpoint, user agent, detector — identifies the
+campaign instead. Deliberately strict: merging two unrelated attackers hides one behind
+the other.
+
+**It notices whether acting worked.** A campaign that goes quiet is marked contained; one
+that returns after enforcement has that counted against the action, and the next response
+moves a rung up the ladder rather than repeating what just failed.
+
+What "contained" honestly means is written into the code: for a block it is close to
+circular, since a blocked address never reaches the detectors. It confirms enforcement is
+holding, not that the attacker gave up. For monitor and throttle it is a real signal.
+
+**Several attack phases from one actor read as one intrusion.** Someone who hunts for
+`.env`, attacks the login they find, then probes the database is a *Multi-Stage Intrusion*
+— not three separate incidents named after whichever detector was loudest. Phases are
+ordered by when each was actually observed, and each phase beyond the first raises the
+response.
+
+**Escalation means something.** It writes to the `iasg_alerts` stream with the campaign and
+its readable explanation, and its block outlasts an ordinary one — a human has been asked
+to look, and it should still be in place when they do. Once per campaign, not once per
+cycle.
 
 ## Where the AI is, and is not
 
@@ -124,12 +159,31 @@ there together:
 - `IASG_MAX_IPS_PER_CYCLE` caps how many IPs one cycle may action
 - `--dry-run` logs every intended write and performs none
 
-## Notes
+## Layout
 
-**Enforcement is out of scope.** This branch delivers evidence → campaign → policy.
-Making the gateway *read* `policy:<ip>` and act on it is the next piece of work.
+| path | what it does |
+|---|---|
+| `iasg/config.py` | settings from `IASG_*` env vars, all with defaults |
+| `iasg/models.py` | `Evidence` → `Campaign` → `PolicyDecision`, and the action ladder |
+| `iasg/store/` | Redis access, plus an in-memory fake for tests |
+| `iasg/evidence/consumer.py` | reads the stream via a consumer group |
+| `iasg/evidence/ingest.py` | parses the gateway's `SECURITY ALERT` blocks |
+| `iasg/correlation/` | **groups IPs into campaigns** — union-find over shared traits |
+| `iasg/campaigns/` | memory: campaigns persist, merge, and are reviewed for outcome |
+| `iasg/policy/` | the block/throttle ladder, and the rails around it |
+| `iasg/alerts.py` | escalation to a human, on its own stream |
+| `iasg/reasoning/` | LLM providers — offline template by default, Ollama opt-in |
+| `iasg/explanation/` | the admin-facing paragraph |
+| `iasg/assessment/` | the LLM's review of what the rules concluded |
+| `iasg/runner.py` | the loop |
+
+## Notes
 
 **Run commands as modules** (`python -m tools.seed_evidence`, not
 `python tools/seed_evidence.py`). Setuptools' editable install doesn't wire up
 `sys.path` correctly on Python 3.14, so `-m` — which puts the current directory on the
-path — is the dependable form.
+path — is the dependable form. `pytest` and `python -m iasg` work either way.
+
+**Postgres is not used.** Campaigns are stored in Redis with a TTL. The Compose stack runs
+a Postgres for the gateway, and `IASG_POSTGRES_URL` exists in config, but nothing here
+reads it yet.

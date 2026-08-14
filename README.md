@@ -113,7 +113,7 @@ demonstrable in a second:
 
 ```bash
 cd control-plane
-.venv/bin/python tools/seed_evidence.py --scenario credential-stuffing
+.venv/bin/python -m tools.seed_evidence --scenario credential-stuffing
 .venv/bin/python -m iasg --once
 
 redis-cli KEYS 'policy:*'
