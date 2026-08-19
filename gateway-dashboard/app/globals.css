@@ -448,6 +448,12 @@ tbody tr:hover td {
 
 /* --- control plane ------------------------------------------------------ */
 
+/* Both columns end where their content does. Without this the shorter card
+   stretches to match the taller one and trails a block of empty panel. */
+.plane {
+  align-items: start;
+}
+
 .campaign-list,
 .policy-list {
   list-style: none;
