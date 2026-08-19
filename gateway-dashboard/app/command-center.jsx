@@ -28,6 +28,25 @@ function riskTone(score) {
   return "low";
 }
 
+// The policy ladder, weakest to strongest. Colour tracks the rung so an
+// escalation is visible without reading the label.
+const ACTION_TONE = {
+  monitor: "low",
+  throttle: "mid",
+  temp_block: "high",
+  escalate: "high",
+};
+
+function actionLabel(action) {
+  return action ? action.replace(/_/g, " ") : "no action";
+}
+
+function formatTtl(seconds) {
+  if (seconds == null || seconds < 0) return "no expiry";
+  if (seconds < 60) return `${seconds}s left`;
+  return `${Math.round(seconds / 60)}m left`;
+}
+
 function formatTime(value) {
   if (!value) return "—";
   const date = new Date(value);
@@ -59,6 +78,15 @@ export default function CommandCenter() {
     sources: [],
     site: null,
   });
+  // What the control plane concluded, as opposed to what the gateway saw.
+  const [plane, setPlane] = useState({
+    redis: false,
+    campaigns: [],
+    policies: [],
+    alerts: [],
+    learned: [],
+    active: 0,
+  });
   const [alertsOnly, setAlertsOnly] = useState(false);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [theme, setTheme] = useState("dark");
@@ -81,10 +109,15 @@ export default function CommandCenter() {
     let cancelled = false;
     async function load() {
       try {
-        const res = await fetch("/api/overview", { cache: "no-store" });
-        const json = await res.json();
+        // Two independent reads: the gateway's telemetry and the agent's
+        // conclusions. Either can be empty without the other being wrong.
+        const [overview, control] = await Promise.all([
+          fetch("/api/overview", { cache: "no-store" }).then((r) => r.json()),
+          fetch("/api/campaigns", { cache: "no-store" }).then((r) => r.json()),
+        ]);
         if (!cancelled) {
-          setData(json);
+          setData(overview);
+          setPlane(control);
           setUpdatedAt(new Date());
         }
       } catch {
@@ -103,6 +136,10 @@ export default function CommandCenter() {
   const events = data.events || [];
   const sources = data.sources || [];
   const visibleEvents = alertsOnly ? events.filter((event) => event.fired?.length) : events;
+  const campaigns = plane.campaigns || [];
+  const policies = plane.policies || [];
+  const escalations = plane.alerts || [];
+  const learned = plane.learned || [];
   const allow = stats.decisions.allow || 0;
   const alertRate = stats.requests ? ((stats.alerts / stats.requests) * 100).toFixed(1) : "0.0";
   const uniqueIps = sources.length;
@@ -136,7 +173,9 @@ export default function CommandCenter() {
           <span className={`dot ${data.redis ? "on" : "off"}`} />
           {data.redis ? "Redis connected" : "Redis unavailable"}
           <span className="sep" />
-          Detect-only
+          {policies.length > 0
+            ? `${policies.length} policy ${policies.length === 1 ? "key" : "keys"} in force`
+            : "Detect-only"}
           <span className="sep" />
           {updatedAt ? `Refreshed ${updatedAt.toLocaleTimeString([], { hour12: false })}` : "Connecting"}
         </div>
@@ -202,6 +241,107 @@ export default function CommandCenter() {
         </div>
       </section>
 
+      <section className="workbench plane">
+        <article className="card">
+          <div className="card-head">
+            <h2>Campaigns</h2>
+            <span>
+              What the control plane correlated out of the events above. Rebuilt every 30s.
+            </span>
+          </div>
+          {campaigns.length === 0 ? (
+            <p className="empty">
+              No campaigns yet. Run the control plane, or seed evidence with{" "}
+              <code>python -m tools.seed_evidence --scenario credential-stuffing</code>.
+            </p>
+          ) : (
+            <ul className="campaign-list">
+              {campaigns.map((c) => (
+                <CampaignCard key={c.id} campaign={c} />
+              ))}
+            </ul>
+          )}
+        </article>
+
+        <div className="side">
+          <article className="card">
+            <div className="card-head">
+              <h2>Policy in force</h2>
+              <span>Live TTL from Redis</span>
+            </div>
+            {policies.length === 0 ? (
+              <p className="empty">No policy keys written.</p>
+            ) : (
+              <ul className="policy-list">
+                {policies.map((p) => (
+                  <li key={p.ip}>
+                    <div className="policy-top">
+                      <code>{p.ip}</code>
+                      <span className={`risk ${ACTION_TONE[p.action] || "low"}`}>
+                        {actionLabel(p.action)}
+                      </span>
+                    </div>
+                    <small>
+                      {formatTtl(p.expiresIn)}
+                      {p.campaignId && p.campaignId !== "manual"
+                        ? ` · campaign #${p.campaignId}`
+                        : ""}
+                      {p.source === "human" ? " · set by a human" : ""}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </article>
+
+          {escalations.length > 0 ? (
+            <article className="card">
+              <div className="card-head">
+                <h2>Escalated</h2>
+                <span>Raised once per campaign</span>
+              </div>
+              <ul className="policy-list">
+                {escalations.map((a) => (
+                  <li key={a.id}>
+                    <div className="policy-top">
+                      <code>#{a.campaignId}</code>
+                      <span className="risk high">{a.ipCount} IPs</span>
+                    </div>
+                    <small>
+                      {a.type} · confidence {a.confidence.toFixed(2)}
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ) : null}
+
+          {learned.length > 0 ? (
+            <article className="card">
+              <div className="card-head">
+                <h2>Learned from humans</h2>
+                <span>Shifts the recommendation one rung, never more</span>
+              </div>
+              <ul className="policy-list">
+                {learned.map((row) => (
+                  <li key={row.type}>
+                    <div className="policy-top">
+                      <span className="grow">{row.type}</span>
+                      <span className={`risk ${row.net > 0 ? "high" : "low"}`}>
+                        {row.net > 0 ? "stronger" : "weaker"}
+                      </span>
+                    </div>
+                    <small>
+                      +{row.up} / -{row.down} corrections
+                    </small>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          ) : null}
+        </div>
+      </section>
+
       <article className="card table-card">
         <div className="card-head">
           <h2>Event stream</h2>
@@ -258,6 +398,77 @@ export default function CommandCenter() {
         </div>
       </article>
     </div>
+  );
+}
+
+function CampaignCard({ campaign }) {
+  const c = campaign;
+  return (
+    <li className={c.status === "contained" ? "campaign contained" : "campaign"}>
+      <div className="campaign-head">
+        <strong>
+          #{c.id} {c.type}
+        </strong>
+        <span className={`risk ${ACTION_TONE[c.lastAction] || "low"}`}>
+          {actionLabel(c.lastAction)}
+        </span>
+      </div>
+
+      <div className="campaign-facts">
+        <span>
+          {c.ips.length} {c.ips.length === 1 ? "IP" : "IPs"}
+        </span>
+        <span>confidence {c.confidence.toFixed(2)}</span>
+        <span>{c.severity}</span>
+        <span>{c.events} events</span>
+        <span className={c.status === "contained" ? "tag good" : "tag"}>{c.status}</span>
+      </div>
+
+      <p className="campaign-reason">{c.reason}</p>
+
+      {c.stages.length > 1 ? (
+        <p className="campaign-note">
+          <b>Stages</b> {c.stages.join(" → ")} — {c.stages.length} phases of one
+          intrusion, not {c.stages.length} separate attacks
+        </p>
+      ) : null}
+
+      {c.rotations > 0 ? (
+        <p className="campaign-note">
+          <b>Continuity</b> re-identified by behaviour through {c.rotations} address{" "}
+          {c.rotations === 1 ? "change" : "changes"}
+        </p>
+      ) : null}
+
+      {c.persistence > 0 ? (
+        <p className="campaign-note">
+          <b>Adapted</b> survived {c.persistence} enforcement{" "}
+          {c.persistence === 1 ? "round" : "rounds"} — answered with{" "}
+          {actionLabel(c.lastAction)}
+        </p>
+      ) : null}
+
+      {c.outcome ? (
+        <p className="campaign-note">
+          <b>Outcome</b> {c.outcome}
+        </p>
+      ) : null}
+
+      {c.explanation ? <p className="campaign-explain">{c.explanation}</p> : null}
+
+      {c.assessment ? (
+        <p className="campaign-note assess">
+          <b>Assessment</b> {c.assessment}
+        </p>
+      ) : null}
+
+      <div className="campaign-ips">
+        {c.ips.slice(0, 8).map((ip) => (
+          <code key={ip}>{ip}</code>
+        ))}
+        {c.ips.length > 8 ? <small>+{c.ips.length - 8} more</small> : null}
+      </div>
+    </li>
   );
 }
 
