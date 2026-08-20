@@ -142,12 +142,18 @@ func (s *Server) Start() error {
 
 	enforcer := s.newEnforcer()
 
-	// Telemetry is outermost so it records after every detector, including
-	// brute force which inspects the backend response status, and after
-	// policy so a 403 is still written to iasg:events.
+	// The resolver runs first so the trusted-proxy X-Forwarded-For IP is on the
+	// request context before anything else reads it. Telemetry sits just inside
+	// it -- still outside every detector, so it records after they run and after
+	// policy (a 403 is written to iasg:events too), but now it reads the same
+	// resolved client IP the detectors keyed their state under. When telemetry
+	// wrapped the resolver instead, it held the pre-resolution request and
+	// logged the peer address, then looked up detector state under that wrong
+	// IP -- so every event behind a proxy recorded fired:[] and the control
+	// plane never saw an attack.
 	handler := ChainMiddleware(
-		telemetry.Middleware(eventWriter, s.collector),
 		resolver.Middleware,
+		telemetry.Middleware(eventWriter, s.collector),
 		LoggingMiddleware,
 		enforcer.Middleware,
 		RequestInspectionMiddleware,
