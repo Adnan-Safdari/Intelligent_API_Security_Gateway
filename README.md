@@ -40,12 +40,14 @@ independence is the point of the split.
 
 | Path | What it is |
 |---|---|
-| `gateway/` | Go reverse proxy, detectors, policy enforcement |
-| `control-plane/` | Python agent — correlation, policy, narration |
-| `vulnerable-app/` | Deliberately insecure API to attack |
-| `gateway-dashboard/` | Next.js operations console |
-| `infra/` | Docker Compose for everything |
-| `testing/` | Load and attack scripts |
+| [`gateway/`](gateway/README.md) | Go reverse proxy, detectors, policy enforcement |
+| [`control-plane/`](control-plane/README.md) | Python agent — correlation, policy, narration |
+| [`vulnerable-app/`](vulnerable-app/README.md) | Deliberately insecure API to attack |
+| [`gateway-dashboard/`](gateway-dashboard/README.md) | Next.js operations console |
+| [`infra/`](infra/README.md) | Docker Compose for everything |
+| [`testing/`](testing/README.md) | Load and attack scripts |
+
+Each has its own README covering how to run it, what it talks to, and what it does not do.
 
 ## Prerequisites
 
@@ -257,7 +259,10 @@ Postgres was on this list until campaigns and feedback were moved into it. See
 - [Request lifecycle](gateway/docs/request-lifecycle.md)
 - [System architecture](gateway/docs/system-architecture.md)
 - [Project structure](gateway/docs/project-structure.md)
-- [Control plane README](control-plane/README.md) and [guide](control-plane/GUIDE.md)
+- [Control plane README](control-plane/README.md), [guide](control-plane/GUIDE.md) and
+  [every algorithm it runs](control-plane/ALGORITHMS.md)
+- [Gateway README](gateway/README.md), [dashboard README](gateway-dashboard/README.md),
+  [infra README](infra/README.md), [testing README](testing/README.md)
 - [Demo walkthrough](DEMO.md)
 
 ## Stopping
