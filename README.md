@@ -52,8 +52,8 @@ Each has its own README covering how to run it, what it talks to, and what it do
 ## Prerequisites
 
 - Docker and Docker Compose
-- Go 1.22.2+ and Python 3.11+ for local development
-- Redis (via Compose, or `brew install redis`)
+- Go 1.22.2+, Python 3.11+ and Node.js 18+ for local development
+- Redis and Postgres (via Compose, or `brew install redis postgresql@18`)
 
 ## Quick start
 
@@ -73,38 +73,69 @@ Ports:
 | Vulnerable web | http://localhost:5175 |
 | Dashboard | http://localhost:5177 |
 | Docs | http://localhost:8000 |
+| Postgres | localhost:5434 |
 | Redis | localhost:6379 |
 
-### Gateway only
+Then open the dashboard at http://localhost:5177 and create the first administrator — see
+[Signing in](#signing-in).
+
+## Run locally, piece by piece
+
+Redis and Postgres first (Compose, or your own local services):
+
+```bash
+docker compose -f infra/docker-compose.yml up -d redis postgres
+```
+
+Bring the rest up in this order. Each runs in its own terminal.
+
+**1. Vulnerable API** — the target (`memory` mode needs no database):
+
+```bash
+cd vulnerable-app/backend
+npm install
+PORT=5002 AUTH_MODE=memory npm start
+```
+
+**2. Gateway** — the data plane, proxying to the target:
 
 ```bash
 cd gateway
-cp configs/config.yaml.example configs/config.yaml
+cp configs/config.yaml.example configs/config.yaml   # first time only
 go mod download
 go run ./cmd/server
 ```
 
-### Control plane only
-
-Needs Redis running; nothing else.
+**3. Control plane** — the agent. Needs Redis; Postgres is optional but recommended:
 
 ```bash
 cd control-plane
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+.venv/bin/python -m pip install -e ".[dev,postgres]"
 
-.venv/bin/python -m iasg --once     # one cycle
-.venv/bin/python -m iasg            # every 30s
+export IASG_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg
+
+.venv/bin/python -m iasg --once     # one cycle, then exit
+.venv/bin/python -m iasg            # run forever (every 30s)
 .venv/bin/python -m iasg --dry-run  # decide everything, write nothing
 ```
 
-Every setting has a working default, so that runs with no configuration at all.
-`control-plane/.env.example` documents the `IASG_*` variables and what they do — they are
-read from the environment, so export the ones you want to change rather than copying the
-file:
+Every setting has a working default. `control-plane/.env.example` documents the `IASG_*`
+variables; export the ones you want to change rather than copying the file:
 
 ```bash
-IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg --once
+IASG_INTERVAL_SECONDS=15 IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg
+```
+
+**4. Dashboard** — the operations console. Needs Redis and Postgres:
+
+```bash
+cd gateway-dashboard
+npm install
+export IASG_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg
+REDIS_HOST=127.0.0.1 npm run dev            # development
+# or a production build:
+REDIS_HOST=127.0.0.1 npm run build && REDIS_HOST=127.0.0.1 npm start
 ```
 
 ## See it work without an attacker
@@ -123,6 +154,61 @@ redis-cli GET policy:203.0.113.5
 
 Scenarios: `credential-stuffing`, `brute-force`, `flood`, `enumeration`, `path-traversal`,
 `recon`, `sqli`, `mixed`, and `noise` — which must *not* form a campaign.
+
+## See a real attack, end to end
+
+The seeder skips the gateway. To watch the whole chain — detect → correlate → decide →
+enforce — send real traffic instead.
+
+Two config changes turn the gateway from observe-only into enforcing. Both are deliberate
+choices, off by default, in `gateway/configs/config.yaml`:
+
+```yaml
+server:
+  trusted_proxies:        # believe X-Forwarded-For from these, so a local
+    - 127.0.0.1/32        # test can present a public client IP
+    - ::1/128
+enforcement:
+  policy:
+    enabled: true         # actually act on policy:<ip>, not just observe
+```
+
+Restart the gateway, then attack it — the `X-Forwarded-For` gives the request a public
+source address the control plane will act on (loopback and private ranges are never
+written policy for):
+
+```bash
+# 40 failed logins from one "attacker"
+for i in $(seq 1 40); do
+  curl -s -o /dev/null -X POST http://localhost:8082/api/login \
+    -H 'Content-Type: application/json' \
+    -H 'X-Forwarded-For: 203.0.113.60' \
+    -H 'User-Agent: Hydra/9.5' \
+    -d "{\"username\":\"admin\",\"password\":\"guess-$i\"}"
+done
+```
+
+Within one control-plane cycle a campaign forms and a policy is written. Watch it happen:
+
+```bash
+redis-cli GET policy:203.0.113.60      # the agent's decision, with a TTL
+redis-cli GET iasg:heartbeat           # last cycle: evidence read, campaigns, policies
+
+# the attacker is now enforced, a clean address is not
+curl -s -o /dev/null -w "attacker %{http_code}\n" \
+  -X POST http://localhost:8082/api/login -H 'X-Forwarded-For: 203.0.113.60' \
+  -H 'Content-Type: application/json' -d '{"username":"a","password":"b"}'
+curl -s -o /dev/null -w "clean    %{http_code}\n" \
+  -X POST http://localhost:8082/api/login -H 'X-Forwarded-For: 198.51.100.9' \
+  -H 'Content-Type: application/json' -d '{"username":"a","password":"b"}'
+```
+
+The scripts in [`testing/`](testing/README.md) drive every detector this way, not just
+brute force:
+
+```bash
+bash testing/signals/run_all.sh
+```
 
 ## What each side does
 
@@ -226,12 +312,29 @@ Details worth knowing:
 - The last enabled admin cannot be deleted, demoted or disabled.
 - Overrides record the actor from the session, never from the request body.
 
+### Starting over
+
+Accounts live in Postgres, not in git, so a fresh database already starts at `/setup`. To
+clear the accounts in an existing database — handing the project to someone else, or
+resetting after a demo — run:
+
+```bash
+cd gateway-dashboard
+IASG_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg npm run reset-accounts
+```
+
+It wipes only `users` and `sessions`; campaigns, feedback and policy are untouched. The
+next visit to the console goes to `/setup`.
+
 ## Testing
 
 ```bash
 cd gateway && go test ./...
 cd control-plane && .venv/bin/python -m pytest
 ```
+
+Use `.venv/bin/python -m pytest` (not `.venv/bin/pytest`) — the module form does not depend
+on the shebang, which can break if the virtualenv was created under a different path.
 
 The Postgres tests are skipped unless you point them at a database they may write to —
 they truncate tables, so never aim this at anything that matters:
