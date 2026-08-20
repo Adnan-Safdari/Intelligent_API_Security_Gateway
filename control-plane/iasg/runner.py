@@ -29,6 +29,7 @@ from iasg.policy.writer import PolicyWriter
 from iasg.reasoning import open_provider
 from iasg.store import open_store
 from iasg.store.base import Store
+from iasg.store.postgres import open_database
 
 
 @dataclass
@@ -72,13 +73,29 @@ class Runner:
         self.store = store or open_store(settings)
 
         provider = open_provider(settings)
+        # Optional and non-fatal: without it campaigns stay in Redis under a
+        # TTL, which is the behaviour every test and the default deployment use.
+        self.database = open_database(settings)
+
         self.consumer = EvidenceConsumer(self.store, settings)
         self.correlation = CorrelationAgent()
-        self.campaigns = CampaignRepository(self.store)
+        self.campaigns = CampaignRepository(
+            self.store,
+            persistence=self.database.campaigns if self.database else None,
+        )
         self.policy = PolicyAgent()
         self.simulator = Simulator(self.store, settings)
         self.overrides = OverrideChannel(self.store, settings)
-        self.feedback = FeedbackMemory(self.store, settings)
+        self.feedback = FeedbackMemory(
+            self.store,
+            settings,
+            persistence=self.database.feedback if self.database else None,
+        )
+        if self.database:
+            restored = self.campaigns.warm() + self.feedback.warm()
+            if restored:
+                print(f"[postgres] restored {restored} records into Redis")
+
         self.writer = PolicyWriter(self.store, settings)
         self.explanation = ExplanationAgent(provider)
         self.assessment = AssessmentAgent(provider)
