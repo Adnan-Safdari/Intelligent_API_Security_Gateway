@@ -39,12 +39,27 @@ CONTINUATION_WINDOW = timedelta(hours=2)
 
 
 class CampaignRepository:
-    def __init__(self, store: Store, prefix: str = "campaign:") -> None:
+    def __init__(
+        self,
+        store: Store,
+        prefix: str = "campaign:",
+        persistence=None,
+    ) -> None:
+        """
+        `persistence` is an optional durable backend -- see store/postgres.py.
+        Given one, campaigns live there and survive a restart. Given None, they
+        stay in the key-value store under a 24-hour TTL, which is what every
+        test and every Redis-only deployment uses.
+        """
         self._store = store
         self._prefix = prefix
         self._counter_key = f"{prefix}next_id"
+        self._db = persistence
 
     def all(self) -> list[Campaign]:
+        if self._db:
+            return self._db.all()
+
         campaigns = []
         for key in self._store.keys(f"{self._prefix}*"):
             if key == self._counter_key:
@@ -55,6 +70,10 @@ class CampaignRepository:
         return campaigns
 
     def save(self, campaign: Campaign, ttl_seconds: int = 86_400) -> None:
+        if self._db:
+            self._db.save(campaign, ttl_seconds)
+            return
+
         self._store.set(
             f"{self._prefix}{campaign.campaign_id}",
             _to_json(campaign),
@@ -158,6 +177,9 @@ class CampaignRepository:
         return changed
 
     def _next_id(self) -> str:
+        if self._db:
+            return self._db.next_id()
+
         current = self._store.get(self._counter_key)
         nxt = int(current) + 1 if current else 1
         # No TTL: the counter must outlive the campaigns it numbers.

@@ -151,11 +151,56 @@ decision is made and written, so a hallucinated or prompt-injected note can misl
 reader but cannot change enforcement. It is optional — the default provider is an offline
 template.
 
+## Durable memory
+
+Without Postgres, campaigns live in Redis under a 24-hour TTL, so restarting the machine
+loses every investigation in progress. With it, they survive:
+
+```bash
+cd control-plane
+.venv/bin/python -m pip install -e ".[postgres]"
+
+export IASG_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg
+.venv/bin/python -m iasg --once      # prints: [postgres] campaigns and feedback are durable
+```
+
+Compose already passes this, so `docker compose up` needs no extra step.
+
+What moves and what does not:
+
+| | Where | Why |
+|---|---|---|
+| Campaigns, feedback tallies | Postgres | The agent's memory. Losing it restarts the investigation |
+| `policy:<ip>` | Redis | The gateway reads it on the hot path, and it is *meant* to expire |
+| Evidence, alerts, overrides | Redis streams | Transport. Once correlated, it is done |
+
+Campaigns are never deleted, but only the last 24 hours are offered to the correlator, so
+switching stores does not change which campaigns a cycle can merge into. The rest is
+history you can query:
+
+```sql
+SELECT type, count(*), round(avg(confidence)::numeric, 2) AS avg_confidence
+  FROM campaigns GROUP BY type ORDER BY count DESC;
+```
+
+Everything degrades: no driver, no database, or a database that is down means the agent
+says so once and carries on with Redis.
+
 ## Testing
 
 ```bash
 cd gateway && go test ./...
-cd control-plane && .venv/bin/pytest
+cd control-plane && .venv/bin/python -m pytest
+```
+
+The Postgres tests are skipped unless you point them at a database they may write to —
+they truncate tables, so never aim this at anything that matters:
+
+```bash
+createdb iasg_test    # once -- the tests truncate, so never the live database
+
+IASG_TEST_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg_test \
+    .venv/bin/python -m pytest tests/test_postgres.py
 ```
 
 ## Not built yet
@@ -164,8 +209,8 @@ Honest about the gaps, since the config file implies more than exists:
 
 - **Trust engine** — `trust_engine` in `gateway/configs/config.yaml` is parsed but not
   used. Nothing scores requests by trust today; the detectors and the control plane decide.
-- **Postgres** — configured and running in Compose, but the control plane persists
-  campaigns in Redis. Not yet wired up.
+Postgres was on this list until campaigns and feedback were moved into it. See
+**Durable memory** above.
 
 ## Documentation
 

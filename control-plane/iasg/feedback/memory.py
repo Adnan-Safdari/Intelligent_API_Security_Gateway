@@ -30,9 +30,11 @@ from iasg.store.base import Store
 
 
 class FeedbackMemory:
-    def __init__(self, store: Store, settings: Settings) -> None:
+    def __init__(self, store: Store, settings: Settings, persistence=None) -> None:
+        """`persistence` is the optional durable backend -- see store/postgres.py."""
         self._store = store
         self._settings = settings
+        self._db = persistence
 
     def record(self, campaign_type: str, agent_action: str, human_action: str) -> None:
         """Note that a human moved this kind of campaign up or down."""
@@ -40,8 +42,14 @@ class FeedbackMemory:
         if not direction or not campaign_type:
             return
 
-        tally = self._tally(campaign_type)
         key = "up" if direction > 0 else "down"
+        if self._db:
+            # Incremented in the database rather than read-modify-written here,
+            # so two agents correcting the same type cannot lose a correction.
+            self._db.bump(campaign_type, key)
+            return
+
+        tally = self._tally(campaign_type)
         tally[key] = tally.get(key, 0) + 1
         # No TTL: this is the agent's experience, not a cached value.
         self._store.set(self._key(campaign_type), json.dumps(tally))
@@ -74,6 +82,9 @@ class FeedbackMemory:
 
     def all(self) -> dict[str, dict]:
         """Everything learned, for reporting."""
+        if self._db:
+            return self._db.all()
+
         learned = {}
         for key in self._store.keys(f"{self._settings.feedback_prefix}*"):
             raw = self._store.get(key)
@@ -82,6 +93,9 @@ class FeedbackMemory:
         return learned
 
     def _tally(self, campaign_type: str) -> dict:
+        if self._db:
+            return self._db.tally(campaign_type)
+
         raw = self._store.get(self._key(campaign_type))
         if not raw:
             return {}
