@@ -48,6 +48,20 @@ Roles are checked in the route handlers on every write. The hidden button is pre
 the check on the server is the authorisation. See the root
 [README](../README.md#signing-in) for the hashing, session and lockout details.
 
+### Starting over
+
+Accounts live in Postgres, not in git, so a fresh database already starts at `/setup`.
+To clear the accounts in an existing database — handing the project to someone else, or
+resetting after a demo — run:
+
+```bash
+cd gateway-dashboard
+IASG_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg npm run reset-accounts
+```
+
+It wipes only `users` and `sessions`; campaigns, feedback and policy are untouched. The
+next visit to the console goes to `/setup` to create a new administrator.
+
 ## Writing is instructing, not enforcing
 
 Nothing here writes a policy key. Every action appends to `iasg_overrides`, and the

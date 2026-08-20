@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 5177",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 5177"
+    "start": "next start -H 0.0.0.0 -p 5177",
+    "reset-accounts": "node scripts/reset-accounts.mjs"
   },
   "dependencies": {
     "leaflet": "^1.9.4",
