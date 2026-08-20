@@ -5,7 +5,7 @@ Every algorithm and decision rule in the control plane, in the order the agent r
 The loop is `observe → correlate → remember → decide → explain`, once every 30 seconds
 ([`iasg/runner.py`](iasg/runner.py)). Nothing here touches a live request.
 
-**33 algorithms across 6 stages.** The four that carry the design: **Union-Find** (#8),
+**36 algorithms across 7 stages.** The four that carry the design: **Union-Find** (#8),
 **Jaccard similarity** (#15), **behavioural signature matching** (#16), and the
 **escalation ladder** (#21).
 
@@ -168,6 +168,23 @@ policy agent: not "is this malicious?" but **"is this response safe?"**
 | 32 | Alert deduplication | One alert per campaign, not per cycle — re-alerting every 30s trains the reader to ignore it | [`alerts.py:34`](iasg/alerts.py#L34) |
 | 33 | Degrade-to-template LLM chain | Any provider failure returns `""` → falls back to the template; whitespace-stripped before the truthiness test so a blank note never reaches the dashboard | [`explanation/agent.py:38`](iasg/explanation/agent.py#L38) |
 
+### Stage 7 — Durability
+
+Campaigns and feedback are the agent's memory. Losing them turns an agent continuing an
+investigation back into a script starting over, so they outlive the process. Policy keys
+deliberately do **not** live here — the gateway reads them on the hot path, and they are
+*meant* to expire.
+
+| # | Algorithm | What it does | Source |
+|---|---|---|---|
+| 34 | Normalized durable record | Campaigns and feedback in real Postgres tables rather than a JSON blob, so the attack history is queryable in SQL | [`store/postgres.py`](iasg/store/postgres.py) |
+| 35 | Read-path projection | The same records mirrored into Redis, because the dashboard reads Redis exactly as the gateway does. Postgres is the record; the mirror may expire | [`campaigns/repository.py`](iasg/campaigns/repository.py) |
+| 36 | Startup warm | Rebuilds the projection from Postgres on boot, so an empty Redis costs a cycle rather than an investigation | [`campaigns/repository.py`](iasg/campaigns/repository.py) |
+
+Bounded on purpose: only the last 24 hours are offered to the correlator, matching what
+the old Redis TTL bounded, so durability changed what survives a restart and not which
+campaigns a cycle can merge into. Rows are never deleted.
+
 ---
 
 ## Why no LLM makes the decisions
@@ -205,14 +222,17 @@ grouping looks plausible). Neither result is ever read back by anything that dec
 | Systems architecture | 8.5/10 | Polyglot, data/control plane split, consumer groups, cached policy reads, graceful degradation throughout |
 | Security reasoning | 9/10 | Shared-address protection, anti-evasion carve-out, monotonic ratchet, unlearnable safety rails, LLM outside the trust boundary |
 | Statefulness | 8/10 | Campaign memory, IP-rotation survival, outcome review, persistence-driven escalation |
-| Scale engineering | 4/10 | O(n²) pairwise per cycle, single consumer, Redis-only persistence |
+| Scale engineering | 5/10 | O(n²) pairwise per cycle and a single consumer, though campaign memory is now durable and indexed rather than TTL'd in Redis |
 
 **Overall ≈ 7.5/10.** The difficulty is in the composition and the threat modelling, not
 in any single algorithm.
 
-**Known gaps** (own them before they are found): `trust_engine` is parsed in
-`gateway/configs/config.yaml` but unimplemented; Postgres runs in Compose but campaigns
-are persisted in Redis with a 24-hour TTL.
+**Known gap** (own it before it is found): `trust_engine` is parsed in
+`gateway/configs/config.yaml` but unimplemented. Nothing scores requests by trust today.
+
+Postgres was the other gap on this list until campaigns and feedback moved into it — see
+**Stage 7** above. It stays optional: no driver, no database, or a database that is down
+all degrade to the previous Redis-only behaviour with one line of warning.
 
 ---
 
