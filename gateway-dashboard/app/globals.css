@@ -58,8 +58,7 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 8px 0 12px;
-  border-bottom: 1px solid var(--line);
+  padding: 8px 0 10px;
 }
 
 .brand {
@@ -109,6 +108,328 @@ body {
   font-size: 12px;
 }
 
+/* --- navigation --------------------------------------------------------- */
+
+.nav {
+  display: flex;
+  gap: 2px;
+  margin-left: 18px;
+}
+
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 12.5px;
+}
+
+.nav-link:hover {
+  color: var(--text);
+  background: var(--row-hover);
+}
+
+.nav-link.active {
+  color: var(--text);
+  background: var(--bg-elev);
+  border-color: var(--line);
+}
+
+/* A count on the tab, so you can see there is something to look at without
+   opening the page. */
+.nav-link em {
+  padding: 0 5px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  font-style: normal;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.top-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
+/* The status line moved out of the header when navigation moved in: it is
+   about the system, not about where you are in the console. */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.page-head {
+  margin: 14px 0 10px;
+}
+
+.page-head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.page-head p {
+  margin: 4px 0 0;
+  max-width: 78ch;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.page-foot {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+/* --- toolbars and controls ---------------------------------------------- */
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.segmented button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.segmented button:last-child { border-right: 0; }
+.segmented button:hover { color: var(--text); }
+
+.segmented button.on {
+  background: var(--bg-head);
+  color: var(--text);
+}
+
+.segmented em {
+  font-style: normal;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.field,
+.check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.field.block {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.field select,
+.field input,
+.form input {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.field select:focus,
+.form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.search.wide {
+  flex: 1;
+  min-width: 220px;
+  width: auto;
+}
+
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.chip:hover { border-color: var(--accent); }
+
+.chip em {
+  font-style: normal;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- forms -------------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.act.primary {
+  padding: 6px 10px;
+  border-color: var(--accent);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.act.primary:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.form-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* --- campaigns page ----------------------------------------------------- */
+
+.campaign-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
+  gap: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card.selected {
+  border-color: var(--accent);
+}
+
+.select-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-head);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.campaign-grid .campaign-list { padding-top: 0; }
+.campaign-grid .campaign { border-bottom: 0; }
+
+.ip-chip {
+  padding: 1px 4px;
+  background: var(--bg-head);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.ip-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* --- tables ------------------------------------------------------------- */
+
+th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+th.sortable:hover { color: var(--text); }
+
+.caret {
+  margin-left: 4px;
+  font-size: 8px;
+}
+
+tr.dim td { opacity: 0.6; }
+
+.metrics.narrow {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.metric.linked {
+  display: block;
+  padding: 10px 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.metric.linked:hover { border-color: var(--accent); }
+
+a { color: var(--accent); }
+.card-head a { font-size: 11px; }
+
 .sep {
   width: 1px;
   height: 12px;
@@ -154,6 +475,9 @@ body {
 
 .workbench {
   grid-template-columns: minmax(0, 1.75fr) minmax(260px, 0.9fr);
+  /* Each column ends where its content does, rather than the shorter card
+     stretching to match the taller one and trailing an empty panel. */
+  align-items: start;
 }
 
 .metric,
@@ -448,12 +772,6 @@ tbody tr:hover td {
 
 /* --- control plane ------------------------------------------------------ */
 
-/* Both columns end where their content does. Without this the shorter card
-   stretches to match the taller one and trails a block of empty panel. */
-.plane {
-  align-items: start;
-}
-
 .campaign-list,
 .policy-list {
   list-style: none;
@@ -597,13 +915,155 @@ tbody tr:hover td {
   font-size: 11px;
 }
 
+/* --- operator controls -------------------------------------------------- */
+
+/* A cycle that is overdue but not yet expired: still alive, worth noticing. */
+.dot.late {
+  background: var(--warn);
+}
+
+.theme-btn.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 3px;
+  background: var(--bg-elev);
+  font-size: 12px;
+}
+
+.toast.good { border-left-color: var(--good); }
+.toast.bad  { border-left-color: var(--bad); }
+
+.toast button {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.campaign-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+.campaign-actions span {
+  margin-right: 2px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.act {
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg-head);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.act:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* What the agent already chose. Shown rather than hidden, so the buttons read
+   as "instead of this" rather than as an unexplained gap. */
+.act.current {
+  border-style: dashed;
+  color: var(--muted);
+}
+
+.act.small {
+  padding: 1px 6px;
+  font-size: 10px;
+}
+
+.head-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.search {
+  width: 190px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.count {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
 @media (max-width: 980px) {
   .metrics,
   .workbench {
     grid-template-columns: 1fr;
   }
 
+  .head-controls {
+    flex-wrap: wrap;
+  }
+
+  .search {
+    width: 100%;
+  }
+
   .top {
+    flex-wrap: wrap;
+  }
+
+  .nav {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    overflow-x: auto;
+  }
+
+  .top-actions {
+    margin-left: auto;
+  }
+
+  .campaign-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .statusbar {
     flex-wrap: wrap;
   }
 
@@ -614,4 +1074,118 @@ tbody tr:hover td {
   .map-internal {
     display: none;
   }
+}
+
+/* --- sign in, first run, and the account chip ---------------------------- */
+
+.gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 380px;
+  padding: 22px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+}
+
+.gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.gate-brand strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.gate-brand small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gate-card h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.gate-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gate-card input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.gate-card input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.gate-card .act.primary {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+/* One message for every failure, so it never tells an attacker which half of
+   the credentials was right. */
+.gate-error {
+  padding: 7px 9px;
+  border-left: 3px solid var(--bad);
+  background: var(--row-alert);
+  color: var(--text) !important;
+  font-size: 12px;
+}
+
+.whoami {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.whoami em {
+  font-style: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+td select {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
 }

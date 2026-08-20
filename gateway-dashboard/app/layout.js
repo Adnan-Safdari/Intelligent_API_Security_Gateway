@@ -16,6 +16,8 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
+      {/* Login and setup live outside the console shell: they have no session
+          to poll with, and no navigation to offer. */}
       <body>{children}</body>
     </html>
   );

@@ -106,11 +106,15 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Live panels read Redis; the campaign history reads the record.
+      IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
     command: sh -c "npm ci && npm run dev"
     ports:
       - "5177:5177"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
       gateway:
         condition: service_started
