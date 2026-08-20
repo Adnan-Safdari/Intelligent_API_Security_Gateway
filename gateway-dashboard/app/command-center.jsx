@@ -85,9 +85,21 @@ export default function CommandCenter() {
     policies: [],
     alerts: [],
     learned: [],
+    heartbeat: { alive: false },
     active: 0,
   });
+  // The record rather than the working set, so it needs its own slower poll.
+  const [history, setHistory] = useState({
+    available: false,
+    campaigns: [],
+    byType: [],
+    total: 0,
+  });
   const [alertsOnly, setAlertsOnly] = useState(false);
+  const [query, setQuery] = useState("");
+  const [paused, setPaused] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [toast, setToast] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
   const [theme, setTheme] = useState("dark");
 
@@ -125,24 +137,107 @@ export default function CommandCenter() {
       }
     }
     load();
-    const id = setInterval(load, 2500);
+    // Paused still loads once, so un-pausing is not the only way to refresh.
+    const id = paused ? null : setInterval(load, 2500);
+    return () => {
+      cancelled = true;
+      if (id) clearInterval(id);
+    };
+  }, [paused]);
+
+  // History is the durable record, not the live view. Thirty seconds is
+  // generous for something that only changes when a campaign does.
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHistory() {
+      try {
+        const res = await fetch("/api/history", { cache: "no-store" });
+        const json = await res.json();
+        if (!cancelled) setHistory(json);
+      } catch {
+        /* the panel says it is unavailable on its own */
+      }
+    }
+    loadHistory();
+    const id = setInterval(loadHistory, 30_000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
   }, []);
 
+  async function instruct(ips, action, label) {
+    const targets = [...new Set(ips)].filter(Boolean);
+    if (!targets.length) return;
+
+    setBusy(`${label}:${action}`);
+    try {
+      const results = await Promise.all(
+        targets.map((ip) =>
+          fetch("/api/overrides", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ip,
+              action,
+              actor: "dashboard",
+              reason: `${actionLabel(action)} set from the console`,
+            }),
+          }).then((r) => r.json()),
+        ),
+      );
+
+      const failed = results.filter((r) => !r.ok);
+      setToast(
+        failed.length
+          ? {
+              tone: "bad",
+              text: `${failed.length} of ${targets.length} rejected: ${failed[0].error}`,
+            }
+          : {
+              tone: "good",
+              // Deliberately not "blocked": the agent applies this on its next
+              // cycle, after the same safety checks its own decisions face.
+              text: `${actionLabel(action)} queued for ${targets.length} ${
+                targets.length === 1 ? "address" : "addresses"
+              } — applies next cycle`,
+            },
+      );
+    } catch (err) {
+      setToast({ tone: "bad", text: `could not reach the gateway: ${err.message}` });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    const id = setTimeout(() => setToast(null), 6000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
   const stats = data.stats || { requests: 0, alerts: 0, decisions: {}, signals: {} };
   const events = data.events || [];
   const sources = data.sources || [];
-  const visibleEvents = alertsOnly ? events.filter((event) => event.fired?.length) : events;
   const campaigns = plane.campaigns || [];
   const policies = plane.policies || [];
   const escalations = plane.alerts || [];
   const learned = plane.learned || [];
-  const allow = stats.decisions.allow || 0;
+  const beat = plane.heartbeat || { alive: false };
   const alertRate = stats.requests ? ((stats.alerts / stats.requests) * 100).toFixed(1) : "0.0";
   const uniqueIps = sources.length;
+
+  const needle = query.trim().toLowerCase();
+  const visibleEvents = events.filter((event) => {
+    if (alertsOnly && !event.fired?.length) return false;
+    if (!needle) return true;
+    return (
+      event.ip?.toLowerCase().includes(needle) ||
+      event.path?.toLowerCase().includes(needle) ||
+      event.userAgent?.toLowerCase().includes(needle) ||
+      (event.fired || []).some((f) => signalMeta(f).label.toLowerCase().includes(needle))
+    );
+  });
   const histogram = useMemo(() => requestHistogram(events), [events]);
   const histMax = Math.max(1, ...histogram);
 
@@ -173,21 +268,62 @@ export default function CommandCenter() {
           <span className={`dot ${data.redis ? "on" : "off"}`} />
           {data.redis ? "Redis connected" : "Redis unavailable"}
           <span className="sep" />
+          {/* Liveness, not activity. A quiet network and a dead agent look
+              identical without this, and they mean opposite things. */}
+          <span className={`dot ${beat.alive ? (beat.late ? "late" : "on") : "off"}`} />
+          {beat.alive
+            ? beat.late
+              ? `Agent late — ${beat.secondsAgo}s since last cycle`
+              : `Agent live — cycled ${beat.secondsAgo}s ago`
+            : "Agent not running"}
+          {beat.alive && beat.dryRun ? " (dry run)" : ""}
+          <span className="sep" />
           {policies.length > 0
             ? `${policies.length} policy ${policies.length === 1 ? "key" : "keys"} in force`
             : "Detect-only"}
           <span className="sep" />
           {updatedAt ? `Refreshed ${updatedAt.toLocaleTimeString([], { hour12: false })}` : "Connecting"}
         </div>
+        <button
+          type="button"
+          className={paused ? "theme-btn on" : "theme-btn"}
+          onClick={() => setPaused((p) => !p)}
+          title="Stop the 2.5s refresh while you read"
+        >
+          {paused ? "Resume" : "Pause"}
+        </button>
         <button type="button" className="theme-btn" onClick={toggleTheme}>
           {theme === "dark" ? "Light theme" : "Dark theme"}
         </button>
       </header>
 
+      {toast ? (
+        <div className={`toast ${toast.tone}`} role="status">
+          {toast.text}
+          <button type="button" onClick={() => setToast(null)} aria-label="Dismiss">
+            ×
+          </button>
+        </div>
+      ) : null}
+
       <section className="metrics">
-        <Metric label="Requests" value={stats.requests} detail="Redis hot window" bars={histogram} max={histMax} />
+        <Metric
+          label="Requests"
+          value={stats.requests}
+          detail={stats.derived ? "visible window" : "since gateway start"}
+          bars={histogram}
+          max={histMax}
+        />
         <Metric label="Alerts" value={stats.alerts} detail={`${alertRate}% of requests`} />
-        <Metric label="Allowed" value={allow} detail="No enforce yet" />
+        <Metric
+          label="Under policy"
+          value={policies.length}
+          detail={`${campaigns.filter((c) => c.status === "active").length} active ${
+            campaigns.filter((c) => c.status === "active").length === 1
+              ? "campaign"
+              : "campaigns"
+          }`}
+        />
         <Metric label="Unique IPs" value={uniqueIps} detail={`${sources.filter((s) => s.private).length} private`} />
       </section>
 
@@ -231,8 +367,19 @@ export default function CommandCenter() {
               <ol className="ip-list">
                 {data.attackers.map((row) => (
                   <li key={row.ip}>
-                    <code>{row.ip}</code>
+                    <code className="grow">{row.ip}</code>
                     <span>{row.alerts}</span>
+                    {/* An address the agent never grouped into a campaign is
+                        the plainest reason to reach for an override. */}
+                    <button
+                      type="button"
+                      className="act small"
+                      disabled={Boolean(busy)}
+                      onClick={() => instruct([row.ip], "temp_block", `ip-${row.ip}`)}
+                      title={`Instruct temp block for ${row.ip}`}
+                    >
+                      {busy === `ip-${row.ip}:temp_block` ? "…" : "block"}
+                    </button>
                   </li>
                 ))}
               </ol>
@@ -257,7 +404,12 @@ export default function CommandCenter() {
           ) : (
             <ul className="campaign-list">
               {campaigns.map((c) => (
-                <CampaignCard key={c.id} campaign={c} />
+                <CampaignCard
+                  key={c.id}
+                  campaign={c}
+                  onInstruct={instruct}
+                  busy={busy}
+                />
               ))}
             </ul>
           )}
@@ -344,15 +496,39 @@ export default function CommandCenter() {
 
       <article className="card table-card">
         <div className="card-head">
+          <h2>Campaign history</h2>
+          <span>
+            {history.available
+              ? `${history.total} recorded in Postgres — survives a restart`
+              : "Durable store not configured"}
+          </span>
+        </div>
+        <HistoryPanel history={history} />
+      </article>
+
+      <article className="card table-card">
+        <div className="card-head">
           <h2>Event stream</h2>
-          <label>
+          <div className="head-controls">
             <input
-              type="checkbox"
-              checked={alertsOnly}
-              onChange={(e) => setAlertsOnly(e.target.checked)}
+              type="search"
+              className="search"
+              placeholder="Filter by IP, path, agent…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
             />
-            Alerts only
-          </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={alertsOnly}
+                onChange={(e) => setAlertsOnly(e.target.checked)}
+              />
+              Alerts only
+            </label>
+            <span className="count">
+              {visibleEvents.length}/{events.length}
+            </span>
+          </div>
         </div>
         <div className="table-wrap">
           <table>
@@ -370,7 +546,9 @@ export default function CommandCenter() {
               {visibleEvents.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="empty">
-                    No events. Send traffic through the gateway on port 8082.
+                    {events.length
+                      ? "No events match this filter."
+                      : "No events. Send traffic through the gateway on port 8082."}
                   </td>
                 </tr>
               ) : (
@@ -401,7 +579,9 @@ export default function CommandCenter() {
   );
 }
 
-function CampaignCard({ campaign }) {
+const LADDER = ["monitor", "throttle", "temp_block", "escalate"];
+
+function CampaignCard({ campaign, onInstruct, busy }) {
   const c = campaign;
   return (
     <li className={c.status === "contained" ? "campaign contained" : "campaign"}>
@@ -468,7 +648,97 @@ function CampaignCard({ campaign }) {
         ))}
         {c.ips.length > 8 ? <small>+{c.ips.length - 8} more</small> : null}
       </div>
+
+      {onInstruct ? (
+        <div className="campaign-actions">
+          <span>Overrule the agent</span>
+          {LADDER.map((action) => (
+            <button
+              key={action}
+              type="button"
+              disabled={Boolean(busy) || action === c.lastAction}
+              className={action === c.lastAction ? "act current" : "act"}
+              onClick={() => onInstruct(c.ips, action, `campaign-${c.id}`)}
+              title={
+                action === c.lastAction
+                  ? `The agent already chose ${actionLabel(action)}`
+                  : `Instruct ${actionLabel(action)} for all ${c.ips.length} addresses`
+              }
+            >
+              {busy === `campaign-${c.id}:${action}` ? "…" : actionLabel(action)}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </li>
+  );
+}
+
+function HistoryPanel({ history }) {
+  if (!history.available) {
+    return (
+      <p className="empty">
+        No durable store configured. Set <code>IASG_POSTGRES_URL</code> to keep campaigns
+        past a restart.
+      </p>
+    );
+  }
+
+  if (!history.campaigns.length) {
+    return <p className="empty">Nothing recorded yet.</p>;
+  }
+
+  return (
+    <>
+      <ul className="bytype-list">
+        {history.byType.map((row) => (
+          <li key={row.type}>
+            <span className="grow">{row.type}</span>
+            <b>{row.campaigns}</b>
+            <span className="pct">
+              {row.events} events · avg {row.avgConfidence.toFixed(2)}
+              {row.contained ? ` · ${row.contained} contained` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="table-wrap history-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Type</th>
+              <th>IPs</th>
+              <th>Events</th>
+              <th>Ended as</th>
+              <th>Status</th>
+              <th>Last seen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.campaigns.map((c) => (
+              <tr key={c.id}>
+                <td className="mono">{c.id}</td>
+                <td>{c.type}</td>
+                <td className="mono">{c.ipCount}</td>
+                <td className="mono">{c.events}</td>
+                <td>
+                  <span className={`risk ${ACTION_TONE[c.lastAction] || "low"}`}>
+                    {actionLabel(c.lastAction)}
+                  </span>
+                </td>
+                <td>
+                  <span className={c.status === "contained" ? "tag good" : "tag"}>
+                    {c.status}
+                  </span>
+                </td>
+                <td className="mono">{formatTime(c.lastSeen)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 import { getRedis } from "@/lib/redis";
 import { isPrivateIP, lookupGeo, lookupSelfGeo, summarizeSources } from "@/lib/geo";
-import { parseEventMessage, parseStats } from "@/lib/telemetry";
+import { parseEventMessage, parseStats, withDerivedStats } from "@/lib/telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -49,13 +49,19 @@ export async function GET() {
         }
       : null;
 
+    // The zset is the gateway's. When it is empty -- seeded evidence, a replay
+    // -- fall back to who is actually alerting in the window we can see.
+    const ranked = (attackers || []).length
+      ? attackers.map((row) => ({ ip: row.value, alerts: row.score }))
+      : summarized
+          .filter((row) => row.alerts > 0)
+          .slice(0, 10)
+          .map((row) => ({ ip: row.ip, alerts: row.alerts }));
+
     return Response.json({
       redis: true,
-      stats: parseStats(hash),
-      attackers: (attackers || []).map((row) => ({
-        ip: row.value,
-        alerts: row.score,
-      })),
+      stats: withDerivedStats(parseStats(hash), events),
+      attackers: ranked,
       events,
       sources,
       site,

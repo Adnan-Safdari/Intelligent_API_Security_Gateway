@@ -39,6 +39,9 @@ class Settings:
     batch_size: int = 500
 
     interval_seconds : int = 30
+    # Written at the end of every cycle and given a TTL of a few intervals, so
+    # a console can tell a stopped agent from a quiet network.
+    heartbeat_key : str = "iasg:heartbeat"
     # policy writing , and the rails that keep it safe
     policy_prefix : str = "policy:"
     max_ips_per_cycle : int = 50
@@ -78,6 +81,7 @@ class Settings:
             consumer_name=os.getenv("IASG_CONSUMER_NAME", cls.consumer_name),
             batch_size=_env_int("IASG_BATCH_SIZE", cls.batch_size),
             interval_seconds=_env_int("IASG_INTERVAL_SECONDS", cls.interval_seconds),
+            heartbeat_key=os.getenv("IASG_HEARTBEAT_KEY", cls.heartbeat_key),
             policy_prefix=os.getenv("IASG_POLICY_PREFIX", cls.policy_prefix),
             max_ips_per_cycle=_env_int("IASG_MAX_IPS_PER_CYCLE", cls.max_ips_per_cycle),
             dry_run=_env_bool("IASG_DRY_RUN", cls.dry_run),
