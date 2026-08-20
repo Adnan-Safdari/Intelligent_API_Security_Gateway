@@ -13,6 +13,7 @@ which is the point of the store abstraction.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -160,3 +161,51 @@ def test_opposite_corrections_cancel(db):
     memory.record("Reconnaissance", "temp_block", "throttle")
 
     assert memory.bias_for("Reconnaissance") == 0
+
+
+def test_campaigns_reach_the_key_value_store_too(db):
+    """
+    Postgres is the record; Redis stays the read path.
+
+    The dashboard, like the gateway, reads Redis. When campaigns moved to
+    Postgres they stopped being written there at all, and the console's
+    campaign and feedback panels silently went blank while policy kept
+    working -- the failure looked like "no attacks" rather than an outage.
+    """
+    store = MemoryStore()
+    repo = CampaignRepository(store, persistence=db.campaigns)
+    repo.save(_campaign())
+
+    assert store.get("campaign:1"), "campaign missing from the read path"
+    assert db.campaigns.all(), "campaign missing from the record"
+
+
+def test_warming_rebuilds_the_read_path_after_a_wipe(db):
+    """A restart empties Redis but not Postgres, and readers must not care."""
+    db.campaigns.save(_campaign())
+
+    wiped = MemoryStore()
+    repo = CampaignRepository(wiped, persistence=db.campaigns)
+    assert wiped.get("campaign:1") is None
+
+    assert repo.warm() == 1
+    assert wiped.get("campaign:1")
+
+
+def test_corrections_reach_the_key_value_store_too(db):
+    store = MemoryStore()
+    memory = FeedbackMemory(store, Settings(), persistence=db.feedback)
+
+    memory.record("Brute Force", "throttle", "temp_block")
+
+    assert json.loads(store.get("feedback:Brute Force")) == {"up": 1, "down": 0}
+
+
+def test_warming_rebuilds_the_feedback_read_path(db):
+    db.feedback.bump("Brute Force", "up")
+
+    wiped = MemoryStore()
+    memory = FeedbackMemory(wiped, Settings(), persistence=db.feedback)
+
+    assert memory.warm() == 1
+    assert json.loads(wiped.get("feedback:Brute Force")) == {"up": 1, "down": 0}

@@ -47,6 +47,11 @@ class FeedbackMemory:
             # Incremented in the database rather than read-modify-written here,
             # so two agents correcting the same type cannot lose a correction.
             self._db.bump(campaign_type, key)
+            # Read back rather than assumed, then mirrored to the key-value
+            # store for fast readers -- see CampaignRepository.save.
+            self._store.set(
+                self._key(campaign_type), json.dumps(self._db.tally(campaign_type))
+            )
             return
 
         tally = self._tally(campaign_type)
@@ -91,6 +96,16 @@ class FeedbackMemory:
             if raw:
                 learned[key[len(self._settings.feedback_prefix):]] = json.loads(raw)
         return learned
+
+    def warm(self) -> int:
+        """Rebuild the key-value projection from the database. See the repository."""
+        if not self._db:
+            return 0
+
+        learned = self._db.all()
+        for campaign_type, tally in learned.items():
+            self._store.set(self._key(campaign_type), json.dumps(tally))
+        return len(learned)
 
     def _tally(self, campaign_type: str) -> dict:
         if self._db:

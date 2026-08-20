@@ -91,6 +91,11 @@ class Runner:
             settings,
             persistence=self.database.feedback if self.database else None,
         )
+        if self.database:
+            restored = self.campaigns.warm() + self.feedback.warm()
+            if restored:
+                print(f"[postgres] restored {restored} records into Redis")
+
         self.writer = PolicyWriter(self.store, settings)
         self.explanation = ExplanationAgent(provider)
         self.assessment = AssessmentAgent(provider)

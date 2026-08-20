@@ -170,9 +170,13 @@ What moves and what does not:
 
 | | Where | Why |
 |---|---|---|
-| Campaigns, feedback tallies | Postgres | The agent's memory. Losing it restarts the investigation |
+| Campaigns, feedback tallies | Postgres, mirrored to Redis | Postgres is the record. Redis keeps a copy because the dashboard reads it, exactly as the gateway does |
 | `policy:<ip>` | Redis | The gateway reads it on the hot path, and it is *meant* to expire |
 | Evidence, alerts, overrides | Redis streams | Transport. Once correlated, it is done |
+
+The mirror is a projection, not a second source of truth: it may expire, and the agent
+rebuilds it from Postgres on startup, so a wiped Redis costs a cycle rather than an
+investigation.
 
 Campaigns are never deleted, but only the last 24 hours are offered to the correlator, so
 switching stores does not change which campaigns a cycle can merge into. The rest is

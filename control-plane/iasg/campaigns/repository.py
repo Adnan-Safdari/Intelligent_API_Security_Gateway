@@ -72,7 +72,10 @@ class CampaignRepository:
     def save(self, campaign: Campaign, ttl_seconds: int = 86_400) -> None:
         if self._db:
             self._db.save(campaign, ttl_seconds)
-            return
+            # Deliberately falls through. Postgres is the record, but the
+            # dashboard and anything else that wants a fast look reads Redis,
+            # exactly as the gateway does -- so the key-value copy is kept as a
+            # projection. It may expire; the database is what must not.
 
         self._store.set(
             f"{self._prefix}{campaign.campaign_id}",
@@ -175,6 +178,26 @@ class CampaignRepository:
         for campaign in changed:
             self.save(campaign)
         return changed
+
+    def warm(self) -> int:
+        """
+        Rebuild the key-value projection from the database.
+
+        After a restart Redis is empty while Postgres is not, and without this
+        the dashboard would show nothing until the next cycle happened to write
+        a campaign. Returns how many were restored.
+        """
+        if not self._db:
+            return 0
+
+        campaigns = self._db.all()
+        for campaign in campaigns:
+            self._store.set(
+                f"{self._prefix}{campaign.campaign_id}",
+                _to_json(campaign),
+                ttl_seconds=86_400,
+            )
+        return len(campaigns)
 
     def _next_id(self) -> str:
         if self._db:
