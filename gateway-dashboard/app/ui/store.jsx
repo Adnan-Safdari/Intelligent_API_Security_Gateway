@@ -34,7 +34,7 @@ const EMPTY_PLANE = {
 
 const EMPTY_HISTORY = { available: false, campaigns: [], byType: [], total: 0 };
 
-export function LiveProvider({ children }) {
+export function LiveProvider({ children, me }) {
   const [overview, setOverview] = useState(EMPTY_OVERVIEW);
   const [plane, setPlane] = useState(EMPTY_PLANE);
   const [history, setHistory] = useState(EMPTY_HISTORY);
@@ -88,6 +88,11 @@ export function LiveProvider({ children }) {
     return () => clearTimeout(id);
   }, [toast]);
 
+  // Declared before instruct uses it: a dependency array is evaluated while
+  // the component body runs, so a const declared further down is still in its
+  // temporal dead zone.
+  const canAct = me ? me.role === "operator" || me.role === "admin" : false;
+
   /**
    * Send the agent an instruction about some addresses.
    *
@@ -98,6 +103,14 @@ export function LiveProvider({ children }) {
   const instruct = useCallback(async (ips, action, label, reason) => {
     const targets = [...new Set(ips)].filter(Boolean);
     if (!targets.length) return false;
+
+    if (!canAct) {
+      setToast({
+        tone: "bad",
+        text: "your account can read the console but not change enforcement",
+      });
+      return false;
+    }
 
     setBusy(`${label}:${action}`);
     try {
@@ -138,10 +151,14 @@ export function LiveProvider({ children }) {
     } finally {
       setBusy("");
     }
-  }, []);
+  }, [canAct]);
 
   const value = useMemo(
     () => ({
+      me,
+      // Convenience only. The server checks the role on every write, so a
+      // viewer who forges a request is refused there, not here.
+      canAct,
       overview,
       plane,
       history,
@@ -164,7 +181,7 @@ export function LiveProvider({ children }) {
       learned: plane.learned || [],
       beat: plane.heartbeat || { alive: false },
     }),
-    [overview, plane, history, paused, busy, toast, updatedAt, instruct, refresh],
+    [me, canAct, overview, plane, history, paused, busy, toast, updatedAt, instruct, refresh],
   );
 
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;

@@ -2,10 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { PageHead } from "../ui/chrome";
-import { matchesEvent, signalMeta } from "../ui/format";
-import { EventTable } from "../ui/parts";
-import { useLive } from "../ui/store";
+import { PageHead } from "@/app/ui/chrome";
+import { matchesEvent, signalMeta } from "@/app/ui/format";
+import { EventTable } from "@/app/ui/parts";
+import { useLive } from "@/app/ui/store";
 
 function EventsView() {
   const { events, busy, instruct } = useLive();

@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { PageHead } from "../ui/chrome";
-import { ACTION_TONE, LADDER, actionLabel, formatTtl } from "../ui/format";
-import { useLive } from "../ui/store";
+import { PageHead } from "@/app/ui/chrome";
+import { ACTION_TONE, LADDER, actionLabel, formatTtl } from "@/app/ui/format";
+import { useLive } from "@/app/ui/store";
 import Link from "next/link";
 
 export default function PolicyPage() {

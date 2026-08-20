@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PageHead } from "../ui/chrome";
-import { CampaignCard } from "../ui/parts";
-import { useLive } from "../ui/store";
+import { PageHead } from "@/app/ui/chrome";
+import { CampaignCard } from "@/app/ui/parts";
+import { useLive } from "@/app/ui/store";
 
 const SORTS = {
   confidence: (a, b) => b.confidence - a.confidence,

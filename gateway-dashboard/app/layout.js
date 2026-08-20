@@ -1,7 +1,5 @@
 import "./globals.css";
 import "leaflet/dist/leaflet.css";
-import { Shell } from "./ui/chrome";
-import { LiveProvider } from "./ui/store";
 
 export const metadata = {
   title: "IASG · Operations",
@@ -18,13 +16,9 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      <body>
-        {/* Polling lives above the router, so moving between pages neither
-            restarts the clock nor blanks the screen. */}
-        <LiveProvider>
-          <Shell>{children}</Shell>
-        </LiveProvider>
-      </body>
+      {/* Login and setup live outside the console shell: they have no session
+          to poll with, and no navigation to offer. */}
+      <body>{children}</body>
     </html>
   );
 }

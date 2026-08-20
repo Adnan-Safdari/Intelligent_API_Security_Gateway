@@ -2,9 +2,9 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { PageHead } from "../ui/chrome";
-import { ACTION_TONE, actionLabel, formatTime } from "../ui/format";
-import { useLive } from "../ui/store";
+import { PageHead } from "@/app/ui/chrome";
+import { ACTION_TONE, actionLabel, formatTime } from "@/app/ui/format";
+import { useLive } from "@/app/ui/store";
 
 const COLUMNS = [
   { key: "id", label: "#", numeric: true },

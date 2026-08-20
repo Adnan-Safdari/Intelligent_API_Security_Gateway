@@ -1075,3 +1075,117 @@ tbody tr:hover td {
     display: none;
   }
 }
+
+/* --- sign in, first run, and the account chip ---------------------------- */
+
+.gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.gate-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 380px;
+  padding: 22px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+}
+
+.gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.gate-brand strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.gate-brand small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.gate-card h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.gate-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.gate-card input {
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.gate-card input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.gate-card .act.primary {
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+/* One message for every failure, so it never tells an attacker which half of
+   the credentials was right. */
+.gate-error {
+  padding: 7px 9px;
+  border-left: 3px solid var(--bad);
+  background: var(--row-alert);
+  color: var(--text) !important;
+  font-size: 12px;
+}
+
+.whoami {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.whoami em {
+  font-style: normal;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+td select {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+}

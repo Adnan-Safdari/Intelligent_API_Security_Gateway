@@ -1,4 +1,5 @@
 import { getRedis } from "@/lib/redis";
+import { require as requireRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,11 @@ const ACTIONS = new Set(["monitor", "throttle", "temp_block", "escalate"]);
 // allowlist and the collateral checks before any policy is written. A typo
 // here cannot block an address the operator declared as theirs.
 export async function POST(request) {
+  // Changing enforcement is an operator's job. Checked here rather than in the
+  // UI, because a hidden button is presentation and this is authorisation.
+  const gate = await requireRole("operator");
+  if (gate.denied) return gate.denied;
+
   let body;
   try {
     body = await request.json();
@@ -22,7 +28,9 @@ export async function POST(request) {
 
   const ip = String(body.ip || "").trim();
   const action = String(body.action || "").trim();
-  const actor = String(body.actor || "dashboard").trim().slice(0, 60);
+  // Who did it comes from the session, never from the request body: an actor
+  // the caller can choose is not an audit trail.
+  const actor = gate.user.username;
   const reason = String(body.reason || "").trim().slice(0, 280);
 
   if (!ip) {

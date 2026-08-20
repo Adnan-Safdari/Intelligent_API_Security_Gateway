@@ -11,10 +11,11 @@ const NAV = [
   { href: "/policy", label: "Policy" },
   { href: "/events", label: "Events" },
   { href: "/history", label: "History" },
+  { href: "/users", label: "Users", adminOnly: true },
 ];
 
 export function Shell({ children }) {
-  const { plane, overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast } =
+  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast, me } =
     useLive();
   const pathname = usePathname();
   const [theme, setTheme] = useState("dark");
@@ -52,7 +53,7 @@ export function Shell({ children }) {
         </div>
 
         <nav className="nav">
-          {NAV.map((item) => {
+          {NAV.filter((item) => !item.adminOnly || me?.role === "admin").map((item) => {
             const active =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
@@ -69,6 +70,22 @@ export function Shell({ children }) {
         </nav>
 
         <div className="top-actions">
+          {me ? (
+            <span className="whoami" title={`Signed in as ${me.username}`}>
+              {me.username}
+              <em>{me.role}</em>
+            </span>
+          ) : null}
+          <button
+            type="button"
+            className="theme-btn"
+            onClick={async () => {
+              await fetch("/api/auth/logout", { method: "POST" });
+              window.location.href = "/login";
+            }}
+          >
+            Sign out
+          </button>
           <button
             type="button"
             className={paused ? "theme-btn on" : "theme-btn"}

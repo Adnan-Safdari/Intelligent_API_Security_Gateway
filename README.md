@@ -190,6 +190,40 @@ SELECT type, count(*), round(avg(confidence)::numeric, 2) AS avg_confidence
 Everything degrades: no driver, no database, or a database that is down means the agent
 says so once and carries on with Redis.
 
+## Signing in
+
+The console can change enforcement, so it requires an account. On first run every page
+redirects to `/setup` to create the administrator; that page closes permanently once one
+exists.
+
+| Role | May |
+|---|---|
+| `viewer` | Read every page. No action buttons, and the server refuses the write anyway |
+| `operator` | Instruct the agent — monitor, throttle, temp block, escalate |
+| `admin` | Everything, plus adding, disabling and removing accounts |
+
+Roles are checked server-side on every write. Hiding a button is presentation; the check
+in the route handler is the authorisation.
+
+Accounts live in Postgres alongside campaigns, so **the console needs `IASG_POSTGRES_URL`**
+— without a durable store there is nowhere to keep them, and it refuses to start rather
+than run unauthenticated.
+
+Details worth knowing:
+
+- Passwords are hashed with scrypt (`N=16384, r=8, p=1`) and a per-password salt, using
+  Node's standard library rather than a dependency. The parameters are stored with the
+  hash so they can be raised later without invalidating anyone's password.
+- Sessions are random 256-bit tokens in an `httpOnly`, `SameSite=Lax` cookie. Only the
+  SHA-256 of the token is stored, so a database leak cannot be replayed as a live session.
+- Ten failed attempts locks a username for fifteen minutes. A console that detects brute
+  force should not be trivially brute forced.
+- Wrong password and unknown user return the same message after the same amount of work.
+- Disabling an account, changing its password, or signing out revokes the sessions
+  immediately rather than waiting for them to expire.
+- The last enabled admin cannot be deleted, demoted or disabled.
+- Overrides record the actor from the session, never from the request body.
+
 ## Testing
 
 ```bash
