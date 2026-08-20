@@ -3,6 +3,12 @@ import { currentUser, userCount } from "@/lib/auth";
 import { LiveProvider } from "@/app/ui/store";
 import { Shell } from "@/app/ui/chrome";
 
+// Every page behind the gate is per-request. Without this Next prerendered
+// them at build time, baking the signed-out page into HTML and skipping the
+// auth check entirely in production -- it only behaved correctly under
+// `npm run dev`.
+export const dynamic = "force-dynamic";
+
 /**
  * The gate for everything in the console.
  *

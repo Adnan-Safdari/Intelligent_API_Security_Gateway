@@ -52,7 +52,10 @@ export function withDerivedStats(stats, events = []) {
     }
   }
 
-  const derived = !stats.requests || !stats.alerts;
+  // Only when the window actually contributed something the gateway did not
+  // report. A real gateway with zero alerts is publishing a true count, and
+  // calling that "visible window" mislabels it.
+  const derived = events.length > stats.requests || alerts > stats.alerts;
   return {
     requests: Math.max(stats.requests, events.length),
     alerts: Math.max(stats.alerts, alerts),

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import {
   SESSION_COOKIE,
   cookieOptions,
-  createUser,
+  createFirstAdmin,
   login,
   userAgent,
   userCount,
@@ -25,18 +25,9 @@ export async function POST(request) {
   }
 
   try {
-    if ((await userCount()) > 0) {
-      return Response.json(
-        { ok: false, error: "setup has already been completed" },
-        { status: 409 },
-      );
-    }
-
-    await createUser({
-      username: body.username,
-      password: body.password,
-      role: "admin",
-    });
+    // The emptiness check is inside the insert, so two concurrent requests
+    // cannot both create an administrator.
+    await createFirstAdmin({ username: body.username, password: body.password });
 
     // Sign them straight in; making someone log in immediately after choosing
     // a password only invites them to pick a memorable one.

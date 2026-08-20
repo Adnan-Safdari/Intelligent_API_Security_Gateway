@@ -2,6 +2,11 @@ import { ROLES, db, hashPassword, require as requireRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
+/** Postgres compares this against a BIGINT; anything else is a 500, not a 400. */
+function numeric(id) {
+  return /^\d+$/.test(String(id));
+}
+
 /** The last enabled admin may not be removed or demoted, or nobody can administer. */
 async function otherAdmins(pool, id) {
   const { rows } = await pool.query(
@@ -16,6 +21,10 @@ export async function PATCH(request, { params }) {
   if (gate.denied) return gate.denied;
 
   const { id } = await params;
+  if (!numeric(id)) {
+    return Response.json({ ok: false, error: "unknown user" }, { status: 404 });
+  }
+
   let body;
   try {
     body = await request.json();
@@ -78,6 +87,9 @@ export async function DELETE(_request, { params }) {
   if (gate.denied) return gate.denied;
 
   const { id } = await params;
+  if (!numeric(id)) {
+    return Response.json({ ok: false, error: "unknown user" }, { status: 404 });
+  }
   if (String(gate.user.id) === String(id)) {
     return Response.json(
       { ok: false, error: "you cannot delete your own account" },

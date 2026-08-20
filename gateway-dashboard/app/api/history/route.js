@@ -1,4 +1,5 @@
 import { getPool } from "@/lib/postgres";
+import { require as requireRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,11 @@ const BY_TYPE = `
 `;
 
 export async function GET(request) {
+  // Reading is still reading a security system: campaigns, policy in force and
+  // raw client addresses are not public.
+  const gate = await requireRole("viewer");
+  if (gate.denied) return gate.denied;
+
   const pool = getPool();
   if (!pool) {
     // Not an error. Durability is optional, and the console says so rather

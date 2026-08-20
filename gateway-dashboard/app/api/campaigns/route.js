@@ -1,4 +1,5 @@
 import { getRedis } from "@/lib/redis";
+import { require as requireRole } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,9 @@ const FEEDBACK_PREFIX = "feedback:";
 const ALERT_STREAM = "iasg_alerts";
 // Written at the end of every cycle with a TTL of a few intervals, so its
 // absence means the agent stopped rather than that the network went quiet.
-const HEARTBEAT_KEY = "iasg:heartbeat";
+// Reads the same variable the control plane does, or setting IASG_HEARTBEAT_KEY
+// on one side would leave the console permanently reporting a dead agent.
+const HEARTBEAT_KEY = process.env.IASG_HEARTBEAT_KEY || "iasg:heartbeat";
 
 // The id counter lives under the campaign prefix but is not a campaign.
 const COUNTER_KEY = `${CAMPAIGN_PREFIX}next_id`;
@@ -187,6 +190,11 @@ async function readHeartbeat(redis) {
 }
 
 export async function GET() {
+  // Reading is still reading a security system: campaigns, policy in force and
+  // raw client addresses are not public.
+  const gate = await requireRole("viewer");
+  if (gate.denied) return gate.denied;
+
   try {
     const redis = await getRedis();
     const [campaigns, policies, alerts, learned, heartbeat] = await Promise.all([

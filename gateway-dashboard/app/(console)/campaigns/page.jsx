@@ -33,7 +33,11 @@ export default function CampaignsPage() {
 
   // Acting on several campaigns at once is the difference between a console
   // and a report, and it is one instruction per address either way.
-  const selectedIps = shown
+  //
+  // Resolved against every campaign rather than the filtered view: selecting a
+  // card and then changing tab used to leave the button armed but empty, so it
+  // reported success having done nothing.
+  const selectedIps = campaigns
     .filter((c) => selected.includes(c.id))
     .flatMap((c) => c.ips);
 

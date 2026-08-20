@@ -51,13 +51,16 @@ export async function verifyPassword(password, stored) {
     const [scheme, N, r, p, salt, expected] = String(stored).split("$");
     if (scheme !== "scrypt") return false;
 
-    const key = await scrypt(password, Buffer.from(salt, "base64"), 64, {
+    // Length comes from the stored hash, not from today's constant, or
+    // raising SCRYPT.keylen would silently invalidate every old password
+    // instead of upgrading it.
+    const want = Buffer.from(expected, "base64");
+    const key = await scrypt(password, Buffer.from(salt, "base64"), want.length, {
       N: Number(N),
       r: Number(r),
       p: Number(p),
       maxmem: 64 * 1024 * 1024,
     });
-    const want = Buffer.from(expected, "base64");
     // Constant time: a length check first, because timingSafeEqual throws on
     // mismatched lengths and throwing is itself an observable difference.
     return key.length === want.length && timingSafeEqual(key, want);
@@ -105,7 +108,12 @@ export async function db() {
       "authentication needs Postgres — set IASG_POSTGRES_URL and restart",
     );
   }
-  ready ??= pool.query(SCHEMA);
+  // Retried on failure rather than cached: a rejected promise kept here
+  // would disable authentication until the process restarted.
+  ready ??= pool.query(SCHEMA).catch((err) => {
+    ready = null;
+    throw err;
+  });
   await ready;
   return pool;
 }
@@ -114,6 +122,33 @@ export async function userCount() {
   const pool = await db();
   const { rows } = await pool.query("SELECT count(*)::int AS n FROM users");
   return rows[0].n;
+}
+
+/**
+ * Create the first administrator, atomically.
+ *
+ * A check followed by an insert is two statements, and two concurrent setup
+ * requests both passed the check. The condition lives inside the insert here,
+ * so exactly one of them can win.
+ */
+export async function createFirstAdmin({ username, password }) {
+  const name = String(username || "").trim().toLowerCase();
+  if (!/^[a-z0-9._-]{3,32}$/.test(name)) {
+    throw new Error("username must be 3-32 characters: a-z 0-9 . _ -");
+  }
+  if (String(password || "").length < 10) {
+    throw new Error("password must be at least 10 characters");
+  }
+
+  const pool = await db();
+  const hash = await hashPassword(password);
+  const { rowCount } = await pool.query(
+    `INSERT INTO users (username, password_hash, role)
+     SELECT $1, $2, 'admin'
+      WHERE NOT EXISTS (SELECT 1 FROM users)`,
+    [name, hash],
+  );
+  if (!rowCount) throw new Error("setup has already been completed");
 }
 
 export async function createUser({ username, password, role }) {
@@ -140,6 +175,16 @@ export async function createUser({ username, password, role }) {
     if (err.code === "23505") throw new Error("that username is taken");
     throw err;
   }
+}
+
+// A fixed hash to compare against when the user does not exist. Built once,
+// so the unknown-user path costs exactly one derivation, the same as the real
+// one. Deriving a fresh decoy per attempt cost two, which made a missing
+// username measurably slower and so enumerable -- the opposite of the point.
+let decoy = null;
+async function decoyHash() {
+  decoy ??= await hashPassword(randomBytes(32).toString("hex"));
+  return decoy;
 }
 
 // The console detects brute force for a living; leaving its own login
@@ -187,9 +232,10 @@ export async function login(username, password, userAgent) {
 
   // Hash even when the user does not exist, so "no such user" and "wrong
   // password" take the same time and cannot be told apart.
-  const valid = user
-    ? await verifyPassword(password, user.password_hash)
-    : await verifyPassword(password, await hashPassword("decoy-comparison"));
+  const valid = await verifyPassword(
+    password,
+    user ? user.password_hash : await decoyHash(),
+  );
 
   if (!user || !valid || user.disabled) {
     await attempts(name, true);
@@ -237,12 +283,11 @@ export function cookieOptions(expires) {
 
 /** The signed-in user, or null. Never throws for an anonymous visitor. */
 export async function currentUser() {
-  let token;
-  try {
-    token = (await cookies()).get(SESSION_COOKIE)?.value;
-  } catch {
-    return null;
-  }
+  // Deliberately not wrapped: reading cookies during a static render throws a
+  // DynamicServerError, and that throw is how Next learns the route cannot be
+  // prerendered. Swallowing it produced a build-time snapshot of the signed
+  // out page and an auth check that never ran in production.
+  const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
   try {
