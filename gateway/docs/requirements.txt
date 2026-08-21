@@ -1,1 +1,8 @@
-mkdocs.yml
+# Documentation toolchain.
+#
+# infra/docker-compose.yml installs this file to serve the docs on :8000, so
+# it has to exist for that service to start at all. Pinned so the site renders
+# the same months from now as it does today.
+mkdocs==1.6.1
+mkdocs-material==9.5.49
+pymdown-extensions==10.14

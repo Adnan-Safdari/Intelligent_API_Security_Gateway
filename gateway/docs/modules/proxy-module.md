@@ -21,7 +21,7 @@ The middleware implementation is simple and synchronous. Logging prints request 
 | `internal/proxy/server.go` | Server construction and middleware assembly. |
 | `internal/proxy/middleware.go` | Middleware type, chaining logic, and current inspection behavior. |
 | `internal/proxy/reverse_proxy.go` | Reverse proxy creation and header mutation. |
-| `cmd/gateway/main.go` | Minimal bootstrap that configures and starts the proxy package. |
+| `cmd/server/main.go` | Minimal bootstrap that configures and starts the proxy package. |
 
 ## Flow Diagram
 

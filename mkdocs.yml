@@ -2,6 +2,11 @@ site_name: Intelligent API Security Gateway
 site_description: Engineering documentation for the Go-based API security gateway.
 repo_name: Intelligent_API_Security_Gateway
 docs_dir: gateway/docs
+
+# A prompt written for handing the project to an assistant, not documentation
+# for a reader. It stays in the repository and out of the published site.
+exclude_docs: |
+  chatgpt-handoff-prompt.md
 theme:
   name: material
   features:
@@ -9,21 +14,22 @@ theme:
     - navigation.expand
     - navigation.top
     - content.code.copy
+  # Dark is the default: the first entry wins on a first visit, and the toggle
+  # still gets you to light. Tying these to prefers-color-scheme instead would
+  # hand the choice back to the operating system.
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
+    - scheme: slate
+      primary: black
+      accent: light blue
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - scheme: default
       primary: blue grey
       accent: blue
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      primary: blue grey
-      accent: blue
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to light mode
 markdown_extensions:
   - admonition
   - attr_list
@@ -31,10 +37,19 @@ markdown_extensions:
   - tables
   - toc:
       permalink: true
-  - pymdownx.superfences
-extra_javascript:
-  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
-  - javascripts/mermaid.js
+  # The custom fence is what turns a ```mermaid block into a diagram. Without
+  # it superfences emits a plain <pre><code>, which is why every diagram on
+  # this site used to render as its own source text.
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+# Material ships the Mermaid integration itself, including re-rendering the
+# diagrams when the palette toggle is used, so there is no CDN tag and no
+# hand-written renderer to keep working.
+extra_css:
+  - stylesheets/extra.css
 nav:
   - Overview: index.md
   - Project Context: project-context.md

@@ -23,7 +23,7 @@ The listen address is built from `server.host` + `server.port`, and the upstream
 
 | Path | Role |
 | --- | --- |
-| `cmd/gateway/main.go` | Current local execution path for the gateway process. |
+| `cmd/server/main.go` | Current local execution path for the gateway process. |
 | `internal/proxy/server.go` | Starts the HTTP server with timeouts and middleware. |
 | `go.mod` | Declares the Go module and dependency graph. |
 
@@ -31,7 +31,7 @@ The listen address is built from `server.host` + `server.port`, and the upstream
 
 ```mermaid
 flowchart TD
-    Dev --> GoRun[go run cmd/gateway/main.go]
+    Dev --> GoRun[go run ./cmd/server]
    GoRun --> ConfigLoad[Load configs/config.yaml]
    ConfigLoad --> Gateway[Gateway listener server.host:server.port]
     Client[Local client] --> Gateway
@@ -59,7 +59,7 @@ flowchart TD
 
    ```bash
    go mod download
-   go run cmd/gateway/main.go
+   go run ./cmd/server
    ```
 
 4. Send requests to your configured gateway address.
