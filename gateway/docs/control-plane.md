@@ -1,0 +1,162 @@
+# Control Plane
+
+## Overview
+
+The control plane is a Python agent in `control-plane/`. It runs on a timer,
+entirely off the request path, and is the only component that reasons about
+attacks rather than merely recognising them.
+
+```bash
+python -m iasg                 # run forever, default 30s interval
+python -m iasg --once          # a single cycle, then exit
+python -m iasg --dry-run       # decide everything, write no policy
+python -m iasg --interval 10   # override the cadence
+```
+
+## The cycle
+
+Each cycle is six steps. The ordering encodes who outranks whom.
+
+```mermaid
+flowchart TD
+    O[1. Observe -- read new events from iasg:events] --> C[2. Correlate -- cluster into campaigns]
+    C --> R[3. Remember -- persist campaigns]
+    R --> D[4. Decide -- rules only, no LLM]
+    D --> H[4b. Apply human overrides]
+    H --> S[4c. Simulate -- safety checks]
+    S --> W[Write policy keys]
+    W --> E[5. Explain -- advisory narration]
+    E --> V[6. Review -- did last cycle's action work?]
+    V --> A[Ack the evidence]
+```
+
+Three things about that order are deliberate:
+
+- **Decisions are made by rules, with no LLM anywhere near them.** The
+  language model is used for narration only, and it runs *after* the decision
+  already exists. A model that is unavailable, slow, or wrong cannot change
+  what gets enforced.
+- **A person outranks the agent.** Overrides are read before anything is
+  decided, so an operator blocking an address does not have to wait for the
+  agent to notice a campaign first. Disagreement is also the only thing here
+  worth learning from, and it feeds the feedback memory.
+- **Simulation runs last**, so nothing reaches the gateway without passing the
+  safety checks — whoever asked for it. An allowlisted range is protected from
+  a mistyped human instruction exactly as it is from the agent.
+
+Evidence is acknowledged only at the very end, once everything above has
+succeeded.
+
+A cycle with no evidence is not a wasted one. Step 6 asks whether the previous
+cycle's action changed anything, and silence is the signal that it did.
+
+## Campaigns
+
+Correlation groups activity by shared behaviour rather than by address, so an
+attack that rotates IPs stays one campaign. A campaign carries:
+
+| Field | Meaning |
+| --- | --- |
+| `campaign_id` | Stable identifier |
+| `type` | e.g. `Brute Force`, `SQL Injection Probing` |
+| `confidence` / `severity` | How sure, and how bad |
+| `status` | `active`, or closed out |
+| `ips` / `stages` | Who, and which phases have been seen |
+| `event_count` | Evidence volume |
+| `quiet_cycles` | Consecutive cycles with nothing new |
+| `rotations` | How often the address set has changed |
+| `last_action` / `outcome` | What was done, and whether it worked |
+
+## The escalation ladder
+
+Actions escalate one rung at a time, and each rung carries its own lifetime:
+
+| Action | TTL | Effect at the gateway |
+| --- | --- | --- |
+| `monitor` | 300s | Never written — it would be a no-op key |
+| `throttle` | 900s | Delay each request |
+| `temp_block` | 1800s | Refuse with 403 |
+| `escalate` | 3600s | Refuse with 403 and raise an alert for a human |
+
+Escalation is the one action that asks for a person, so it is raised after the
+explanation step — the alert then carries something readable.
+
+Every rung expires by itself. See [Policy Enforcement](policy-enforcement.md)
+for why that is non-negotiable on both sides of the contract.
+
+## Storage
+
+| Store | Holds | Notes |
+| --- | --- | --- |
+| Redis | Evidence stream, policy keys, overrides, heartbeat | Always required |
+| Postgres | Campaigns and feedback | Optional; without it campaigns live in Redis under a TTL |
+
+Postgres is genuinely optional and non-fatal — that is the behaviour every test
+and the default deployment use. When it is configured, campaigns and feedback
+survive a restart, and the agent restores them into Redis on startup:
+
+```
+[postgres] campaigns and feedback are durable
+[postgres] restored 1 records into Redis
+[iasg] control plane started (every 30s, dry_run=False)
+```
+
+## Configuration
+
+All settings come from the environment, via `Settings.from_env()`:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `IASG_REDIS_URL` | `redis://localhost:6379/0` | Where evidence and policy live |
+| `IASG_EVIDENCE_STREAM` | `iasg:events` | Stream written by the gateway |
+| `IASG_CONSUMER_GROUP` | `iasg-agent` | Consumer group name |
+| `IASG_BATCH_SIZE` | `500` | Events read per cycle |
+| `IASG_INTERVAL_SECONDS` | `30` | Cycle cadence |
+| `IASG_POLICY_PREFIX` | `policy:` | Key prefix the gateway reads |
+| `IASG_MAX_IPS_PER_CYCLE` | `50` | Cap on addresses actioned per cycle |
+| `IASG_DRY_RUN` | `false` | Decide everything, write nothing |
+| `IASG_ALLOWLIST` | empty | Comma-separated CIDRs that are never actioned |
+| `IASG_POSTGRES_URL` | unset | Enables durable campaigns |
+| `IASG_LLM_PROVIDER` | `null` | `null` or `ollama` |
+| `IASG_OLLAMA_URL` | `http://localhost:11434` | Narration model endpoint |
+
+The default LLM provider is `null`, so the agent produces no narration and
+needs no model to run.
+
+## One bad cycle must not end the agent
+
+`run_forever` catches per-cycle exceptions and continues. A heartbeat is
+written to `iasg:heartbeat` each cycle so the dashboard can tell a running
+agent from a stopped one.
+
+!!! note "Logs under Docker"
+    Python block-buffers stdout when it is not a TTY, which makes a working
+    agent look hung. `infra/docker-compose.yml` sets `PYTHONUNBUFFERED=1` on
+    the `control_plane` service for exactly this reason.
+
+## Tests
+
+```bash
+cd control-plane && python -m pytest
+```
+
+The suite covers correlation, campaign rotation, multi-stage attacks, the
+adaptive policy ladder, simulation, feedback, overrides, alerts, narration, and
+both stores.
+
+## Code references
+
+| Path | Role |
+| --- | --- |
+| `iasg/__main__.py` | CLI entrypoint and flags |
+| `iasg/runner.py` | The cycle, and the ordering rationale |
+| `iasg/config.py` | `Settings` and environment parsing |
+| `iasg/evidence/` | Stream consumer and ingest |
+| `iasg/correlation/` | Clustering, features, campaign formation |
+| `iasg/campaigns/repository.py` | Campaign persistence |
+| `iasg/policy/agent.py` | The escalation ladder and TTL table |
+| `iasg/policy/simulation.py` | Safety checks before anything is written |
+| `iasg/policy/writer.py` | The writing rails |
+| `iasg/feedback/` | Override memory and learning |
+| `iasg/explanation/`, `iasg/reasoning/` | Advisory narration, LLM providers |
+| `iasg/store/` | Redis, Postgres, and in-memory stores |

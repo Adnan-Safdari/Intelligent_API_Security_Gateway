@@ -94,6 +94,16 @@
   white-space: nowrap;
 }
 
+/* Identifiers in any other column must not be hyphen-free-wrapped down the
+   middle -- Material's default breaks `TraversalEnumDetector` into
+   "TraversalEnumD / etector", which reads as two words that do not exist.
+   Wrapping between words is fine; splitting inside one is not. The table
+   scrolls if this makes it too wide. */
+.md-typeset table:not([class]) code {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
 /* Very wide tables scroll on their own rather than forcing the page sideways.
    Material already wraps tables in this element; it just needs to be told
    that scrolling is allowed. */
@@ -170,6 +180,22 @@
 .md-typeset h3 {
   margin-top: 1.6rem;
   font-weight: 600;
+}
+
+/* --- logo ----------------------------------------------------------------
+   Material always renders a logo button -- its own icon when the theme sets no
+   `logo` -- in the header and again in the mobile navigation drawer. There is
+   no configuration option for "none", so it is hidden here. The site name is
+   left in place and slides over to take the space. */
+
+.md-header__button.md-logo,
+.md-nav__button.md-logo {
+  display: none;
+}
+
+/* Without the logo the title sits against the edge of the header. */
+.md-header__title {
+  margin-left: 0.6rem;
 }
 
 /* --- navigation ---------------------------------------------------------- */

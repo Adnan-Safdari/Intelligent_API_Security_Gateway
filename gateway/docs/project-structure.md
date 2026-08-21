@@ -2,77 +2,128 @@
 
 ## Overview
 
-The repository is organized around a small executable entrypoint, the implemented proxy package, support files, and documentation.
+The repository holds four runnable components plus shared infrastructure. The
+Go gateway is one of them, not the whole system.
 
-## Purpose
-
-This page shows which directories contain active code and which directories currently exist without implementation.
-
-## Architecture Explanation
-
-`cmd/server` contains the executable entrypoint. `internal/proxy` contains the implemented server, middleware, and reverse proxy logic. The other directories under `internal/` currently hold support packages or placeholders. `configs/` holds the shared YAML configuration used by both local runs and Docker Compose, while `docker-compose.yml` wires the services together.
-
-## Code References
+## Top level
 
 | Path | Role |
 | --- | --- |
-| `cmd/server/` | Executable bootstrap for the gateway binary. |
-| `internal/proxy/` | Implemented reverse proxy server and middleware. |
-| `internal/netutil/` | Shared helpers used by middleware and context-free request handling. |
-| `internal/enforcement/` | Present in the repository but currently empty. |
-| `internal/signals/` | Attack detectors (flood, SQLi, traversal/enum, brute force). No test files in this package. |
-| `testing/signals/` (repo root) | HTTP test scripts that hit a running gateway. See [Signal Test Scripts](modules/signal-tests.md). |
-| `internal/storage/` | Present in the repository with empty adapter directories. |
-| `internal/trust/` | Present in the repository but currently empty. |
-| `configs/` | Contains the shared configuration template and the local runtime config. |
-| `docs/` | MkDocs documentation content. |
+| `gateway/` | The Go data plane and this documentation |
+| `control-plane/` | The Python agent. See [Control Plane](control-plane.md) |
+| `gateway-dashboard/` | Next.js operations console |
+| `vulnerable-app/` | Deliberately weak API and front end, used as the protected backend |
+| `testing/signals/` | Shell scripts that drive a running gateway |
+| `infra/` | Compose stack. See [Running with Docker](running-with-docker.md) |
+| `mkdocs.yml` | Documentation config; `docs_dir` points at `gateway/docs` |
 
-## Flow Diagram
+## Inside the gateway
 
-```mermaid
-flowchart TD
-    Root[Repository Root] --> Cmd[cmd]
-    Root --> Internal[internal]
-    Root --> Configs[configs]
-    Root --> Docker[docker and compose]
-    Root --> Docs[docs]
+| Path | Role |
+| --- | --- |
+| `cmd/server/` | Entrypoint; loads config, applies env overrides, starts the server |
+| `internal/config/` | YAML schema, defaults, and validation |
+| `internal/proxy/` | Server, middleware chain, reverse proxy |
+| `internal/netutil/` | Client IP resolution and the trusted-proxy rules |
+| `internal/signals/` | The four detectors, evidence, collector, evidence store |
+| `internal/telemetry/` | Event shape, redaction, and the recording middleware |
+| `internal/policy/` | Policy snapshot store and the enforcing middleware |
+| `internal/storage/redis/` | Redis telemetry writer |
+| `configs/` | `config.yaml` and `config.yaml.example` |
+| `docs/` | This documentation |
 
-    Internal --> Proxy[proxy]
-    Internal --> Placeholders[other internal directories]
+`internal/enforcement/` and `internal/trust/` exist but are empty. Enforcement
+lives in `internal/policy`; the trust-scoring weights in `config.yaml` are
+parsed but not yet consumed.
+
+## Tests
+
+Every package that makes a decision has tests beside it:
+
+```
+internal/config/config_test.go
+internal/netutil/ip_test.go
+internal/policy/middleware_test.go
+internal/policy/store_test.go
+internal/proxy/middleware_test.go
+internal/signals/api_flooding_test.go
+internal/signals/enumeration_path_traversal_test.go
+internal/signals/sqli_injection_test.go
+internal/signals/helpers_test.go
+internal/telemetry/middleware_test.go
 ```
 
-## Repository Map
+```bash
+cd gateway && go test ./...
+cd control-plane && python -m pytest
+```
+
+## Repository map
 
 ```text
 .
-├── cmd/
-│   └── server/
-│       └── main.go
-├── configs/
-│   ├── config.yaml.example
-│   └── config.yaml
-├── docker/
-├── docs/
-│   ├── index.md
-│   ├── system-architecture.md
-│   ├── request-lifecycle.md
-│   ├── running-locally.md
-│   ├── project-structure.md
-│   ├── javascripts/
-│   │   └── mermaid.js
-│   └── modules/
-│       └── proxy-module.md
-├── internal/
-│   ├── config/
-│   ├── netutil/
-│   ├── enforcement/
-│   ├── proxy/
-│   ├── signals/
-│   ├── storage/
-│   │   ├── postgres/
-│   │   └── redis/
-│   └── trust/
-├── docker-compose.yml
-├── go.mod
-└── README.md
+├── gateway/
+│   ├── cmd/server/main.go
+│   ├── configs/
+│   │   ├── config.yaml
+│   │   └── config.yaml.example
+│   ├── docs/                     # this site
+│   │   ├── assets/
+│   │   ├── stylesheets/extra.css
+│   │   ├── modules/
+│   │   └── requirements.txt
+│   ├── internal/
+│   │   ├── config/
+│   │   ├── netutil/
+│   │   ├── policy/
+│   │   ├── proxy/
+│   │   ├── signals/
+│   │   ├── storage/redis/
+│   │   ├── telemetry/
+│   │   ├── enforcement/          # empty
+│   │   └── trust/                # empty
+│   └── go.mod
+├── control-plane/
+│   ├── iasg/
+│   │   ├── assessment/  campaigns/  correlation/  evidence/
+│   │   ├── explanation/ feedback/   policy/       reasoning/  store/
+│   │   ├── config.py  models.py  runner.py  alerts.py
+│   │   └── __main__.py
+│   ├── tools/seed_evidence.py
+│   └── tests/
+├── gateway-dashboard/
+│   ├── app/
+│   │   ├── (console)/            # overview, campaigns, events, history, policy, users
+│   │   ├── api/
+│   │   ├── ui/
+│   │   ├── login/  setup/
+│   │   └── globals.css
+│   ├── lib/                      # redis, postgres, auth, geo, telemetry
+│   └── scripts/reset-accounts.mjs
+├── vulnerable-app/
+│   └── backend/
+├── testing/signals/
+│   ├── lib.sh  run_all.sh
+│   ├── brute_force.sh  sqli.sh  flood.sh  traversal.sh
+│   └── redis_inspect.sh
+├── infra/
+│   ├── docker-compose.yml
+│   └── README.md
+└── mkdocs.yml
+```
+
+## How the pieces connect
+
+```mermaid
+flowchart TD
+    VW[vulnerable-app front end] --> GW[gateway]
+    GW --> VA[vulnerable-app backend]
+    GW -->|events| R[(Redis)]
+    R --> CP[control-plane]
+    CP -->|policy| R
+    R --> GW
+    CP --> PG[(Postgres)]
+    PG --> D[gateway-dashboard]
+    R --> D
+    TS[testing/signals] --> GW
 ```
