@@ -5,7 +5,7 @@ The backend is now ready for security testing. It provides a simple login API wi
 ## Implemented Features
 
 ### 1. In-Memory Mock Database
-Located at [backend/data/users.js](file:///d:/College/Capstone/Intelligent_API_Security_Gateway/vulnerable-app/backend/data/users.js), it contains a list of test users with plain text passwords.
+Located at [backend/data/users.js](backend/data/users.js), it contains a list of test users with plain text passwords.
 
 ```javascript
 const users = [
@@ -15,10 +15,10 @@ const users = [
 ```
 
 ### 2. Detailed Request Logger
-Located at [backend/middleware/logger.js](file:///d:/College/Capstone/Intelligent_API_Security_Gateway/vulnerable-app/backend/middleware/logger.js), it logs the IP, Headers, and Body of every incoming request to the console.
+Located at [backend/middleware/logger.js](backend/middleware/logger.js), it logs the IP, Headers, and Body of every incoming request to the console.
 
 ### 3. Insecure Login API
-Located at [backend/routes/auth.js](file:///d:/College/Capstone/Intelligent_API_Security_Gateway/vulnerable-app/backend/routes/auth.js), the `POST /api/login` endpoint:
+Located at [backend/routes/auth.js](backend/routes/auth.js), the `POST /api/login` endpoint:
 - **No Hashing**: Compares passwords as plain text.
 - **Verbose Errors**: Informs the user if the "User was not found" or the "Password was incorrect".
 - **No Rate Limiting**: Vulnerable to brute-force attacks.

@@ -9,8 +9,10 @@ so a crash mid-cycle replays rather than loses it.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from iasg.alerts import AlertSink
 from iasg.assessment.agent import AssessmentAgent
@@ -142,10 +144,40 @@ class Runner:
         # cycle with no evidence is not a wasted one: silence is the signal.
         result.reviewed = self.campaigns.review({c.campaign_id for c in campaigns})
 
+        self._beat(result)
+
         # Ack last: everything above succeeded, so this evidence is truly done.
         if evidence:
             self.consumer.ack(evidence)
         return result
+
+    def _beat(self, result: CycleResult) -> None:
+        """
+        Say the agent is alive, and when it last thought.
+
+        Given a TTL of a few intervals, the key's *absence* is the signal: a
+        console reading it cannot tell a stopped agent from a quiet network
+        otherwise, and those two look identical while meaning opposite things.
+        Best effort -- failing to announce a cycle must not fail the cycle.
+        """
+        try:
+            self.store.set(
+                self.settings.heartbeat_key,
+                json.dumps(
+                    {
+                        "at": datetime.now(timezone.utc).isoformat(),
+                        "interval_seconds": self.settings.interval_seconds,
+                        "evidence": result.evidence_count,
+                        "campaigns": len(result.campaigns),
+                        "policies_written": result.policies_written,
+                        "durable": bool(self.database),
+                        "dry_run": self.settings.dry_run,
+                    }
+                ),
+                ttl_seconds=max(self.settings.interval_seconds * 3, 90),
+            )
+        except Exception as err:  # noqa: BLE001 - liveness is not worth a cycle
+            print(f"[heartbeat] could not record this cycle ({err})")
 
     def _respond(self, campaign, evidence, pending, result: CycleResult) -> None:
         """Decide, check the decision is safe, let a human overrule it, write."""

@@ -106,11 +106,15 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      # Live panels read Redis; the campaign history reads the record.
+      IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
     command: sh -c "npm ci && npm run dev"
     ports:
       - "5177:5177"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
       gateway:
         condition: service_started
@@ -156,6 +160,10 @@ services:
     volumes:
       - ../control-plane:/app
     environment:
+      # Without this Python block-buffers stdout when it is not a TTY, so the
+      # agent's per-cycle reasoning never reaches `docker compose logs` and the
+      # control plane looks dead even while it is writing campaigns.
+      PYTHONUNBUFFERED: "1"
       IASG_REDIS_URL: redis://redis:6379/0
       IASG_EVIDENCE_STREAM: iasg:events
       IASG_DRY_RUN: "false"
@@ -173,10 +181,14 @@ services:
   docs:
     image: python:3.12-alpine
     restart: unless-stopped
+    # mkdocs.yml lives at the repository root and points docs_dir at
+    # gateway/docs, so the build has to run from the root. Running it from
+    # gateway/ picked up a second, stale config that shipped a different
+    # theme and referenced a renderer that no longer exists.
     working_dir: /workspace
     volumes:
       - ..:/workspace
-    command: sh -c "pip install --no-cache-dir -r gateway/docs/requirements.txt && mkdocs serve -f mkdocs.yml -a 0.0.0.0:8000"
+    command: sh -c "pip install --no-cache-dir -r gateway/docs/requirements.txt && mkdocs serve -a 0.0.0.0:8000"
     ports:
       - "8000:8000"
 

@@ -28,11 +28,32 @@ type Detector interface {
 	Metrics(ip string) Evidence
 }
 
+// RequestIDHeader carries the id telemetry assigns to a request before the
+// rest of the chain runs, so request-scoped detectors can label the evidence
+// they store with the request that produced it.
+const RequestIDHeader = "X-Request-ID"
+
+// RequestScoped is implemented by detectors whose Evidence describes a single
+// request rather than a rolling window.
+//
+// Telemetry asks these for the evidence belonging to the request it is
+// recording. A request that never reached them -- the enforcer answers a
+// blocked address first -- then reports nothing instead of the last request's
+// result, which is the difference between "not inspected" and "attacked".
+type RequestScoped interface {
+	MetricsFor(ip, requestID string) Evidence
+}
+
 var (
 	_ Detector = (*FloodDetector)(nil)
 	_ Detector = (*SQLiDetector)(nil)
 	_ Detector = (*TraversalEnumDetector)(nil)
 	_ Detector = (*BruteForceDetector)(nil)
+
+	// Windowed detectors (flood, brute force) are deliberately absent: their
+	// counts stay true whether or not this request reached them.
+	_ RequestScoped = (*SQLiDetector)(nil)
+	_ RequestScoped = (*TraversalEnumDetector)(nil)
 )
 
 const lastEvidenceTTL = 5 * time.Minute
