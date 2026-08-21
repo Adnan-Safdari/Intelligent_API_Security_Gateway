@@ -1189,3 +1189,369 @@ td select {
   font: inherit;
   font-size: 11.5px;
 }
+
+/* ==========================================================================
+   Investigation, export, and the account menu.
+   Added with the deeper event window, the per-address view, and the header
+   rework. Everything here reuses the existing tokens, so both themes follow.
+   ========================================================================== */
+
+/* --- header buttons ------------------------------------------------------
+   .icon-btn is .theme-btn that can also hold an icon. Kept as its own name
+   because a button holding an SVG needs to centre it, which a text button
+   does not. */
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  border-color: var(--accent);
+}
+
+.icon-btn.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- account menu -------------------------------------------------------- */
+
+.account {
+  position: relative;
+}
+
+.account-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.account-btn:hover,
+.account-btn.open {
+  border-color: var(--accent);
+}
+
+.account-btn .avatar {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.account-btn .who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.15;
+  font-size: 12px;
+}
+
+.account-btn .who em {
+  color: var(--muted);
+  font-size: 10px;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 160px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.account-menu a,
+.account-menu button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.account-menu a:hover,
+.account-menu button:hover {
+  background: var(--row-hover);
+  color: var(--accent);
+}
+
+.account-menu hr {
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.account-menu .danger:hover {
+  color: var(--bad);
+}
+
+/* --- segmented controls (window size, time range) ------------------------ */
+
+.toolbar.sub {
+  margin-top: -6px;
+  font-size: 12px;
+}
+
+.seg-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.seg button {
+  padding: 4px 9px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: var(--bg-head);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.seg button:last-child {
+  border-right: 0;
+}
+
+.seg button:hover {
+  color: var(--text);
+}
+
+.seg button.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.act.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* --- paging -------------------------------------------------------------- */
+
+.more-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.more-row small {
+  color: var(--muted);
+}
+
+/* --- export -------------------------------------------------------------- */
+
+.export-menu {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* --- per-address view ---------------------------------------------------- */
+
+/* The wide column of the workbench grid, for pages that stack cards in it
+   rather than putting a single map there. */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.fact-list {
+  list-style: none;
+  margin: 0;
+  /* .card carries no padding of its own: every list inside one supplies it,
+     the same way .policy-list does. */
+  padding: 6px 12px 10px;
+}
+
+.fact-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.fact-list li:last-child {
+  border-bottom: 0;
+}
+
+.fact-list span {
+  color: var(--muted);
+}
+
+/* A path can be far longer than the card; truncating beats wrapping it to
+   five lines, and the full value stays in the title attribute. */
+.ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* --- forms (profile, reset) ---------------------------------------------- */
+
+.stack-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+.stack-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.stack-form input {
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-head);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+}
+
+.stack-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.stack-form .hint {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.stack-form button {
+  align-self: flex-start;
+}
+
+/* --- sessions ------------------------------------------------------------ */
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 6px 12px 10px;
+}
+
+.session-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.session-list li:last-child {
+  border-bottom: 0;
+}
+
+.session-list li small {
+  color: var(--muted);
+}
+
+.session-list li.current {
+  /* The row you are reading this from, marked without shouting. */
+  border-left: 2px solid var(--accent);
+  padding-left: 8px;
+}
+
+/* --- destructive actions ------------------------------------------------- */
+
+.danger-zone {
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--line));
+}
+
+.danger-zone .form-note {
+  padding: 0 12px;
+}
+
+.danger-zone .form-note:first-of-type {
+  padding-top: 10px;
+}
+
+.danger-zone .card-head h2 {
+  color: var(--bad);
+}
+
+.act.danger {
+  border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
+  color: var(--bad);
+}
+
+.act.danger:hover:not(:disabled) {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+
+.act.danger:disabled {
+  opacity: 0.45;
+}
+
+/* --- narrow screens ------------------------------------------------------ */
+
+@media (max-width: 900px) {
+  .account-btn .who {
+    display: none;
+  }
+
+  .toolbar.sub {
+    gap: 8px;
+  }
+}

@@ -265,8 +265,88 @@ export default function UsersPage() {
               ))}
             </ul>
           </article>
+
+          <ResetRecord setToast={setToast} />
         </div>
       </section>
     </>
+  );
+}
+
+/**
+ * Throw away the durable record.
+ *
+ * Deliberately narrow, and the narrowness is the feature: campaigns and the
+ * agent's learned feedback go, accounts and live telemetry stay. Wiping the
+ * accounts would sign everyone out and drop the console back to /setup, which
+ * is a different operation with a different command behind it.
+ *
+ * Typing the word is the confirmation. A modal that only needs a second click
+ * is one mis-click away from the same accident.
+ */
+function ResetRecord({ setToast }) {
+  const [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function reset(event) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: typed }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setToast({ tone: "bad", text: data.error });
+        return;
+      }
+      const cleared = Object.entries(data.cleared || {})
+        .map(([table, n]) => `${n} ${table}`)
+        .join(", ");
+      setToast({ tone: "good", text: `record cleared — removed ${cleared}` });
+      setTyped("");
+    } catch (err) {
+      setToast({ tone: "bad", text: err.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <article className="card danger-zone">
+      <div className="card-head">
+        <h2>Reset the record</h2>
+      </div>
+      <p className="form-note">
+        Deletes every campaign and everything the agent has learned from being overruled,
+        and restarts campaign numbering at #1. Useful before a demo.
+      </p>
+      <p className="form-note">
+        <b>Keeps</b> these accounts, and all live telemetry and policy in Redis — policy
+        expires by itself, and deleting it from under the gateway would be enforcement by
+        another name.
+      </p>
+      <form className="stack-form" onSubmit={reset}>
+        <label>
+          {/* One flex item, not three: .stack-form label is a column, so bare
+              text either side of the <code> would each become their own row. */}
+          <span>
+            Type <code>reset</code> to confirm
+          </span>
+          <input
+            type="text"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="reset"
+            autoComplete="off"
+          />
+        </label>
+        <button type="submit" className="act danger" disabled={busy || typed !== "reset"}>
+          {busy ? "clearing…" : "clear campaigns and feedback"}
+        </button>
+      </form>
+    </article>
   );
 }

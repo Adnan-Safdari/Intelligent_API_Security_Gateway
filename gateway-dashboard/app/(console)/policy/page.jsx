@@ -4,6 +4,8 @@ import { useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
 import { ACTION_TONE, LADDER, actionLabel, formatTtl } from "@/app/ui/format";
 import { useLive } from "@/app/ui/store";
+import { ExportMenu } from "@/app/ui/parts";
+import { POLICY_COLUMNS } from "@/app/ui/export";
 import Link from "next/link";
 
 export default function PolicyPage() {
@@ -39,6 +41,7 @@ export default function PolicyPage() {
         <article className="card">
           <div className="card-head">
             <h2>In force</h2>
+            <ExportMenu rows={rows} columns={POLICY_COLUMNS} prefix="policy" />
             <div className="head-controls">
               <label className="field">
                 Sort
