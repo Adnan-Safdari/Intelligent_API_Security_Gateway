@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
-import { CampaignCard } from "@/app/ui/parts";
+import { CampaignCard, ExportMenu } from "@/app/ui/parts";
+import { CAMPAIGN_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
 const SORTS = {
@@ -88,6 +89,8 @@ export default function CampaignsPage() {
         </label>
 
         <span className="grow" />
+
+        <ExportMenu rows={shown} columns={CAMPAIGN_COLUMNS} prefix="campaigns" />
 
         {selected.length ? (
           <div className="bulk">

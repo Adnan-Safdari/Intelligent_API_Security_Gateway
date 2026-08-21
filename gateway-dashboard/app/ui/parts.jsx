@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { exportCsv, exportJson } from "./export";
 import {
   ACTION_TONE,
   LADDER,
@@ -129,8 +130,8 @@ export function CampaignCard({ campaign: c, onInstruct, busy, compact }) {
 
       <div className="campaign-ips">
         {c.ips.slice(0, 8).map((ip) => (
-          // Every address is a way into the evidence behind it.
-          <Link key={ip} href={`/events?q=${encodeURIComponent(ip)}`} className="ip-chip">
+          // Every address is a way into everything known about it.
+          <Link key={ip} href={`/ip/${encodeURIComponent(ip)}`} className="ip-chip">
             {ip}
           </Link>
         ))}
@@ -158,9 +159,7 @@ export function PolicyList({ policies }) {
       {policies.map((p) => (
         <li key={p.ip}>
           <div className="policy-top">
-            <Link href={`/events?q=${encodeURIComponent(p.ip)}`} className="mono">
-              {p.ip}
-            </Link>
+            <IpLink ip={p.ip} />
             <span className={`risk ${ACTION_TONE[p.action] || "low"}`}>
               {actionLabel(p.action)}
             </span>
@@ -206,7 +205,9 @@ export function EventTable({ events, empty }) {
                 className={event.fired?.length ? "alert-row" : ""}
               >
                 <td className="mono">{formatTime(event.ts)}</td>
-                <td className="mono">{event.ip}</td>
+                <td>
+                  <IpLink ip={event.ip} />
+                </td>
                 <td>
                   <span className="method">{event.method}</span> {event.path}
                 </td>
@@ -227,5 +228,47 @@ export function EventTable({ events, empty }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * An address, linked to everything known about it.
+ *
+ * Used everywhere an IP appears, so the route into the investigation view is
+ * the same wherever you notice the address.
+ */
+export function IpLink({ ip, className = "mono" }) {
+  if (!ip) return <span className={className}>—</span>;
+  return (
+    <Link href={`/ip/${encodeURIComponent(ip)}`} className={className} title={`Everything known about ${ip}`}>
+      {ip}
+    </Link>
+  );
+}
+
+/** Download the current view. Disabled when there is nothing in it. */
+export function ExportMenu({ rows, columns, prefix, label = "export" }) {
+  const count = rows?.length || 0;
+  return (
+    <span className="export-menu">
+      <button
+        type="button"
+        className="act"
+        disabled={!count}
+        onClick={() => exportCsv(prefix, rows, columns)}
+        title={count ? `Download these ${count} rows as CSV` : "Nothing to export"}
+      >
+        {label} csv
+      </button>
+      <button
+        type="button"
+        className="act"
+        disabled={!count}
+        onClick={() => exportJson(prefix, rows)}
+        title={count ? `Download these ${count} rows as JSON` : "Nothing to export"}
+      >
+        json
+      </button>
+    </span>
   );
 }
