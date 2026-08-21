@@ -17,11 +17,20 @@ let nextOrderId = 1000
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const delay = (ms = 350) => new Promise((r) => setTimeout(r, ms))
 
+const ENV_API_MODE = (import.meta.env.VITE_API_MODE || 'backend').toLowerCase()
+const BACKEND_API_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:5002'
+const GATEWAY_API_URL = import.meta.env.VITE_GATEWAY_API_URL || 'http://localhost:8082'
+
+const getApiMode = () => {
+  const stored = localStorage.getItem('api_mode')
+  return (stored || ENV_API_MODE) === 'gateway' ? 'gateway' : 'backend'
+}
+
 const getApiBaseUrl = () => {
-  const mode = localStorage.getItem("api_mode") || "backend";
+  const mode = getApiMode()
   return mode === 'gateway'
-    ? 'http://localhost:8082'
-    : 'http://localhost:5002'
+    ? GATEWAY_API_URL
+    : BACKEND_API_URL
 }
 
 const err = (msg, status = 400) => {
