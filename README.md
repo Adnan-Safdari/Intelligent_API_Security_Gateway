@@ -11,7 +11,7 @@ Two lanes, deliberately separate.
 ```
                     ┌──────────────────────────────────────────┐
    request ────────▶│  Go gateway (data plane)                 │────▶ backend API
-                    │  detect · check policy · allow/slow/block │
+                    │  detect · check policy · allow/slow/block│
                     └───────────────┬──────────────────────────┘
                                     │ evidence            ▲ policy:<ip>
                                     ▼                     │
@@ -22,7 +22,7 @@ Two lanes, deliberately separate.
                                     ▼                     │
                     ┌──────────────────────────────────────────┐
                     │  Python control plane (every 30s)        │
-                    │  correlate · remember · decide · explain  │
+                    │  correlate · remember · decide · explain │
                     └──────────────────────────────────────────┘
 ```
 
