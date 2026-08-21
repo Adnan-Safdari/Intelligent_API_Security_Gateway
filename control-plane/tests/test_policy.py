@@ -90,6 +90,40 @@ def test_never_writes_policy_for_private_or_loopback():
         assert notes
 
 
+def test_never_writes_a_decision_without_an_expiry():
+    """
+    A block ends because Redis drops the key. Nothing renews or clears one, so
+    a decision with no expiry would refuse an address until a human deleted the
+    key by hand -- and the store reads a falsy ttl as "keep forever", which
+    turns a missing number into a permanent sentence.
+    """
+    store = MemoryStore()
+    decision = PolicyAgent().decide(campaign(0.8))[0]
+
+    for ttl in (0, None, -1):
+        written, notes = PolicyWriter(store, settings()).write(
+            [replace(decision, ttl_seconds=ttl)]
+        )
+        assert written == 0, f"wrote an unexpiring policy for ttl={ttl!r}"
+        assert any("no expiry" in note for note in notes), notes
+        assert store.keys("policy:*") == []
+
+
+def test_an_unexpiring_decision_does_not_consume_the_cycle_budget():
+    """A refused decision must not cost a slot a real one could have used."""
+    store = MemoryStore()
+    good = PolicyAgent().decide(campaign(0.8, ips=["203.0.113.5"]))[0]
+    bad = replace(
+        PolicyAgent().decide(campaign(0.8, ips=["203.0.113.9"]))[0],
+        ttl_seconds=0,
+    )
+
+    written, _ = PolicyWriter(store, settings(max_ips_per_cycle=1)).write([bad, good])
+
+    assert written == 1
+    assert store.get("policy:203.0.113.5") is not None
+
+
 def test_monitor_writes_nothing():
     store = MemoryStore()
     decisions = PolicyAgent().decide(campaign(0.3))

@@ -72,6 +72,10 @@ type Store struct {
 	// map and never take a lock.
 	snapshot atomic.Pointer[map[string]Decision]
 
+	// How many unexpiring keys the last refresh refused, so the warning is
+	// logged when the situation changes rather than on every tick.
+	unexpiring atomic.Int64
+
 	cancel context.CancelFunc
 	done   chan struct{}
 }
@@ -153,6 +157,7 @@ func (s *Store) loop(ctx context.Context) {
 // refresh rebuilds the snapshot from Redis.
 func (s *Store) refresh(ctx context.Context) error {
 	next := make(map[string]Decision)
+	var unexpiring int
 
 	// SCAN rather than KEYS: KEYS walks the entire keyspace in one blocking
 	// call, which stalls Redis for every other client including the control
@@ -169,7 +174,17 @@ func (s *Store) refresh(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			collect(next, keys, values, s.prefix)
+
+			// What Redis will actually do with the key, which is not the same
+			// as what the key says about itself: expires_in inside the JSON is
+			// the control plane's intent, and a key can claim half an hour
+			// while carrying no expiry at all.
+			ttls, err := s.ttls(ctx, keys)
+			if err != nil {
+				return err
+			}
+
+			unexpiring += collect(next, keys, values, ttls, s.prefix)
 		}
 
 		cursor = cur
@@ -178,21 +193,77 @@ func (s *Store) refresh(ctx context.Context) error {
 		}
 	}
 
+	// Logged on change rather than every tick: this is a standing
+	// misconfiguration, not a per-refresh event.
+	if prev := s.unexpiring.Swap(int64(unexpiring)); int64(unexpiring) != prev {
+		switch {
+		case unexpiring > 0:
+			log.Printf("[policy] refusing %d key(s) with no expiry: enforcement must be time-bounded", unexpiring)
+		case prev > 0:
+			log.Printf("[policy] no unexpiring keys remain")
+		}
+	}
+
 	s.snapshot.Store(&next)
 	return nil
 }
 
-// collect decodes one SCAN batch into the snapshot being built. Split out
-// from refresh so the decoding rules can be tested without a Redis server.
-func collect(into map[string]Decision, keys []string, values []any, prefix string) {
+// ttls fetches the remaining life of every key in one round trip.
+//
+// Redis reports -1 for a key with no expiry and -2 for one that is already
+// gone; go-redis passes both through as negative durations.
+func (s *Store) ttls(ctx context.Context, keys []string) ([]time.Duration, error) {
+	pipe := s.client.Pipeline()
+	cmds := make([]*redis.DurationCmd, len(keys))
+	for i, key := range keys {
+		cmds[i] = pipe.TTL(ctx, key)
+	}
+	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
+		return nil, err
+	}
+
+	out := make([]time.Duration, len(keys))
+	for i, cmd := range cmds {
+		ttl, err := cmd.Result()
+		if err != nil {
+			// An unreadable lifetime is treated as no lifetime. The safe
+			// answer is to decline to enforce, never to enforce forever on
+			// the strength of a failed lookup.
+			ttl = -1
+		}
+		out[i] = ttl
+	}
+	return out, nil
+}
+
+// collect decodes one SCAN batch into the snapshot being built and reports how
+// many keys were refused for having no expiry. Split out from refresh so the
+// decoding rules can be tested without a Redis server.
+//
+// ttls may be shorter than keys, in which case the missing entries are treated
+// as unknown and the key is kept: a lifetime we failed to read is not evidence
+// that the key is unexpiring.
+func collect(into map[string]Decision, keys []string, values []any, ttls []time.Duration, prefix string) int {
+	unexpiring := 0
+
 	for i, v := range values {
 		if i >= len(keys) {
-			return
+			return unexpiring
 		}
 
 		raw, ok := v.(string)
 		if !ok {
 			continue // nil: the key expired between the SCAN and the MGET
+		}
+
+		// Every action the control plane can take is time-bounded, and the
+		// gateway relies on Redis dropping the key to restore service by
+		// itself. A key with no expiry has no such release: nothing renews it
+		// and nothing clears it, so one mistyped key would refuse an address
+		// permanently, with no record of why. Refuse it instead.
+		if i < len(ttls) && ttls[i] < 0 {
+			unexpiring++
+			continue
 		}
 
 		var d Decision
@@ -204,6 +275,8 @@ func collect(into map[string]Decision, keys []string, values []any, prefix strin
 
 		into[strings.TrimPrefix(keys[i], prefix)] = d
 	}
+
+	return unexpiring
 }
 
 func (s *Store) size() int {

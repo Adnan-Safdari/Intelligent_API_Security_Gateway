@@ -26,6 +26,7 @@ class PolicyWriter:
         Rails, in order:
           - never touch loopback, private or reserved addresses
           - never write a bare "monitor", which would be a no-op key
+          - never write a decision that has no expiry
           - cap how many IPs one cycle may action
           - dry_run writes nothing at all
         """
@@ -39,6 +40,18 @@ class PolicyWriter:
 
             if not _is_public(decision.ip):
                 notes.append(f"skipped {decision.ip} (not a public address)")
+                continue
+
+            # Enforcement has to release itself. Redis is what ends a block --
+            # nothing in the design renews or clears one -- so a decision with
+            # no expiry would refuse an address until a human noticed and
+            # deleted the key by hand. The store treats a falsy ttl as "keep
+            # forever", which turns a missing number into a permanent sentence,
+            # so the number is checked here rather than trusted downstream.
+            if not decision.ttl_seconds or decision.ttl_seconds <= 0:
+                notes.append(
+                    f"skipped {decision.ip} ({decision.action} with no expiry)"
+                )
                 continue
 
             if budget <= 0:
