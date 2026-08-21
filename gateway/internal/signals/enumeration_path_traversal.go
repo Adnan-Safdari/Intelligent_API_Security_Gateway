@@ -74,7 +74,7 @@ func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 		traversalHits := findPatternHits(path+" "+query, ted.traversalPatterns)
 		enumHits := findPatternHits(path, ted.enumerationPatterns)
 		ev := ted.evidenceFrom(traversalHits, enumHits)
-		ted.last.Put(ip, ev)
+		ted.last.Put(ip, r.Header.Get(RequestIDHeader), ev)
 
 		if len(traversalHits) > 0 {
 			ted.logAlert(ip, r, "PATH TRAVERSAL", "matched Path Traversal signature in URL or query parameters")
@@ -87,8 +87,16 @@ func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// Metrics returns the latest traversal/enumeration evidence for an IP, from
+// whichever request produced it.
 func (ted *TraversalEnumDetector) Metrics(ip string) Evidence {
 	return ted.last.Get(ip, SignalTraversal)
+}
+
+// MetricsFor returns the evidence for one request, and nothing when that
+// request never reached this detector.
+func (ted *TraversalEnumDetector) MetricsFor(ip, requestID string) Evidence {
+	return ted.last.GetFor(ip, requestID, SignalTraversal)
 }
 
 func (ted *TraversalEnumDetector) evidenceFrom(traversalHits, enumHits []string) Evidence {

@@ -59,8 +59,11 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 
 			started := time.Now()
 			requestID := newRequestID()
-			r.Header.Set("X-Request-ID", requestID)
-			w.Header().Set("X-Request-ID", requestID)
+			// Set before the chain runs: request-scoped detectors label the
+			// evidence they store with it, and the snapshot below asks for it
+			// back by the same id.
+			r.Header.Set(signals.RequestIDHeader, requestID)
+			w.Header().Set(signals.RequestIDHeader, requestID)
 			r = policy.AttachOutcome(r)
 
 			body, _ := readBody(r)
@@ -70,7 +73,13 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 			next.ServeHTTP(rec, r)
 
 			ip := netutil.ClientIP(r)
-			snap := collector.Snapshot(ip)
+			// Scoped to this request, not to the address. A blocked IP is
+			// answered by the enforcer before the detectors run, so an
+			// address-wide snapshot would report the attack that got it
+			// blocked on every later request -- evidence the control plane
+			// ingests as a fresh hit, keeping a campaign alive on traffic
+			// nobody inspected.
+			snap := collector.SnapshotFor(ip, requestID)
 			status := rec.status
 			if status == 0 {
 				status = http.StatusOK

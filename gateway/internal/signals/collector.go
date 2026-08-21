@@ -12,6 +12,14 @@ func NewCollector(detectors ...Detector) *Collector {
 }
 
 func (c *Collector) Collect(ip string) []Evidence {
+	return c.collect(ip, "")
+}
+
+// collect gathers evidence for an IP. With a request id, detectors that
+// describe a single request are asked only for that request's evidence;
+// windowed detectors always report their rolling state, which stays true
+// whether or not this particular request reached them.
+func (c *Collector) collect(ip, requestID string) []Evidence {
 	if c == nil {
 		return nil
 	}
@@ -19,6 +27,12 @@ func (c *Collector) Collect(ip string) []Evidence {
 	for _, d := range c.detectors {
 		if d == nil {
 			continue
+		}
+		if requestID != "" {
+			if scoped, ok := d.(RequestScoped); ok {
+				out = append(out, scoped.MetricsFor(ip, requestID))
+				continue
+			}
 		}
 		out = append(out, d.Metrics(ip))
 	}
@@ -33,7 +47,16 @@ type Snapshot struct {
 }
 
 func (c *Collector) Snapshot(ip string) Snapshot {
-	evs := c.Collect(ip)
+	return summarize(c.Collect(ip))
+}
+
+// SnapshotFor is Snapshot for a single request, so what telemetry records is
+// what that request actually carried rather than what the address did last.
+func (c *Collector) SnapshotFor(ip, requestID string) Snapshot {
+	return summarize(c.collect(ip, requestID))
+}
+
+func summarize(evs []Evidence) Snapshot {
 	snap := Snapshot{Evidence: evs}
 	for _, ev := range evs {
 		snap.TotalScore += ev.Score

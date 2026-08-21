@@ -68,7 +68,7 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 		haystack := r.URL.Path + " " + r.URL.RawQuery + " " + string(bodyBytes)
 		matched := sd.findMatches(haystack)
 		ev := sd.evidenceFrom(matched)
-		sd.last.Put(ip, ev)
+		sd.last.Put(ip, r.Header.Get(RequestIDHeader), ev)
 
 		if ev.ThresholdCross {
 			sd.logAlert(ip, r, strings.Join(matched, ", "))
@@ -78,9 +78,16 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 	})
 }
 
-// Metrics returns the latest SQLi evidence for an IP.
+// Metrics returns the latest SQLi evidence for an IP, from whichever request
+// produced it.
 func (sd *SQLiDetector) Metrics(ip string) Evidence {
 	return sd.last.Get(ip, SignalSQLi)
+}
+
+// MetricsFor returns the SQLi evidence for one request, and nothing when that
+// request never reached this detector.
+func (sd *SQLiDetector) MetricsFor(ip, requestID string) Evidence {
+	return sd.last.GetFor(ip, requestID, SignalSQLi)
 }
 
 func (sd *SQLiDetector) findMatches(text string) []string {
