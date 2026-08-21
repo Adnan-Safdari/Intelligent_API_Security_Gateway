@@ -144,9 +144,24 @@ type ThrottleConfig struct {
 	DelayMS int  `yaml:"delay_ms"`
 }
 
+// BlockConfig controls the gateway's own blocking -- its reflex, as opposed to
+// the considered decisions the control plane writes as policy keys.
+//
+// Enabled on its own does nothing: Signals has to name at least one detector
+// that may act. That is deliberate. This block existed in the config long
+// before anything read it, so a build that suddenly honoured Enabled alone
+// would start refusing traffic on configuration nobody had revisited.
 type BlockConfig struct {
 	Enabled  bool          `yaml:"enabled"`
 	Duration time.Duration `yaml:"duration"`
+	// Detectors trusted to block on their own. Omit the key entirely to take
+	// the safe defaults; an explicit empty list enforces nothing.
+	Signals []string `yaml:"signals"`
+	// A score floor on top of the detector's own threshold, so a marginal hit
+	// is not enough on its own.
+	MinScore int `yaml:"min_score"`
+	// Never blocked. Omit to take loopback and the private ranges.
+	ExemptCIDRs []string `yaml:"exempt_cidrs"`
 }
 
 type SignalsConfig struct {

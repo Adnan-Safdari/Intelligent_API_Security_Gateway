@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/enforcement"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
@@ -63,6 +64,10 @@ type Config struct {
 	// Policy controls enforcement of control-plane decisions.
 	Policy config.PolicyConfig
 
+	// Block holds the gateway's own blocking -- its reflex, as distinct from
+	// the decisions the control plane writes as policy keys.
+	Block config.BlockConfig
+
 	// Throttle sets the delay applied to throttled clients.
 	Throttle config.ThrottleConfig
 
@@ -107,7 +112,9 @@ func NewServer(cfg Config) *Server {
 //  3. Logging
 //  4. Policy enforcer — optional; blocked IPs never reach detectors
 //  5. Request inspection, then flood / SQLi / traversal / brute force
-//  6. Reverse proxy
+//  6. Reflex observer — optional; records gateway-side blocks after the
+//     detectors have run, applying from the caller's next request
+//  7. Reverse proxy
 //
 // Returns:
 //   - error: An error if the server fails to start or encounters a fatal error during operation.
@@ -140,7 +147,17 @@ func (s *Server) Start() error {
 		return err
 	}
 
-	enforcer := s.newEnforcer()
+	// The gateway's own reflex, and the enforcer that acts on both it and the
+	// control plane's decisions.
+	reflex, err := s.newReflex()
+	if err != nil {
+		return err
+	}
+	reflex.Start()
+	defer reflex.Close()
+	log.Printf("[enforcement] %s", reflex.Describe())
+
+	enforcer := s.newEnforcer(reflex)
 
 	// The resolver runs first so the trusted-proxy X-Forwarded-For IP is on the
 	// request context before anything else reads it. Telemetry sits just inside
@@ -161,6 +178,8 @@ func (s *Server) Start() error {
 		sqliDetector.Middleware,
 		traversalEnumDetector.Middleware,
 		bruteForceDetector.Middleware,
+		// Last, so every detector has run by the time it reads the evidence.
+		enforcement.Middleware(reflex, s.collector),
 	)(proxy)
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler
@@ -182,25 +201,49 @@ func (s *Server) Start() error {
 // When enforcement is disabled, no Redis client is created at all and the
 // middleware becomes a pass-through. That is the default, and it is what keeps
 // the gateway able to run with the control plane switched off entirely.
-func (s *Server) newEnforcer() *policy.Enforcer {
-	if !s.config.Policy.Enabled {
-		return policy.NewEnforcer(nil, false, 0)
-	}
-
-	store := policy.NewStore(policy.Config{
-		Addr:            s.config.Redis.Addr(),
-		Password:        s.config.Redis.Password,
-		DB:              s.config.Redis.DB,
-		PoolSize:        s.config.Redis.PoolSize,
-		KeyPrefix:       s.config.Policy.KeyPrefix,
-		RefreshInterval: s.config.Policy.RefreshInterval,
-	})
-	store.Start()
-
+func (s *Server) newEnforcer(reflex *enforcement.Reflex) *policy.Enforcer {
 	delay := time.Duration(s.config.Throttle.DelayMS) * time.Millisecond
 	if !s.config.Throttle.Enabled {
 		delay = 0
 	}
 
-	return policy.NewEnforcer(store, true, delay)
+	// The control plane first, then the gateway's own reflex. policy.Chain
+	// documents why that order and not the other one.
+	var sources policy.Chain
+
+	if s.config.Policy.Enabled {
+		store := policy.NewStore(policy.Config{
+			Addr:            s.config.Redis.Addr(),
+			Password:        s.config.Redis.Password,
+			DB:              s.config.Redis.DB,
+			PoolSize:        s.config.Redis.PoolSize,
+			KeyPrefix:       s.config.Policy.KeyPrefix,
+			RefreshInterval: s.config.Policy.RefreshInterval,
+		})
+		store.Start()
+		sources = append(sources, store)
+	}
+
+	if reflex.Active() {
+		sources = append(sources, reflex)
+	}
+
+	// Nothing to enforce from either source: the middleware becomes a
+	// pass-through and no lookup happens per request.
+	if len(sources) == 0 {
+		return policy.NewEnforcer(nil, false, 0)
+	}
+
+	return policy.NewEnforcer(sources, true, delay)
+}
+
+// newReflex builds the gateway's own blocking, from enforcement.block.
+func (s *Server) newReflex() (*enforcement.Reflex, error) {
+	return enforcement.New(enforcement.Config{
+		Enabled:     s.config.Block.Enabled,
+		Duration:    s.config.Block.Duration,
+		Signals:     s.config.Block.Signals,
+		MinScore:    s.config.Block.MinScore,
+		ExemptCIDRs: s.config.Block.ExemptCIDRs,
+	})
 }

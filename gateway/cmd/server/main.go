@@ -49,6 +49,7 @@ func main() {
 		BruteForce:      cfg.Enforcement.BruteForce,
 		Enumeration:     cfg.Enforcement.Enumeration,
 		Policy:          cfg.Enforcement.Policy,
+		Block:           cfg.Enforcement.Block,
 		Throttle:        cfg.Enforcement.Throttle,
 		Redis:           cfg.Storage.Redis,
 		TrustedProxies:  cfg.Server.TrustedProxies,
