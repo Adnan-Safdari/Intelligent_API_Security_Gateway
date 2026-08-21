@@ -83,6 +83,17 @@ export function CampaignCard({ campaign: c, onInstruct, busy, compact }) {
         <span>{c.severity}</span>
         <span>{c.events} events</span>
         <span className={c.status === "contained" ? "tag good" : "tag"}>{c.status}</span>
+        {/* In the reader's own zone. The narration below carries UTC because
+            it is stored and travels to places with no browser to localise it;
+            without this line the only time on the card was that one, and an
+            operator reads a bare clock as their own. */}
+        {c.lastSeen ? (
+          <span title={`First seen ${formatTime(c.firstSeen)}, last seen ${formatTime(c.lastSeen)} local time`}>
+            {c.firstSeen && formatTime(c.firstSeen) !== formatTime(c.lastSeen)
+              ? `${formatTime(c.firstSeen)}–${formatTime(c.lastSeen)}`
+              : formatTime(c.lastSeen)}
+          </span>
+        ) : null}
       </div>
 
       <p className="campaign-reason">{c.reason}</p>

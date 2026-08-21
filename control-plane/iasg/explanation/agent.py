@@ -8,6 +8,7 @@ and answers.
 
 from __future__ import annotations
 
+from datetime import timezone
 from iasg.models import Campaign, PolicyDecision
 from iasg.reasoning.provider import LLMProvider
 
@@ -47,8 +48,15 @@ class ExplanationAgent:
 
 
 def _template(campaign: Campaign, decisions: list[PolicyDecision]) -> str:
-    start = campaign.first_seen.strftime("%H:%M")
-    end = campaign.last_seen.strftime("%H:%M")
+    # Labelled, and explicitly converted rather than trusting the process
+    # clock. This sentence is stored on the campaign and travels to Postgres,
+    # to the alert stream and into logs, none of which have a browser to
+    # localise it -- so a bare "14:04" is read as local time by whoever finds
+    # it next, and is wrong by however far they are from UTC. The console
+    # shows the same instants in the reader's own zone from first_seen and
+    # last_seen, which stay ISO with an offset.
+    start = campaign.first_seen.astimezone(timezone.utc).strftime("%H:%M UTC")
+    end = campaign.last_seen.astimezone(timezone.utc).strftime("%H:%M UTC")
     endpoint = campaign.signature.get("endpoint") or "several endpoints"
     action = decisions[0].action if decisions else "monitor"
     minutes = decisions[0].ttl_seconds // 60 if decisions else 0
