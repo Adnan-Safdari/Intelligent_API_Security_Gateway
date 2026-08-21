@@ -1,0 +1,27 @@
+site_name: Intelligent API Security Gateway
+site_description: Documentation for the Intelligent API Security Gateway
+site_author: IASG Team
+
+docs_dir: docs
+
+theme:
+  name: readthedocs
+
+nav:
+  - Home: index.md
+  - System Architecture: system-architecture.md
+  - Request Lifecycle: request-lifecycle.md
+  - Reverse Proxy Logic: reverse-proxy-logic.md
+  - Client IP: client-ip.md
+  - Running Locally: running-locally.md
+  - Project Context: project-context.md
+  - Project Structure: project-structure.md
+  - Modules:
+      - Proxy Module: modules/proxy-module.md
+      - Dashboard: modules/dashboard.md
+      - Redis Telemetry: modules/redis-telemetry.md
+      - Signal Tests: modules/signal-tests.md
+  - ChatGPT Handoff: chatgpt-handoff-prompt.md
+
+extra_javascript:
+  - javascripts/mermaid.js

@@ -177,10 +177,10 @@ services:
   docs:
     image: python:3.12-alpine
     restart: unless-stopped
-    working_dir: /workspace
+    working_dir: /workspace/gateway/
     volumes:
       - ..:/workspace
-    command: sh -c "pip install --no-cache-dir -r gateway/docs/requirements.txt && mkdocs serve -f mkdocs.yml -a 0.0.0.0:8000"
+    command: sh -c "pip install --no-cache-dir -r docs/requirements.txt && mkdocs serve -a 0.0.0.0:8000"
     ports:
       - "8000:8000"
 
