@@ -160,6 +160,10 @@ services:
     volumes:
       - ../control-plane:/app
     environment:
+      # Without this Python block-buffers stdout when it is not a TTY, so the
+      # agent's per-cycle reasoning never reaches `docker compose logs` and the
+      # control plane looks dead even while it is writing campaigns.
+      PYTHONUNBUFFERED: "1"
       IASG_REDIS_URL: redis://redis:6379/0
       IASG_EVIDENCE_STREAM: iasg:events
       IASG_DRY_RUN: "false"
