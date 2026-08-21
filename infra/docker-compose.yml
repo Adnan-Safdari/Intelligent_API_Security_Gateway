@@ -177,10 +177,14 @@ services:
   docs:
     image: python:3.12-alpine
     restart: unless-stopped
-    working_dir: /workspace/gateway/
+    # mkdocs.yml lives at the repository root and points docs_dir at
+    # gateway/docs, so the build has to run from the root. Running it from
+    # gateway/ picked up a second, stale config that shipped a different
+    # theme and referenced a renderer that no longer exists.
+    working_dir: /workspace
     volumes:
       - ..:/workspace
-    command: sh -c "pip install --no-cache-dir -r docs/requirements.txt && mkdocs serve -a 0.0.0.0:8000"
+    command: sh -c "pip install --no-cache-dir -r gateway/docs/requirements.txt && mkdocs serve -a 0.0.0.0:8000"
     ports:
       - "8000:8000"
 
