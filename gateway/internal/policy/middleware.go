@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
@@ -12,27 +13,37 @@ import (
 
 // Enforcer applies control-plane decisions to live requests. It is the only
 // place where anything the control plane produced can affect real traffic.
-type Enforcer struct {
-	lookup   Lookuper
+// enforcerTunables is what the console can move at runtime, swapped whole.
+type enforcerTunables struct {
 	enabled  bool
 	throttle time.Duration
-	logged   *logLimiter
+}
+
+type Enforcer struct {
+	lookup Lookuper
+	tun    atomic.Pointer[enforcerTunables]
+	logged *logLimiter
 }
 
 func NewEnforcer(l Lookuper, enabled bool, throttleDelay time.Duration) *Enforcer {
-	return &Enforcer{
-		lookup:   l,
-		enabled:  enabled,
-		throttle: throttleDelay,
-		logged:   newLogLimiter(time.Minute),
-	}
+	e := &Enforcer{lookup: l, logged: newLogLimiter(time.Minute)}
+	e.Apply(enabled, throttleDelay)
+	return e
+}
+
+// Apply turns enforcement on or off and sets the throttle delay. The lookup
+// sources themselves are fixed at boot -- this only decides whether their
+// verdicts are acted on.
+func (e *Enforcer) Apply(enabled bool, throttleDelay time.Duration) {
+	e.tun.Store(&enforcerTunables{enabled: enabled, throttle: throttleDelay})
 }
 
 // Middleware sits at the front of the chain, so a blocked IP is turned away
 // before the detectors spend any work on it.
 func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !e.enabled || e.lookup == nil {
+		tun := e.tun.Load()
+		if !tun.enabled || e.lookup == nil {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -56,7 +67,7 @@ func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 			// the request context too means a client that disconnects does
 			// not pin a goroutine for the full delay.
 			select {
-			case <-time.After(e.throttle):
+			case <-time.After(tun.throttle):
 			case <-r.Context().Done():
 				return
 			}

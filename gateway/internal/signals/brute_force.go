@@ -38,6 +38,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
@@ -55,19 +56,28 @@ type bruteForceClient struct {
 // BruteForceDetector tracks failed login attempts per IP.
 // Login endpoints are a tiny fraction of total traffic, so a single
 // map + mutex is enough here (no sharding needed like the flood detector).
-type BruteForceDetector struct {
-	enabled     bool
+// bruteTunables is what the console can move at runtime, swapped whole so a
+// request never sees a new threshold against an old window.
+type bruteTunables struct {
 	maxFailures int             // failures inside the window before the signal fires
 	window      time.Duration   // sliding window for counting failures
 	loginPaths  map[string]bool // exact request paths that count as "login"
+	enabled     bool
+}
+
+type BruteForceDetector struct {
+	tun atomic.Pointer[bruteTunables]
 
 	mu      sync.Mutex
 	clients map[string]*bruteForceClient
 }
 
-// NewBruteForceDetector creates a brute force detector from configuration.
-func NewBruteForceDetector(cfg config.BruteForceConfig) *BruteForceDetector {
-	// Sensible defaults so an empty config block still behaves
+func (bd *BruteForceDetector) settings() bruteTunables { return *bd.tun.Load() }
+
+// Apply swaps in new settings. Recorded failures are kept: someone part-way
+// through guessing a password should not be handed a fresh allowance because
+// the window was edited.
+func (bd *BruteForceDetector) Apply(cfg config.BruteForceConfig) {
 	if cfg.MaxFailures <= 0 {
 		cfg.MaxFailures = 5
 	}
@@ -77,23 +87,29 @@ func NewBruteForceDetector(cfg config.BruteForceConfig) *BruteForceDetector {
 	if len(cfg.LoginPaths) == 0 {
 		cfg.LoginPaths = []string{"/api/login"}
 	}
-
 	paths := make(map[string]bool, len(cfg.LoginPaths))
 	for _, p := range cfg.LoginPaths {
 		paths[p] = true
 	}
-
-	bd := &BruteForceDetector{
+	bd.tun.Store(&bruteTunables{
 		enabled:     cfg.Enabled,
 		maxFailures: cfg.MaxFailures,
 		window:      cfg.Window,
 		loginPaths:  paths,
-		clients:     make(map[string]*bruteForceClient),
-	}
+	})
+}
 
-	if bd.enabled {
-		go bd.startCleanupTimer()
-	}
+// NewBruteForceDetector creates a brute force detector from configuration.
+func NewBruteForceDetector(cfg config.BruteForceConfig) *BruteForceDetector {
+	bd := &BruteForceDetector{clients: make(map[string]*bruteForceClient)}
+	// Apply supplies the defaults, so there is one place that decides what an
+	// empty config block means.
+	bd.Apply(cfg)
+
+	// Started unconditionally: the detector can be switched on from the console
+	// later, and a sweeper that only exists when it booted enabled would let
+	// the client map grow without bound from that point on.
+	go bd.startCleanupTimer()
 	return bd
 }
 
@@ -105,7 +121,7 @@ func (bd *BruteForceDetector) startCleanupTimer() {
 		bd.mu.Lock()
 		for ip, client := range bd.clients {
 			if len(client.Failures) == 0 ||
-				now.Sub(client.Failures[len(client.Failures)-1]) > bd.window {
+				now.Sub(client.Failures[len(client.Failures)-1]) > bd.settings().window {
 				delete(bd.clients, ip)
 			}
 		}
@@ -137,7 +153,8 @@ func (sr *statusRecorder) Flush() {
 func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Only login endpoints matter — everything else passes straight through
-		if !bd.enabled || !bd.loginPaths[r.URL.Path] {
+		tun := bd.settings()
+		if !tun.enabled || !tun.loginPaths[r.URL.Path] {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -166,6 +183,7 @@ func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 // threshold is crossed. The request itself has already been forwarded.
 func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
 	now := time.Now()
+	tun := bd.settings()
 
 	bd.mu.Lock()
 	client, exists := bd.clients[ip]
@@ -175,7 +193,7 @@ func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
 	}
 
 	// Drop failures that have aged out of the sliding window
-	cutoff := now.Add(-bd.window)
+	cutoff := now.Add(-tun.window)
 	firstValid := len(client.Failures)
 	for i, t := range client.Failures {
 		if t.After(cutoff) {
@@ -194,13 +212,15 @@ func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
 	distinctEmails := len(client.Emails)
 	bd.mu.Unlock()
 
-	if failureCount >= bd.maxFailures {
-		bd.logAlert(ip, r, failureCount, distinctEmails)
+	if failureCount >= tun.maxFailures {
+		bd.logAlert(ip, r, failureCount, distinctEmails, tun.maxFailures)
 	}
 }
 
 // Metrics returns brute-force evidence for an IP. Safe to call concurrently.
 func (bd *BruteForceDetector) Metrics(ip string) Evidence {
+	tun := bd.settings()
+
 	bd.mu.Lock()
 	defer bd.mu.Unlock()
 
@@ -209,8 +229,8 @@ func (bd *BruteForceDetector) Metrics(ip string) Evidence {
 		Details: map[string]any{
 			"failedLogins":  0,
 			"distinctUsers": 0,
-			"maxFailures":   bd.maxFailures,
-			"window":        bd.window.String(),
+			"maxFailures":   tun.maxFailures,
+			"window":        tun.window.String(),
 		},
 	}
 
@@ -219,7 +239,7 @@ func (bd *BruteForceDetector) Metrics(ip string) Evidence {
 		return ev
 	}
 
-	cutoff := time.Now().Add(-bd.window)
+	cutoff := time.Now().Add(-tun.window)
 	failures := 0
 	for _, t := range client.Failures {
 		if t.After(cutoff) {
@@ -227,11 +247,11 @@ func (bd *BruteForceDetector) Metrics(ip string) Evidence {
 		}
 	}
 	distinct := len(client.Emails)
-	crossed := failures >= bd.maxFailures
+	crossed := failures >= tun.maxFailures
 
 	ev.Details["failedLogins"] = failures
 	ev.Details["distinctUsers"] = distinct
-	ev.Score = bruteForceScore(failures, bd.maxFailures, distinct)
+	ev.Score = bruteForceScore(failures, tun.maxFailures, distinct)
 	ev.ThresholdCross = crossed
 	if crossed {
 		ev.AttackType = classifyAttack(distinct)
@@ -281,11 +301,11 @@ func extractEmail(r *http.Request) string {
 }
 
 // logAlert prints a high-visibility security alert to the console.
-func (bd *BruteForceDetector) logAlert(ip string, r *http.Request, failures, distinctEmails int) {
+func (bd *BruteForceDetector) logAlert(ip string, r *http.Request, failures, distinctEmails, maxFailures int) {
 	severity := "LOW"
-	if failures >= bd.maxFailures*5 {
+	if failures >= maxFailures*5 {
 		severity = "HIGH"
-	} else if failures >= bd.maxFailures*2 {
+	} else if failures >= maxFailures*2 {
 		severity = "MEDIUM"
 	}
 
@@ -315,7 +335,7 @@ func (bd *BruteForceDetector) logAlert(ip string, r *http.Request, failures, dis
 		failures,
 		distinctEmails,
 		attackType,
-		bd.window,
+		bd.settings().window,
 		r.Header.Get("User-Agent"),
 		severity,
 		time.Now().Format(time.RFC3339),

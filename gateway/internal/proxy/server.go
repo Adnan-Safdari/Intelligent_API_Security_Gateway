@@ -157,7 +157,24 @@ func (s *Server) Start() error {
 	defer reflex.Close()
 	log.Printf("[enforcement] %s", reflex.Describe())
 
-	enforcer := s.newEnforcer(reflex)
+	enforcer, gate := s.newEnforcer(reflex)
+
+	// Live settings. The file is what the gateway boots with; the console can
+	// put an override on top of it, and deleting that override comes straight
+	// back here. Only the enforcement block travels this way -- see the
+	// settings package for why the structural settings do not.
+	watcher := s.startSettingsWatcher(live{
+		flood:     floodDetector,
+		sqli:      sqliDetector,
+		brute:     bruteForceDetector,
+		traversal: traversalEnumDetector,
+		reflex:    reflex,
+		enforcer:  enforcer,
+		gate:      gate,
+	})
+	if watcher != nil {
+		defer watcher.Close()
+	}
 
 	// The resolver runs first so the trusted-proxy X-Forwarded-For IP is on the
 	// request context before anything else reads it. Telemetry sits just inside
@@ -201,17 +218,21 @@ func (s *Server) Start() error {
 // When enforcement is disabled, no Redis client is created at all and the
 // middleware becomes a pass-through. That is the default, and it is what keeps
 // the gateway able to run with the control plane switched off entirely.
-func (s *Server) newEnforcer(reflex *enforcement.Reflex) *policy.Enforcer {
-	delay := time.Duration(s.config.Throttle.DelayMS) * time.Millisecond
-	if !s.config.Throttle.Enabled {
-		delay = 0
-	}
-
+// newEnforcer builds the enforcement middleware and the gate that switches the
+// control plane's decisions on and off.
+//
+// Both sources are wired in whether or not they are active at boot, because
+// the console can turn either on later and the chain cannot be rebuilt once
+// requests are flowing. Each source answers "no opinion" while it is off:
+// the gate short-circuits, and the reflex checks its own enabled flag. The
+// returned gate is nil when there is no Redis to read policy from.
+func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *policy.Gate) {
 	// The control plane first, then the gateway's own reflex. policy.Chain
 	// documents why that order and not the other one.
 	var sources policy.Chain
+	var gate *policy.Gate
 
-	if s.config.Policy.Enabled {
+	if s.config.Redis.Enabled {
 		store := policy.NewStore(policy.Config{
 			Addr:            s.config.Redis.Addr(),
 			Password:        s.config.Redis.Password,
@@ -221,20 +242,29 @@ func (s *Server) newEnforcer(reflex *enforcement.Reflex) *policy.Enforcer {
 			RefreshInterval: s.config.Policy.RefreshInterval,
 		})
 		store.Start()
-		sources = append(sources, store)
+		gate = policy.NewGate(store, s.config.Policy.Enabled)
+		sources = append(sources, gate)
 	}
 
-	if reflex.Active() {
-		sources = append(sources, reflex)
-	}
+	sources = append(sources, reflex)
 
-	// Nothing to enforce from either source: the middleware becomes a
-	// pass-through and no lookup happens per request.
-	if len(sources) == 0 {
-		return policy.NewEnforcer(nil, false, 0)
-	}
+	return policy.NewEnforcer(sources, s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle)), gate
+}
 
-	return policy.NewEnforcer(sources, true, delay)
+// throttleDelay is the pause applied to a throttled caller, or zero when
+// throttling is off.
+func throttleDelay(cfg config.ThrottleConfig) time.Duration {
+	if !cfg.Enabled {
+		return 0
+	}
+	return time.Duration(cfg.DelayMS) * time.Millisecond
+}
+
+// enforcementOn reports whether any source could currently have an opinion.
+// When none can, the middleware short-circuits and no lookup happens per
+// request, which is what it did before either source could be toggled.
+func (s *Server) enforcementOn(reflex *enforcement.Reflex, gate *policy.Gate) bool {
+	return gate.On() || reflex.Active()
 }
 
 // newReflex builds the gateway's own blocking, from enforcement.block.

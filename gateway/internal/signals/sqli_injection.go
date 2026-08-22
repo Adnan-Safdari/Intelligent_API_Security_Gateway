@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
@@ -35,30 +36,45 @@ func SQLiDetectorConfigFrom(cfg config.AttackDetectionConfig) SQLiDetectorConfig
 	}
 }
 
-// SQLiDetector inspects request path, query, and body for SQLi signatures.
-type SQLiDetector struct {
+// sqliTunables is what the console can move at runtime, swapped whole.
+type sqliTunables struct {
 	enabled     bool
 	sqlPatterns []string
-	last        *lastEvidenceStore
+}
+
+// SQLiDetector inspects request path, query, and body for SQLi signatures.
+type SQLiDetector struct {
+	tun  atomic.Pointer[sqliTunables]
+	last *lastEvidenceStore
+}
+
+func (d *SQLiDetector) settings() sqliTunables { return *d.tun.Load() }
+
+// Apply swaps in new settings. The recent-evidence store is left alone so a
+// request already seen still reports what it matched.
+func (d *SQLiDetector) Apply(cfg config.AttackDetectionConfig) {
+	patterns := cfg.SQLPatterns
+	if len(patterns) == 0 {
+		patterns = DefaultSQLiDetectorConfig().SQLPatterns
+	}
+	d.tun.Store(&sqliTunables{enabled: cfg.Enabled, sqlPatterns: patterns})
 }
 
 func NewSQLiDetector(cfg SQLiDetectorConfig) *SQLiDetector {
-	if len(cfg.SQLPatterns) == 0 {
-		cfg.SQLPatterns = DefaultSQLiDetectorConfig().SQLPatterns
-	}
-
-	return &SQLiDetector{
-		enabled:     cfg.Enabled,
-		sqlPatterns: cfg.SQLPatterns,
-		last:        newLastEvidenceStore(lastEvidenceTTL),
-	}
+	sd := &SQLiDetector{last: newLastEvidenceStore(lastEvidenceTTL)}
+	sd.Apply(config.AttackDetectionConfig{
+		Enabled:     cfg.Enabled,
+		SQLPatterns: cfg.SQLPatterns,
+	})
+	return sd
 }
 
 func (sd *SQLiDetector) Name() string { return SignalSQLi }
 
 func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !sd.enabled {
+		tun := sd.settings()
+		if !tun.enabled {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -66,7 +82,7 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 		ip := netutil.ClientIP(r)
 		bodyBytes, _ := readAndRestoreBody(r)
 		haystack := r.URL.Path + " " + r.URL.RawQuery + " " + string(bodyBytes)
-		matched := sd.findMatches(haystack)
+		matched := sd.findMatches(haystack, tun.sqlPatterns)
 		ev := sd.evidenceFrom(matched)
 		sd.last.Put(ip, r.Header.Get(RequestIDHeader), ev)
 
@@ -90,10 +106,10 @@ func (sd *SQLiDetector) MetricsFor(ip, requestID string) Evidence {
 	return sd.last.GetFor(ip, requestID, SignalSQLi)
 }
 
-func (sd *SQLiDetector) findMatches(text string) []string {
+func (sd *SQLiDetector) findMatches(text string, patterns []string) []string {
 	upper := strings.ToUpper(text)
 	var matched []string
-	for _, pattern := range sd.sqlPatterns {
+	for _, pattern := range patterns {
 		if strings.Contains(upper, strings.ToUpper(pattern)) {
 			matched = append(matched, pattern)
 		}

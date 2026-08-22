@@ -31,6 +31,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
@@ -76,6 +77,9 @@ type Config struct {
 	ExemptCIDRs []string
 }
 
+// sweepInterval is how often expired blocks are dropped from memory.
+const sweepInterval = 30 * time.Second
+
 type block struct {
 	until  time.Time
 	signal string
@@ -87,12 +91,19 @@ type block struct {
 // It satisfies policy.Lookuper, so the enforcing middleware does not need to
 // know there are two sources of decisions -- there is one place that decides
 // what a decision means, and it stays in internal/policy.
-type Reflex struct {
+// reflexTunables is everything the console can move at runtime. Swapped whole,
+// so a request is judged against one consistent set of rules rather than a
+// threshold from the new settings and an exemption list from the old.
+type reflexTunables struct {
 	enabled  bool
 	duration time.Duration
 	minScore int
 	signals  map[string]bool
 	exempt   []*net.IPNet
+}
+
+type Reflex struct {
+	tun atomic.Pointer[reflexTunables]
 
 	mu      sync.RWMutex
 	blocked map[string]block
@@ -101,22 +112,34 @@ type Reflex struct {
 	done chan struct{}
 }
 
-// New builds a Reflex. An error means the configuration is unusable, which is
-// worth refusing to start over: silently enforcing nothing would look
-// identical to enforcing correctly.
-func New(cfg Config) (*Reflex, error) {
-	r := &Reflex{
+// settings returns the tunables in force. Never nil once New has returned.
+func (r *Reflex) settings() *reflexTunables { return r.tun.Load() }
+
+// Apply swaps in new settings, rejecting them if a CIDR will not parse so that
+// a typo in the exempt list cannot quietly leave everybody blockable.
+//
+// Blocks already in force are kept. Lowering the duration does not cut a block
+// short and raising it does not extend one -- each block carries the deadline
+// it was given, which is the same promise Observe makes.
+func (r *Reflex) Apply(cfg Config) error {
+	tun, err := buildTunables(cfg)
+	if err != nil {
+		return err
+	}
+	r.tun.Store(tun)
+	return nil
+}
+
+func buildTunables(cfg Config) (*reflexTunables, error) {
+	t := &reflexTunables{
 		enabled:  cfg.Enabled,
 		duration: cfg.Duration,
 		minScore: cfg.MinScore,
 		signals:  map[string]bool{},
-		blocked:  map[string]block{},
-		stop:     make(chan struct{}),
-		done:     make(chan struct{}),
 	}
 
-	if r.duration <= 0 {
-		r.duration = 5 * time.Minute
+	if t.duration <= 0 {
+		t.duration = 5 * time.Minute
 	}
 
 	// Signals is *not* defaulted when absent. enforcement.block.enabled has
@@ -127,7 +150,7 @@ func New(cfg Config) (*Reflex, error) {
 	// cannot be mistaken for working.
 	for _, name := range cfg.Signals {
 		if name = strings.TrimSpace(name); name != "" {
-			r.signals[name] = true
+			t.signals[name] = true
 		}
 	}
 
@@ -157,9 +180,24 @@ func New(cfg Config) (*Reflex, error) {
 		if err != nil {
 			return nil, &configError{entry: entry, err: err}
 		}
-		r.exempt = append(r.exempt, network)
+		t.exempt = append(t.exempt, network)
 	}
 
+	return t, nil
+}
+
+// New builds a Reflex. An error means the configuration is unusable, which is
+// worth refusing to start over: silently enforcing nothing would look
+// identical to enforcing correctly.
+func New(cfg Config) (*Reflex, error) {
+	r := &Reflex{
+		blocked: map[string]block{},
+		stop:    make(chan struct{}),
+		done:    make(chan struct{}),
+	}
+	if err := r.Apply(cfg); err != nil {
+		return nil, err
+	}
 	return r, nil
 }
 
@@ -179,25 +217,33 @@ func (e *configError) Error() string {
 // startup log needs to say honestly. Enabled with no signals is a
 // configuration that looks armed and is not.
 func (r *Reflex) Active() bool {
-	return r != nil && r.enabled && len(r.signals) > 0
+	if r == nil {
+		return false
+	}
+	t := r.settings()
+	return t.enabled && len(t.signals) > 0
 }
 
 // Describe is the one-line summary for the startup log.
 func (r *Reflex) Describe() string {
-	if r == nil || !r.enabled {
+	if r == nil {
 		return "gateway-side blocking off"
 	}
-	if len(r.signals) == 0 {
+	t := r.settings()
+	if !t.enabled {
+		return "gateway-side blocking off"
+	}
+	if len(t.signals) == 0 {
 		return "gateway-side blocking enabled but no signals listed: nothing will be blocked"
 	}
-	names := make([]string, 0, len(r.signals))
-	for name := range r.signals {
+	names := make([]string, 0, len(t.signals))
+	for name := range t.signals {
 		names = append(names, name)
 	}
 	// Sorted so the log line is stable between restarts.
 	sortStrings(names)
 	return "gateway-side blocking on for " + strings.Join(names, ", ") +
-		" at score >= " + itoa(r.minScore) + " for " + r.duration.String()
+		" at score >= " + itoa(t.minScore) + " for " + t.duration.String()
 }
 
 // Observe records a block when this request's evidence justifies one.
@@ -206,18 +252,21 @@ func (r *Reflex) Describe() string {
 // that one is already through -- so the earliest a reflex block can apply is
 // the caller's next request, which is exactly when it is useful.
 func (r *Reflex) Observe(ip string, snap signals.Snapshot) {
-	if !r.Active() || ip == "" || r.isExempt(ip) {
+	// One read of the settings for the whole decision, so the signal list, the
+	// score floor and the duration all come from the same generation.
+	t := r.settings()
+	if !r.Active() || ip == "" || r.isExempt(t, ip) {
 		return
 	}
 
 	for _, ev := range snap.Evidence {
-		if !ev.ThresholdCross || !r.signals[ev.Signal] {
+		if !ev.ThresholdCross || !t.signals[ev.Signal] {
 			continue
 		}
 		// The detector's own threshold and a score floor: two independent
 		// reasons to be confident, so raising the floor is how an operator
 		// makes this less trigger-happy without disabling a detector.
-		if ev.Score < r.minScore {
+		if ev.Score < t.minScore {
 			continue
 		}
 
@@ -229,12 +278,12 @@ func (r *Reflex) Observe(ip string, snap signals.Snapshot) {
 		// unexpiring-enforcement problem in a different costume.
 		if !held || !existing.until.After(now) {
 			r.blocked[ip] = block{
-				until:  now.Add(r.duration),
+				until:  now.Add(t.duration),
 				signal: ev.Signal,
 				score:  ev.Score,
 			}
 			log.Printf("[enforcement] blocking %s for %s: %s crossed threshold (score %d)",
-				ip, r.duration, ev.Signal, ev.Score)
+				ip, t.duration, ev.Signal, ev.Score)
 		}
 		r.mu.Unlock()
 		return
@@ -273,14 +322,17 @@ func (r *Reflex) Lookup(ip string) (policy.Decision, bool) {
 
 // Start sweeps expired blocks so a long run cannot grow the map without bound.
 func (r *Reflex) Start() {
-	if !r.Active() {
-		close(r.done)
-		return
-	}
+	// The sweeper runs whether or not blocking is on right now: the console can
+	// arm the reflex later, and a sweeper that only exists when it booted armed
+	// would let the block map grow unswept from that moment on. Expiry is also
+	// checked on read, so a missed sweep is never a block served past its
+	// deadline -- only memory held longer than needed.
 	go func() {
 		defer close(r.done)
-		// Often enough that memory tracks reality, rarely enough to be free.
-		ticker := time.NewTicker(r.duration)
+		// Fixed cadence rather than the block duration, which can now change
+		// underneath it. Often enough that memory tracks reality, rarely
+		// enough to be free.
+		ticker := time.NewTicker(sweepInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -325,14 +377,14 @@ func (r *Reflex) Close() {
 	<-r.done
 }
 
-func (r *Reflex) isExempt(ip string) bool {
+func (r *Reflex) isExempt(t *reflexTunables, ip string) bool {
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
 		// An address that will not parse cannot be matched against a range
 		// either, so refusing to block it is the only safe answer.
 		return true
 	}
-	for _, network := range r.exempt {
+	for _, network := range t.exempt {
 		if network.Contains(parsed) {
 			return true
 		}
