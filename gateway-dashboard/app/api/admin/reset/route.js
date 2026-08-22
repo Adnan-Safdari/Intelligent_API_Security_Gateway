@@ -25,6 +25,8 @@ export const dynamic = "force-dynamic";
  *                   clearing history and should be a deliberate one.
  *   iasg:heartbeat  The agent's liveness. Clearing it would make a running
  *                   control plane look dead until its next cycle.
+ *   consumer groups The streams are trimmed rather than deleted, so the groups
+ *                   the control plane reads through survive. See REDIS_STREAMS.
  *
  * Asks the caller to name the thing being destroyed, so a mis-click cannot do
  * it. Postgres and Redis are handled independently: if only one is available,
@@ -35,14 +37,23 @@ export const dynamic = "force-dynamic";
 // one without the other leaves the agent learning from a record that is gone.
 const TABLES = ["campaigns", "feedback"];
 
-// Fixed live keys the gateway writes.
-const REDIS_KEYS = [
-  "iasg:events",
-  "iasg:stats",
-  "iasg:attackers",
+// Streams the control plane holds consumer groups on. These are TRIMMED, never
+// deleted: deleting a stream key deletes its consumer groups with it, and the
+// agent creates those groups once at startup, not per cycle. A reset that
+// deleted them left every later cycle failing with
+//
+//   NOGROUP No such key 'iasg_overrides' or consumer group 'iasg-overrides'
+//
+// until the control plane was restarted by hand. Trimming to zero empties the
+// stream and leaves the group in place, which is what a reset actually wants.
+const REDIS_STREAMS = [
+  "iasg:events", // group iasg-agent, read by the evidence consumer
+  "iasg_overrides", // group iasg-overrides, read by the override channel
   "iasg_alerts",
-  "iasg_overrides",
 ];
+
+// Fixed live keys the gateway writes. Plain values, safe to delete outright.
+const REDIS_KEYS = ["iasg:stats", "iasg:attackers"];
 
 // Key families to sweep. campaign:* includes the campaign:next_id counter, so
 // numbering restarts with the Postgres sequence.
@@ -84,6 +95,13 @@ async function clearRedis() {
   }
 
   try {
+    // Empty the streams without dropping their consumer groups.
+    let trimmed = 0;
+    for (const stream of REDIS_STREAMS) {
+      // XTRIM on a key that does not exist is a no-op, so no need to check.
+      trimmed += await redis.xTrim(stream, "MAXLEN", 0);
+    }
+
     const keys = [...REDIS_KEYS];
     for (const pattern of REDIS_PATTERNS) {
       for await (const found of redis.scanIterator({ MATCH: pattern, COUNT: 500 })) {
@@ -93,7 +111,7 @@ async function clearRedis() {
     }
     // DEL ignores keys that are not there, so no need to filter first.
     const removed = keys.length ? await redis.del(keys) : 0;
-    return { ok: true, removed };
+    return { ok: true, removed, trimmed };
   } catch (err) {
     return { ok: false, reason: err.message };
   }
@@ -119,7 +137,7 @@ export async function POST(request) {
   console.log(
     `[admin] ${gate.user.username} reset the console:`,
     `postgres=${postgres.ok ? JSON.stringify(postgres.cleared) : postgres.reason}`,
-    `redis=${redis.ok ? redis.removed + " keys" : redis.reason}`,
+    `redis=${redis.ok ? `${redis.removed} keys, ${redis.trimmed} stream entries` : redis.reason}`,
   );
 
   // A reset that reached neither store did nothing, and should say so rather

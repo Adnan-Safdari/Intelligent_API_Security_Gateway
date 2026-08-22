@@ -216,9 +216,10 @@ function ResetControl() {
         ? Object.values(data.postgres.cleared || {}).reduce((a, b) => a + b, 0)
         : 0;
       const keys = data.redis?.ok ? data.redis.removed : 0;
+      const events = data.redis?.ok ? data.redis.trimmed : 0;
       setToast({
         tone: "good",
-        text: `console reset — cleared ${pg} campaign record(s) and ${keys} live key(s)`,
+        text: `console reset — cleared ${pg} campaign record(s), ${events} event(s) and ${keys} live key(s)`,
       });
       close();
       refresh();
