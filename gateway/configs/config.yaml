@@ -113,9 +113,11 @@ enforcement:
     duration: 300s # 5 minutes
 
     signals:
-    - api_flooding
-    - brute_force
+      - api_flooding
+      - brute_force
+
     min_score: 80
+
     exempt_cidrs:
     - 127.0.0.0/8
     - ::1/128 
