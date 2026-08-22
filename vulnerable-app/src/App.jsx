@@ -14,6 +14,7 @@ import ProtectedRoute from "./components/common/ProtectedRoute";
 
 import Home from "./pages/Home";
 import Shop from "./pages/Shop";
+import AllProducts from "./pages/AllProducts";
 import ProductPage from "./pages/ProductPage";
 import Cart from "./pages/Cart";
 import Checkout from "./pages/Checkout";
@@ -52,6 +53,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Home />} />
                 <Route path="/shop" element={<Shop />} />
+                <Route path="/products" element={<AllProducts />} />
                 <Route path="/product/:id" element={<ProductPage />} />
                 <Route path="/cart" element={<Cart />} />
                 <Route path="/login" element={<Auth />} />
