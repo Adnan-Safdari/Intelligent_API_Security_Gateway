@@ -51,6 +51,9 @@ temp/
 *.tmp
 .next/
 
+# JMeter test assets
+testing/jmeter/
+
 # Database
 *.db
 *.sqlite

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { PageHead } from "@/app/ui/chrome";
+import { PageHead, ResetControl } from "@/app/ui/chrome";
 import { useLive } from "@/app/ui/store";
 
 /**
@@ -172,6 +172,7 @@ export default function SettingsPage() {
       </PageHead>
 
       <div className="settings-bar">
+        <ResetControl className="settings-reset" />
         <span className={source === "console" ? "pill on" : "pill"}>
           {source === "console" ? "Running a console override" : "Running the config file"}
         </span>

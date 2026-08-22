@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLive } from "./store";
 
 /* Inline so the icon cannot arrive after the header it sits in. */
@@ -121,7 +122,6 @@ export function Shell({ children }) {
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
 
-          <ResetControl />
         </div>
       </header>
 
@@ -175,13 +175,14 @@ export function Shell({ children }) {
 /**
  * Reset the console to a clean slate.
  *
- * Destructive, so it is two steps: a header button that opens a dialog, and a
- * dialog that will not act until you type the word the server also demands.
+ * Destructive, so it is two steps: a Settings-page control that opens a
+ * dialog, and a dialog that will not act until you type the word the server
+ * also demands.
  * On success it refreshes the live data, so the console visibly empties rather
  * than waiting for the next poll.
  */
-function ResetControl() {
-  const { refresh, setToast } = useLive();
+export function ResetControl({ className = "icon-btn", label = "Reset console" }) {
+  const { refresh, refreshHistory, setToast } = useLive();
   const [open, setOpen] = useState(false);
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
@@ -223,7 +224,10 @@ function ResetControl() {
         text: `console reset — cleared ${pg} campaign record(s), ${events} event(s) and ${keys} live key(s)`,
       });
       close();
-      refresh();
+      // The live panels read Redis, but History reads Postgres on its own
+      // slower cadence. Refresh both lanes now so a successful reset does not
+      // leave deleted campaigns visible until the next 30-second history poll.
+      await Promise.all([refresh(), refreshHistory()]);
     } catch (err) {
       setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
     } finally {
@@ -235,17 +239,24 @@ function ResetControl() {
     <>
       <button
         type="button"
-        className="icon-btn"
+        className={className}
         onClick={() => setOpen(true)}
         title="Reset the console to a clean slate"
       >
-        Reset
+        {label}
       </button>
 
-      {open ? (
+      {open && typeof document !== "undefined"
+        ? createPortal(
         <div className="modal-overlay" onMouseDown={() => !busy && close()}>
-          <div className="modal-card" onMouseDown={(e) => e.stopPropagation()}>
-            <h2>Reset the console?</h2>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-dialog-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 id="reset-dialog-title">Reset the console?</h2>
             <p>
               This clears the campaign history in Postgres and the live telemetry
               in Redis — Overview, Events, Campaigns and History all go back to
@@ -283,8 +294,10 @@ function ResetControl() {
               </button>
             </div>
           </div>
-        </div>
-      ) : null}
+        </div>,
+        document.body,
+      )
+        : null}
     </>
   );
 }

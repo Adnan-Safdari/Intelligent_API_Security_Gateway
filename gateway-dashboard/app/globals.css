@@ -612,6 +612,10 @@ a { color: var(--accent); }
 
 .map-wrap {
   position: relative;
+  /* Leaflet layers use large z-index values (up to 1000). Contain those
+     values here so page-level dialogs remain above the map. */
+  isolation: isolate;
+  z-index: 0;
   flex: 1;
   min-height: 400px;
 }
@@ -1564,7 +1568,9 @@ td select {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  /* Leaflet map panes and controls reach z-index 1000. Keep this destructive
+     confirmation above the map as well as the rest of the dashboard. */
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1652,6 +1658,31 @@ td select {
 
 .settings-bar .grow {
   flex: 1;
+}
+
+/* Kept on Settings because clearing the console is an administrative action,
+   not a navigation control. Its muted red distinguishes it from applying an
+   enforcement change without making it look like an active alert. */
+.settings-reset {
+  padding: 7px 12px;
+  border: 1px solid #7a343b;
+  border-radius: 3px;
+  background: #4a2026;
+  color: #ffdce0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.settings-reset:hover {
+  background: #61272f;
+  border-color: #a34650;
+}
+
+.settings-reset:focus-visible {
+  outline: 2px solid var(--bad);
+  outline-offset: 2px;
 }
 
 .settings-bar .unsaved {

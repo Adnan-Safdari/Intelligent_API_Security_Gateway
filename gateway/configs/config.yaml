@@ -120,7 +120,7 @@ enforcement:
   # Off by default: turning this on is what lets the control plane refuse
   # live traffic, so it should be a deliberate choice.
   policy:
-    enabled: false
+    enabled: true
     key_prefix: "policy:"
     refresh_interval: 5s # how stale an enforcement decision may be
 
