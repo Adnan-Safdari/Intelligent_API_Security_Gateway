@@ -1,6 +1,7 @@
 const fs = require('fs')
 const path = require('path')
 const { Pool } = require('pg')
+const { PRODUCTS } = require('./data/products')
 
 const loadLocalEnvFile = () => {
   if (process.env.PGHOST || process.env.DB_HOST) {
@@ -62,6 +63,35 @@ const initDb = async () => {
        VALUES ($1, $2, $3)
        ON CONFLICT (email) DO NOTHING`,
       [user.email, user.password, user.role]
+    )
+  }
+
+  // Products for the storefront. name is unique so re-seeding is idempotent,
+  // the same way the user seed is keyed on email.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS products (
+      id SERIAL PRIMARY KEY,
+      name TEXT UNIQUE NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      price NUMERIC(10,2) NOT NULL,
+      original_price NUMERIC(10,2),
+      category TEXT NOT NULL DEFAULT '',
+      image TEXT NOT NULL DEFAULT '',
+      stock INTEGER NOT NULL DEFAULT 0,
+      rating NUMERIC(2,1) NOT NULL DEFAULT 0,
+      num_reviews INTEGER NOT NULL DEFAULT 0,
+      is_new_arrival BOOLEAN NOT NULL DEFAULT FALSE
+    )
+  `)
+
+  for (const p of PRODUCTS) {
+    await pool.query(
+      `INSERT INTO products
+         (name, description, price, original_price, category, image, stock, rating, num_reviews, is_new_arrival)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (name) DO NOTHING`,
+      [p.name, p.description, p.price, p.original_price, p.category, p.image,
+       p.stock, p.rating, p.num_reviews, p.is_new_arrival]
     )
   }
 }

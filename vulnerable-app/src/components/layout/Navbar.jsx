@@ -98,7 +98,7 @@ export default function Navbar() {
 
           <nav className={`navbar-nav ${menuOpen ? 'open' : ''}`}>
             <Link to="/shop" className="nav-link">Shop</Link>
-            <Link to="/shop?newArrival=true" className="nav-link">New Arrivals</Link>
+            <Link to="/products" className="nav-link">All Products</Link>
 
             {user ? (
               <div className="user-menu" ref={userMenuRef}>
