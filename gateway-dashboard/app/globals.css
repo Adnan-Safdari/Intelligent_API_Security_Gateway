@@ -1555,3 +1555,77 @@ td select {
     gap: 8px;
   }
 }
+
+/* --- reset confirmation modal ------------------------------------------------
+   A deliberate, destructive action, so it dims the console behind it and will
+   not act until the word is typed. Reuses the token vocabulary and the .act
+   buttons the rest of the console uses. */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.modal-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 22px 24px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+}
+
+.modal-card h2 {
+  margin: 0 0 10px;
+  font-size: 1.05rem;
+}
+
+.modal-card p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.modal-card .modal-note {
+  color: var(--bad);
+}
+
+.modal-label {
+  display: block;
+  margin: 4px 0 18px;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.modal-label input {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+.modal-label input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}

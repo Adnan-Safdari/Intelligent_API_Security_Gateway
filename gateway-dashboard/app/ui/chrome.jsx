@@ -119,6 +119,8 @@ export function Shell({ children }) {
           >
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
+
+          <ResetControl />
         </div>
       </header>
 
@@ -166,6 +168,122 @@ export function Shell({ children }) {
 
       <main>{children}</main>
     </div>
+  );
+}
+
+/**
+ * Reset the console to a clean slate.
+ *
+ * Destructive, so it is two steps: a header button that opens a dialog, and a
+ * dialog that will not act until you type the word the server also demands.
+ * On success it refreshes the live data, so the console visibly empties rather
+ * than waiting for the next poll.
+ */
+function ResetControl() {
+  const { refresh, setToast } = useLive();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function escape(event) {
+      if (event.key === "Escape" && !busy) close();
+    }
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [open, busy]);
+
+  function close() {
+    setOpen(false);
+    setConfirm("");
+  }
+
+  async function run() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "reset" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setToast({ tone: "bad", text: `reset failed: ${data.error || res.status}` });
+        return;
+      }
+      const pg = data.postgres?.ok
+        ? Object.values(data.postgres.cleared || {}).reduce((a, b) => a + b, 0)
+        : 0;
+      const keys = data.redis?.ok ? data.redis.removed : 0;
+      setToast({
+        tone: "good",
+        text: `console reset — cleared ${pg} campaign record(s) and ${keys} live key(s)`,
+      });
+      close();
+      refresh();
+    } catch (err) {
+      setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className="icon-btn"
+        onClick={() => setOpen(true)}
+        title="Reset the console to a clean slate"
+      >
+        Reset
+      </button>
+
+      {open ? (
+        <div className="modal-overlay" onMouseDown={() => !busy && close()}>
+          <div className="modal-card" onMouseDown={(e) => e.stopPropagation()}>
+            <h2>Reset the console?</h2>
+            <p>
+              This clears the campaign history in Postgres and the live telemetry
+              in Redis — Overview, Events, Campaigns and History all go back to
+              empty.
+            </p>
+            <p className="modal-note">
+              Active policy blocks are left running; they expire on their own.
+              This cannot be undone.
+            </p>
+            <label className="modal-label">
+              Type <b>reset</b> to confirm
+              <input
+                type="text"
+                value={confirm}
+                autoFocus
+                disabled={busy}
+                onChange={(e) => setConfirm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && confirm === "reset" && !busy) run();
+                }}
+                placeholder="reset"
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="act" onClick={close} disabled={busy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="act danger"
+                onClick={run}
+                disabled={busy || confirm !== "reset"}
+              >
+                {busy ? "Resetting…" : "Reset console"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
   );
 }
 
