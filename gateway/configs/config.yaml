@@ -22,20 +22,6 @@ proxy:
   max_idle_conns: 100
   max_conns_per_host: 10
 
-trust_engine:
-  # Trust scoring thresholds
-  block_threshold: 20
-  throttle_threshold: 50
-  allow_threshold: 80
-  
-  # Signal weights
-  weights:
-    ip_reputation: 0.2
-    rate_limiting: 0.25
-    authentication: 0.3
-    payload_analysis: 0.15
-    behavioral: 0.1
-
 storage:
   redis:
     enabled: true

@@ -346,13 +346,16 @@ IASG_TEST_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg_test 
     .venv/bin/python -m pytest tests/test_postgres.py
 ```
 
-## Not built yet
+## Deliberately not built
 
-Honest about the gaps, since the config file implies more than exists:
+- **A central trust engine.** There is no separate scoring service, and the `trust_engine`
+  config block that used to imply one has been deleted rather than left in the file — it
+  was parsed into Go structs that nothing ever read. Scoring already happens where the
+  evidence is: each detector scores what it sees, the gateway's reflex acts on a threshold
+  cross in nanoseconds, and the control plane re-decides every 30s with the wider view. An
+  engine in between would only re-derive what both already have.
 
-- **Trust engine** — `trust_engine` in `gateway/configs/config.yaml` is parsed but not
-  used. Nothing scores requests by trust today; the detectors and the control plane decide.
-Postgres was on this list until campaigns and feedback were moved into it. See
+Postgres was a real gap on this list until campaigns and feedback were moved into it. See
 **Durable memory** above.
 
 ## Documentation

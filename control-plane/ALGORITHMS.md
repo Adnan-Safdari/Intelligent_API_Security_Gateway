@@ -227,8 +227,11 @@ grouping looks plausible). Neither result is ever read back by anything that dec
 **Overall ≈ 7.5/10.** The difficulty is in the composition and the threat modelling, not
 in any single algorithm.
 
-**Known gap** (own it before it is found): `trust_engine` is parsed in
-`gateway/configs/config.yaml` but unimplemented. Nothing scores requests by trust today.
+**A gap closed by deletion rather than implementation**: `trust_engine` used to be parsed
+in `gateway/configs/config.yaml` and read by nothing. There is no separate trust score
+today and there is not meant to be one — the detectors score, the gateway's reflex acts,
+and this control plane re-decides. The dead config block has been removed so the file no
+longer advertises a component that does not exist.
 
 Postgres was the other gap on this list until campaigns and feedback moved into it — see
 **Stage 7** above. It stays optional: no driver, no database, or a database that is down

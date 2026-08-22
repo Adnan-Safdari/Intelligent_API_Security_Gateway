@@ -13,7 +13,6 @@ import (
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
 	Proxy       ProxyConfig       `yaml:"proxy"`
-	TrustEngine TrustEngineConfig `yaml:"trust_engine"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Enforcement EnforcementConfig `yaml:"enforcement"`
 	Signals     SignalsConfig     `yaml:"signals"`
@@ -39,21 +38,6 @@ type ProxyConfig struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
 	MaxConnsPerHost int           `yaml:"max_conns_per_host"`
-}
-
-type TrustEngineConfig struct {
-	BlockThreshold    int                `yaml:"block_threshold"`
-	ThrottleThreshold int                `yaml:"throttle_threshold"`
-	AllowThreshold    int                `yaml:"allow_threshold"`
-	Weights           TrustWeightsConfig `yaml:"weights"`
-}
-
-type TrustWeightsConfig struct {
-	IPReputation    float64 `yaml:"ip_reputation"`
-	RateLimiting    float64 `yaml:"rate_limiting"`
-	Authentication  float64 `yaml:"authentication"`
-	PayloadAnalysis float64 `yaml:"payload_analysis"`
-	Behavioral      float64 `yaml:"behavioral"`
 }
 
 type StorageConfig struct {
