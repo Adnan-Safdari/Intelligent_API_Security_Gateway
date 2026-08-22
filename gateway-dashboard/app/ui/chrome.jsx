@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useLive } from "./store";
 
 /* Inline so the icon cannot arrive after the header it sits in. */
@@ -37,25 +37,16 @@ function MoonIcon() {
   );
 }
 
-function ChevronIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true" focusable="false">
-      <path d="M6 9.5 12 15l6-5.5" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 const NAV = [
   { href: "/", label: "Overview" },
   { href: "/campaigns", label: "Campaigns" },
   { href: "/policy", label: "Policy" },
   { href: "/events", label: "Events" },
   { href: "/history", label: "History" },
-  { href: "/users", label: "Users", adminOnly: true },
 ];
 
 export function Shell({ children }) {
-  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast, me } =
+  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast } =
     useLive();
   const pathname = usePathname();
   const [theme, setTheme] = useState("dark");
@@ -93,7 +84,7 @@ export function Shell({ children }) {
         </div>
 
         <nav className="nav">
-          {NAV.filter((item) => !item.adminOnly || me?.role === "admin").map((item) => {
+          {NAV.map((item) => {
             const active =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
@@ -128,8 +119,6 @@ export function Shell({ children }) {
           >
             {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
-
-          {me ? <AccountMenu me={me} /> : null}
         </div>
       </header>
 
@@ -176,82 +165,6 @@ export function Shell({ children }) {
       ) : null}
 
       <main>{children}</main>
-    </div>
-  );
-}
-
-/**
- * The account menu.
- *
- * Sign out used to sit in the header as a bare button beside Pause and the
- * theme toggle, which put a destructive action one mis-click from two harmless
- * ones. Behind the account name it is where people look for it, and the two
- * other things you might want from your own account are there with it.
- */
-function AccountMenu({ me }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef(null);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    function away(event) {
-      if (box.current && !box.current.contains(event.target)) setOpen(false);
-    }
-    function escape(event) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", escape);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", escape);
-    };
-  }, [open]);
-
-  return (
-    <div className="account" ref={box}>
-      <button
-        type="button"
-        className={open ? "account-btn open" : "account-btn"}
-        onClick={() => setOpen((o) => !o)}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title={`Signed in as ${me.username}`}
-      >
-        <span className="avatar" aria-hidden="true">
-          {me.username.slice(0, 1).toUpperCase()}
-        </span>
-        <span className="who">
-          {me.username}
-          <em>{me.role}</em>
-        </span>
-        <ChevronIcon />
-      </button>
-
-      {open ? (
-        <div className="account-menu" role="menu">
-          <Link href="/profile" role="menuitem" onClick={() => setOpen(false)}>
-            Profile
-          </Link>
-          {me.role === "admin" ? (
-            <Link href="/users" role="menuitem" onClick={() => setOpen(false)}>
-              Users
-            </Link>
-          ) : null}
-          <hr />
-          <button
-            type="button"
-            role="menuitem"
-            className="danger"
-            onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              window.location.href = "/login";
-            }}
-          >
-            Sign out
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }
