@@ -66,13 +66,13 @@ The reasoning behind the ordering is in
 `X-Gateway: IASG` on the outbound request, so the backend can tell proxied
 traffic from anything that reached it directly.
 
-## A note on `security.go`
+## Where detection lives
 
-`SecurityMiddleware` in `internal/proxy/security.go` is a **compatibility
-adapter only**. Attack detection moved to `internal/signals`; the function
-constructs an SQLi detector and delegates. It is not part of the chain that
-`Server.Start` assembles. New work belongs in `internal/signals` — see
-[Detection Signals](../detection-signals.md).
+Not here. `internal/proxy` builds and runs the chain; the detectors themselves
+live in `internal/signals` and the blocking in `internal/enforcement`. An older
+`security.go` in this package held a `SecurityMiddleware` compatibility adapter
+that nothing called — it has been deleted. New detection work belongs in
+`internal/signals` — see [Detection Signals](../detection-signals.md).
 
 ## Flow
 

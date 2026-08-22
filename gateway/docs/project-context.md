@@ -102,7 +102,7 @@ AI → Allow / Block
 | **FR1** | Intercept API requests (reverse proxy + middleware) | **Complete** | Working |
 | **FR2** | Analyze request behavior (detectors → metrics) | **Partial** | Flood + SQLi + Brute Force detect-and-log; brute force has `Metrics(ip)` but no engine consumes it yet |
 | **FR3** | Adaptive rate limiting as a **decision outcome** | **Not wired** | Config exists; flood detector only logs; no adaptive limits |
-| **FR4** | Risk scoring + centralized decision engine | **Not implemented** | YAML `trust_engine` loaded but unused at runtime |
+| **FR4** | Risk scoring + centralized decision engine | **Superseded by design** | Scoring is per-detector; decisions are split between the gateway reflex and the control plane. No central engine, and the dead `trust_engine` config has been removed |
 | **FR5** | Forward valid / reject blocked / throttle | **Forward only** | Proxy always forwards; no 403/429 enforcement path |
 | **FR6** | Logging & monitoring (Postgres + dashboard) | **Partial** | Redis hot telemetry is wired (capped event stream + counters). Postgres history and dashboard UI are not started. |
 | **FR7** | Admin configuration (thresholds, detectors, lists) | **Not started** | Static YAML at startup; no live admin API |
@@ -151,7 +151,6 @@ Used when building/starting the server:
 
 Loaded into structs but **not consumed by request handling yet**:
 
-- `trust_engine` (thresholds + weights)
 - `storage.postgres`
 - `enforcement.throttle` / `enforcement.block`
 - `signals.*` (ip reputation, geo, payload, behavioral placeholders)
@@ -451,12 +450,12 @@ When docs conflict with code, **trust the Go sources and `reverse-proxy-logic.md
 ## 14. Key Implementation Facts for Coding Agents
 
 - Work inside `gateway/` as the Go module root.  
-- Do not reintroduce detector-owned hard blocks; route through a future decision engine.  
+- Do not reintroduce detector-owned hard blocks. Detectors observe and score; blocking belongs to `internal/enforcement` and the control plane.  
 - Flood detector comment header mentions blocking with 429, but **implementation currently allows**.  
-- `trust_engine` thresholds in YAML are currently inverted-looking vs the SRS example bands (YAML uses block=20, throttle=50, allow=80 as “trust” style). When implementing the engine, reconcile naming: **risk score** (higher = worse) vs **trust score** (higher = safer) and pick one model.  
+- There is no trust score and no `trust_engine` config. The model in use is **risk** (higher = worse): each detector emits a 0–100 score, and thresholds are read that way throughout. Do not reintroduce a competing trust-style scale.  
 - Compose and Dockerfile expect `./cmd/server`.  
 - Healthcheck in Dockerfile hits `/api/health` — that path is expected from the **backend**, not implemented as a gateway-local route today.  
-- Prefer extending `internal/signals` + new `internal/trust` or `internal/decision` packages rather than bloating middleware with one-off blocks.
+- Prefer extending `internal/signals` (detection) and `internal/enforcement` (action) rather than bloating middleware with one-off blocks. Do not add an `internal/trust` or `internal/decision` package; that layer was considered and deliberately not built.
 - Use `brute_force.go` as the reference detector pattern (detect + metrics + never block).
 
 ---
