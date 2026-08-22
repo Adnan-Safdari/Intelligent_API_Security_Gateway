@@ -112,11 +112,25 @@ func TestDisabledEnforcesNothing(t *testing.T) {
 func TestExemptRangesAreNeverBlocked(t *testing.T) {
 	r := armed(t, nil)
 
-	for _, ip := range []string{"127.0.0.1", "::1", "10.1.2.3", "192.168.0.5", "172.16.4.4"} {
+	for _, ip := range []string{"127.0.0.1", "::1", "10.1.2.3", "192.168.0.5"} {
 		r.Observe(ip, snap(signals.SignalFlood, 100, true))
 		if _, found := r.Lookup(ip); found {
 			t.Errorf("blocked exempt address %s", ip)
 		}
+	}
+}
+
+// 172.16.0.0/12 is the Docker Compose bridge, and it was taken out of the
+// defaults on purpose: attack traffic in a demo arrives from there, so
+// exempting it meant the reflex could never be shown blocking anything.
+// Anyone running behind a real 172.16/12 network has to name it in
+// block.exempt_cidrs, which the Settings page makes a one-line change.
+func TestTheComposeBridgeIsBlockable(t *testing.T) {
+	r := armed(t, nil)
+
+	r.Observe("172.16.4.4", snap(signals.SignalFlood, 100, true))
+	if _, found := r.Lookup("172.16.4.4"); !found {
+		t.Error("172.16.4.4 was not blocked; it is no longer exempt by default")
 	}
 }
 
