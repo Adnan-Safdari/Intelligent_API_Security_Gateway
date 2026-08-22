@@ -1,4 +1,10 @@
 # IASG Configuration Example
+#
+# This file is what the gateway boots with. The `enforcement` block below can
+# also be changed at runtime from the console's Settings page, which stores an
+# override in Redis and leaves this file untouched -- "Revert to file" there
+# brings the gateway back to exactly what is written here. Everything outside
+# `enforcement` is structural and only takes effect on a restart.
 
 server:
   port: 8082

@@ -11,8 +11,9 @@ the one place an operator can overrule the agent.
 
 ## Pages
 
-The authenticated pages live in the `(console)` route group, which supplies the
-shared shell:
+The pages live in the `(console)` route group, which supplies the shared shell.
+The console runs open -- there is no login -- so whoever can reach the port can
+use every control on it:
 
 | Route | File | Shows |
 | --- | --- | --- |
@@ -21,8 +22,7 @@ shared shell:
 | `/events` | `app/(console)/events/page.jsx` | The raw `iasg:events` stream |
 | `/policy` | `app/(console)/policy/page.jsx` | Active `policy:<ip>` keys, and overrides |
 | `/history` | `app/(console)/history/page.jsx` | Durable campaign history from Postgres |
-| `/users` | `app/(console)/users/page.jsx` | Account administration |
-| `/login`, `/setup` | `app/login/`, `app/setup/` | Outside the console shell |
+| `/settings` | `app/(console)/settings/page.jsx` | Live enforcement settings |
 
 ## API routes
 
@@ -32,8 +32,8 @@ shared shell:
 | `app/api/campaigns/route.js` | Active campaigns |
 | `app/api/history/route.js` | Campaign history from Postgres |
 | `app/api/overrides/route.js` | Operator instructions to the agent |
-| `app/api/users/route.js`, `app/api/users/[id]/route.js` | Account management |
-| `app/api/auth/login`, `logout`, `setup` | Session lifecycle |
+| `app/api/settings/route.js` | Read, change and revert the live enforcement settings |
+| `app/api/admin/reset/route.js` | Clear the history and live telemetry |
 | `app/api/health/route.js` | Liveness |
 
 ## Shared modules
@@ -51,31 +51,33 @@ shared shell:
 | `lib/geo.js` | Address to coordinates |
 | `lib/auth.js` | Password hashing, sessions, RBAC |
 
-## Accounts and roles
+## Settings
 
-There is no seeded default account. On a database with no users, every route
-redirects to `/setup` to create the first one.
+`/settings` changes what the running gateway detects and blocks, without a
+restart. Two Redis keys carry it:
 
-Roles are ordered `viewer < operator < admin`, and anything that changes state
-names the lowest role permitted to do it:
+| Key | Written by | Holds |
+| --- | --- | --- |
+| `iasg:settings` | The console | The override that was asked for |
+| `iasg:settings:effective` | The gateway | What it is actually enforcing |
 
-| Role | Can |
-| --- | --- |
-| `viewer` | Read every page |
-| `operator` | Also issue overrides |
-| `admin` | Also manage accounts |
+The page reads the **effective** key, never the requested one. The gateway
+validates independently and can refuse a change -- a duration that will not
+parse, a CIDR that will not -- and when it does, the two keys disagree.
+Building the form from the request would tell an operator their change was live
+when it was not.
 
-Passwords are hashed with **scrypt** from the Node standard library
-(`N=16384, r=8, p=1, keylen=64`) rather than a dependency. Sessions are stored
-server-side in Postgres and carry an expiry.
+`Revert to file` deletes the override, and the gateway returns to exactly the
+settings it booted with. The YAML file stays the source of truth: the override
+is a layer on top of it, not a replacement for it.
 
-To clear every account and return to the setup flow:
+Only the `enforcement` block travels this way. Listen address, backend URL,
+timeouts and the Redis connection are structural -- changing them means
+rebuilding the server -- so they stay in the file, where a restart applies them.
 
-```bash
-cd gateway-dashboard && npm run reset-accounts
-```
-
-That touches accounts only — campaigns, feedback, and policy all survive.
+Both actions are typed confirmations rather than plain buttons, for the same
+reason the reset is: the console is open, and these change what a security
+gateway is doing to live traffic.
 
 ## Overrides
 
@@ -93,7 +95,7 @@ recorded with `source: human`.
 | Variable | Purpose |
 | --- | --- |
 | `REDIS_HOST`, `REDIS_PORT` | Live panels |
-| `IASG_POSTGRES_URL` | Campaign history, accounts, sessions |
+| `IASG_POSTGRES_URL` | Campaign history |
 
 ## Running it
 

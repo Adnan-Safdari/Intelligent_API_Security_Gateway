@@ -43,6 +43,7 @@ const NAV = [
   { href: "/policy", label: "Policy" },
   { href: "/events", label: "Events" },
   { href: "/history", label: "History" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Shell({ children }) {
