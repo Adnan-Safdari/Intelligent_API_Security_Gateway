@@ -112,6 +112,16 @@ enforcement:
     enabled: true
     duration: 300s # 5 minutes
 
+    signals:
+    - api_flooding
+    - brute_force
+    min_score: 80
+    exempt_cidrs:
+    - 127.0.0.0/8
+    - ::1/128 
+    - 10.0.0.0/8
+    - 192.168.0.0/16
+
   # Acting on decisions written by the Python control plane at policy:<ip>.
   # Off by default: turning this on is what lets the control plane refuse
   # live traffic, so it should be a deliberate choice.
