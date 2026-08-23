@@ -34,6 +34,15 @@ const (
 	ActionEscalate  = "escalate"
 )
 
+// OutcomeRateLimited is recorded when a throttled address exceeded the rate
+// its policy allowed and the request was refused with 429.
+//
+// It is an outcome, not an action: the control plane never writes it. The
+// action stays "throttle" -- this is what throttling did to one request, and
+// telemetry needs to tell a request that was let through under a throttle from
+// one that was turned away by it, or there is no way to show the limit working.
+const OutcomeRateLimited = "rate_limited"
+
 // Decision mirrors the JSON at policy:<ip>, written by PolicyDecision.to_json
 // in control-plane/iasg/models.py. That method and this struct are the two
 // halves of the contract between the lanes.
@@ -44,6 +53,16 @@ type Decision struct {
 	Reason     string  `json:"reason"`
 	IssuedAt   string  `json:"issued_at"`
 	ExpiresIn  int     `json:"expires_in"`
+
+	// RequestsPerMinute is what a throttled address may send while this policy
+	// stands. It is what makes the rate limiting adaptive: the control plane
+	// picks the number from how bad the campaign is, rather than every
+	// throttled caller being slowed by the same fixed amount.
+	//
+	// Zero means the policy named no rate, which is what a control plane older
+	// than this field writes. The gateway falls back to its configured
+	// throttle behaviour then, so an old policy still enforces something.
+	RequestsPerMinute int `json:"requests_per_minute"`
 }
 
 // Lookuper is what the middleware actually depends on, so tests can supply a

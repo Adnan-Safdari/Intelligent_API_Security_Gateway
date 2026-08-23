@@ -341,6 +341,13 @@ class PolicyDecision:
     confidence : float
     ttl_seconds : int
     reason: str = ""
+    # Requests per minute this address is allowed while the policy stands.
+    # Only meaningful for "throttle": it is what makes the rate limiting
+    # adaptive rather than a fixed slowdown applied to everyone alike.
+    # Zero means "no rate named", and the gateway falls back to its configured
+    # throttle behaviour -- which is also what an older control plane produces,
+    # so a policy written before this field existed still enforces.
+    requests_per_minute : int = 0
     # "agent" or "human". Decides whose judgement the safety checks defer to:
     # a person outranks the agent's guesses, but not the operator's declared
     # configuration. See policy/simulation.py.
@@ -363,5 +370,6 @@ class PolicyDecision:
                 "source": self.source,
                 "issued_at": self.issued_at.astimezone(timezone.utc).isoformat(),
                 "expires_in": self.ttl_seconds,
+                "requests_per_minute": self.requests_per_minute,
             }
         )

@@ -166,3 +166,53 @@ def test_written_policy_carries_a_ttl():
 
     _value, expires_at = store._keys["policy:203.0.113.5"]
     assert expires_at is not None
+
+
+# --- the rate a throttle carries -------------------------------------------
+#
+# What makes the rate limiting adaptive: the number the gateway enforces comes
+# from how bad the campaign is, rather than every throttled caller being slowed
+# by the same amount.
+
+def test_throttle_carries_a_rate():
+    decision = PolicyAgent().decide(campaign(0.6, severity="medium"))[0]
+    assert decision.action == ACTION_THROTTLE
+    assert decision.requests_per_minute == 50
+
+
+def test_a_severe_campaign_is_throttled_harder():
+    # Same rung, worse campaign, tighter allowance.
+    medium = PolicyAgent().decide(campaign(0.6, severity="medium"))[0]
+    high = PolicyAgent().decide(campaign(0.6, severity="high"))[0]
+    assert medium.action == high.action == ACTION_THROTTLE
+    assert high.requests_per_minute < medium.requests_per_minute
+    assert high.requests_per_minute == 20
+
+
+def test_monitor_names_no_rate():
+    # Monitoring changes nothing about what the address may send.
+    decision = PolicyAgent().decide(campaign(0.3))[0]
+    assert decision.action == ACTION_MONITOR
+    assert decision.requests_per_minute == 0
+
+
+def test_blocking_names_no_rate():
+    # Refusing the request outright is the limit; a rate would be unused.
+    decision = PolicyAgent().decide(campaign(0.8))[0]
+    assert decision.action == ACTION_TEMP_BLOCK
+    assert decision.requests_per_minute == 0
+
+
+def test_the_rate_reaches_the_gateway_contract():
+    # The JSON at policy:<ip> is the whole contract with the Go gateway, so the
+    # rate is only real if it survives serialisation under that exact name.
+    decision = PolicyAgent().decide(campaign(0.6, severity="high"))[0]
+    written = json.loads(decision.to_json())
+    assert written["requests_per_minute"] == 20
+    assert written["action"] == ACTION_THROTTLE
+
+
+def test_the_rate_is_explained_in_the_reason():
+    # An operator reading the policy should see why traffic is being refused.
+    decision = PolicyAgent().decide(campaign(0.6, severity="high"))[0]
+    assert "20 requests/min" in decision.reason

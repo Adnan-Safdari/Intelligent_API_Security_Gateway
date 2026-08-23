@@ -23,11 +23,23 @@ type Enforcer struct {
 	lookup Lookuper
 	tun    atomic.Pointer[enforcerTunables]
 	logged *logLimiter
+
+	// Counts requests from addresses whose policy names a rate. Nil is a
+	// working limiter that allows everything, so a caller that does not want
+	// rate limiting simply does not set one.
+	limiter *Limiter
 }
 
 func NewEnforcer(l Lookuper, enabled bool, throttleDelay time.Duration) *Enforcer {
 	e := &Enforcer{lookup: l, logged: newLogLimiter(time.Minute)}
 	e.Apply(enabled, throttleDelay)
+	return e
+}
+
+// WithLimiter gives the enforcer a rate limiter to hold throttled addresses to
+// the rate their policy names.
+func (e *Enforcer) WithLimiter(l *Limiter) *Enforcer {
+	e.limiter = l
 	return e
 }
 
@@ -62,10 +74,28 @@ func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 			e.deny(w, r, ip, decision)
 
 		case ActionThrottle:
+			// A policy that names a rate is a real limit: this address may
+			// send that many requests a minute and no more. That is what
+			// makes the limiting adaptive -- the number came from how bad the
+			// campaign was, not from a setting that treats every throttled
+			// caller alike.
+			if decision.RequestsPerMinute > 0 {
+				allowed, count, retryAfter := e.limiter.Allow(ip, decision.RequestsPerMinute)
+				if !allowed {
+					Record(r, OutcomeRateLimited)
+					e.rateLimited(w, r, ip, decision, count, retryAfter)
+					return
+				}
+				Record(r, ActionThrottle)
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			Record(r, ActionThrottle)
-			// Slow the caller down rather than turning them away. Waiting on
-			// the request context too means a client that disconnects does
-			// not pin a goroutine for the full delay.
+			// No rate named -- an older control plane, or one that chose not
+			// to. Fall back to slowing the caller down. Waiting on the request
+			// context too means a client that disconnects does not pin a
+			// goroutine for the full delay.
 			select {
 			case <-time.After(tun.throttle):
 			case <-r.Context().Done():
@@ -133,4 +163,29 @@ func (l *logLimiter) allow(ip string) bool {
 
 	l.seen[ip] = now
 	return true
+}
+
+// rateLimited turns away a throttled caller who has exceeded their allowance.
+//
+// 429 rather than the 403 a block gets: the difference is real and worth
+// keeping. A block says "not you"; this says "not this fast", and Retry-After
+// tells a well-behaved client exactly when it is worth trying again.
+func (e *Enforcer) rateLimited(
+	w http.ResponseWriter, r *http.Request, ip string, d Decision, count int, retryAfter time.Duration,
+) {
+	seconds := int(retryAfter.Seconds())
+	if seconds < 1 {
+		seconds = 1
+	}
+	w.Header().Set("Retry-After", strconv.Itoa(seconds))
+
+	// Deliberately generic, like deny: the campaign id and the reason go to
+	// the log, not to the caller. Telling an attacker which rate they tripped
+	// is telling them what to stay under.
+	http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+
+	if e.logged.allow(ip) {
+		log.Printf("[policy] rate limited %s: %d requests in the last minute, allowed %d (campaign %s)",
+			ip, count, d.RequestsPerMinute, d.CampaignID)
+	}
 }

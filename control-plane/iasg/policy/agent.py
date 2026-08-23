@@ -15,6 +15,8 @@ from iasg.models import (
     ACTION_TEMP_BLOCK,
     ACTION_THROTTLE,
     SEVERITY_HIGH,
+    SEVERITY_LOW,
+    SEVERITY_MEDIUM,
     Campaign,
     PolicyDecision,
 )
@@ -30,6 +32,20 @@ TTL = {
 }
 
 LARGE_CAMPAIGN = 5
+
+# What a throttled address is allowed per minute, by how bad the campaign is.
+#
+# Fixed rungs rather than a formula. The number an operator is asked to defend
+# should be one they can point at in a table, not the output of a weighting
+# nobody can re-derive under questioning. Below the gateway's own default
+# (100/min) in every case, or throttling would not be a restriction at all.
+#
+# Blocking rungs carry no rate: refusing the request outright is the limit.
+THROTTLE_RPM = {
+    SEVERITY_HIGH: 20,
+    SEVERITY_MEDIUM: 50,
+    SEVERITY_LOW: 50,
+}
 
 
 class PolicyAgent:
@@ -54,6 +70,9 @@ class PolicyAgent:
             reason += (
                 f", survived {campaign.persistence} enforcement {rounds}"
             )
+        rpm = throttle_rpm(action, campaign.severity)
+        if rpm:
+            reason += f", limited to {rpm} requests/min"
         return [
             PolicyDecision(
                 ip=ip,
@@ -62,6 +81,7 @@ class PolicyAgent:
                 confidence=campaign.confidence,
                 ttl_seconds=TTL[action],
                 reason=reason,
+                requests_per_minute=rpm,
             )
             for ip in campaign.ips
         ]
@@ -123,3 +143,16 @@ def _promote(action: str, campaign: Campaign, bias: int = 0) -> str:
     # A negative bias can pull below monitor, which is not a rung.
     rung = ACTION_LADDER.index(action) + earned
     return ACTION_LADDER[max(0, min(rung, ceiling))]
+
+
+def throttle_rpm(action: str, severity: str) -> int:
+    """
+    The per-minute allowance that goes with an action.
+
+    Only throttling carries one. Monitoring changes nothing about what the
+    address may send, and the blocking rungs refuse the request outright, so a
+    rate on either would be a number the gateway has no use for.
+    """
+    if action != ACTION_THROTTLE:
+        return 0
+    return THROTTLE_RPM.get(severity, THROTTLE_RPM[SEVERITY_LOW])
