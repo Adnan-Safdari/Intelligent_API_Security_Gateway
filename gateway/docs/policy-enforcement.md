@@ -35,13 +35,14 @@ between the lanes:
 | `Reason` | `reason` | Human-readable justification |
 | `IssuedAt` | `issued_at` | When it was decided |
 | `ExpiresIn` | `expires_in` | The agent's *intent* for the lifetime |
+| `RequestsPerMinute` | `requests_per_minute` | What a throttled address may send. `0` means no rate named |
 
 ## What each action does
 
 | Action | Gateway behaviour |
 | --- | --- |
 | `monitor` | Nothing. Never written as a key — it would be a no-op |
-| `throttle` | Sleeps `enforcement.throttle.delay_ms`, then continues |
+| `throttle` | Holds the address to `requests_per_minute`; `429` once it is over |
 | `temp_block` | Responds `403` and stops |
 | `escalate` | Responds `403` and stops |
 
@@ -49,8 +50,56 @@ An unrecognised action is allowed through. An action nobody understands must
 never be able to block traffic.
 
 The applied action is attached to the request context via
-`policy.AttachOutcome`, so telemetry records `throttle` or `temp_block` in
-`iasg:events` rather than always writing `allow`.
+`policy.AttachOutcome`, so telemetry records `throttle`, `rate_limited` or
+`temp_block` in `iasg:events` rather than always writing `allow`.
+
+## What makes the rate limiting adaptive
+
+A throttle carries a number. The control plane picks it from how bad the
+campaign is, so two addresses throttled at the same moment can be held to
+different rates:
+
+| Campaign severity | Allowed |
+| --- | --- |
+| Not throttled | The gateway default, `enforcement.rate_limit.requests_per_minute` |
+| `low` / `medium` | 50 / min |
+| `high` | 20 / min |
+| Blocked (`temp_block`, `escalate`) | Nothing — the request is refused outright |
+
+The rungs are a table rather than a formula, deliberately. The number an
+operator is asked to justify should be one they can point at, not the output of
+a weighting nobody can re-derive.
+
+`policy.Limiter` counts each address over a sliding one-minute window and the
+enforcer refuses anything past the allowance with **429**, not 403. The
+distinction is real and worth keeping: a block says *not you*, a rate limit says
+*not this fast*, and `Retry-After` tells a well-behaved client when it is worth
+trying again. Refused requests still count, so hammering after a refusal does
+not earn a way back in.
+
+Only addresses under a throttle policy are ever counted — the enforcer looks the
+decision up first and only then reaches the limiter — so the limiter holds
+throttled addresses, not every client the gateway has seen.
+
+A rate of `0` means the policy named none, which is what a control plane older
+than this field writes. The gateway falls back to the configured
+`enforcement.throttle.delay_ms` then, so an old policy still enforces something
+rather than silently becoming a pass-through.
+
+### Recovery
+
+Recovery is the policy expiring. When the key goes, the enforcer stops finding a
+decision for that address and never consults the limiter for it again, so the
+caller returns to the default limit immediately rather than waiting out the
+counting window. The whole arc is therefore:
+
+```
+normal (100/min) → throttled (20/min, 429 over it) → policy TTL lapses → normal
+```
+
+No de-escalation ladder is involved. Each rung already carries its own TTL
+(throttle 900s, block 1800s, escalate 3600s), and an address that goes quiet is
+returned to normal in one step by expiry.
 
 ## Why the snapshot exists
 

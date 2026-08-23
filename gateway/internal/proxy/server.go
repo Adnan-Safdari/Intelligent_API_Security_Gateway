@@ -260,7 +260,16 @@ func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *pol
 
 	sources = append(sources, reflex)
 
-	return policy.NewEnforcer(sources, s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle)), gate
+	// Holds throttled addresses to the rate their policy names. Swept in the
+	// background so addresses whose policy has expired do not stay in memory.
+	limiter := policy.NewLimiter()
+	limiter.Start()
+
+	enforcer := policy.NewEnforcer(
+		sources, s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle),
+	).WithLimiter(limiter)
+
+	return enforcer, gate
 }
 
 // throttleDelay is the pause applied to a throttled caller, or zero when

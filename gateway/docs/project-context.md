@@ -101,13 +101,15 @@ AI → Allow / Block
 | --- | --- | --- | --- |
 | **FR1** | Intercept API requests (reverse proxy + middleware) | **Complete** | Working |
 | **FR2** | Analyze request behavior (detectors → metrics) | **Partial** | Flood + SQLi + Brute Force detect-and-log; brute force has `Metrics(ip)` but no engine consumes it yet |
-| **FR3** | Adaptive rate limiting as a **decision outcome** | **Not wired** | Config exists; flood detector only logs; no adaptive limits |
+| **FR3** | Adaptive rate limiting as a **decision outcome** | **Complete** | A throttle policy carries `requests_per_minute`, set from campaign severity; `policy.Limiter` holds the address to it and answers `429` over it. Recovery is the policy's TTL lapsing |
 | **FR4** | Risk scoring + centralized decision engine | **Superseded by design** | Scoring is per-detector; decisions are split between the gateway reflex and the control plane. No central engine, and the dead `trust_engine` config has been removed |
-| **FR5** | Forward valid / reject blocked / throttle | **Forward only** | Proxy always forwards; no 403/429 enforcement path |
-| **FR6** | Logging & monitoring (Postgres + dashboard) | **Partial** | Redis hot telemetry is wired (capped event stream + counters). Postgres history and dashboard UI are not started. |
-| **FR7** | Admin configuration (thresholds, detectors, lists) | **Not started** | Static YAML at startup; no live admin API |
+| **FR5** | Forward valid / reject blocked / throttle | **Complete** | `policy.Enforcer` answers `403` for `temp_block`/`escalate` and `429` for a throttled address over its rate; the gateway's own reflex blocks on a threshold cross |
+| **FR6** | Logging & monitoring (Postgres + dashboard) | **Complete** | Redis hot telemetry (capped event stream + counters), durable campaign and feedback history in Postgres, and the Next.js console on :5177 |
+| **FR7** | Admin configuration (thresholds, detectors, lists) | **Complete** | The console's Settings page changes the whole `enforcement` block on a running gateway, via an override in Redis. Structural settings still need a restart |
 
-**Overall progress estimate:** ~45–55% of the intended product. Proxy + three detect-and-log detectors are done (brute force is the closest to the target metrics pattern); the security brain (scoring, decisions, enforcement, persistence, admin) is still ahead.
+**Overall progress estimate:** the functional requirements are met, with FR4 deliberately answered a different way than the SRS imagined -- see that row. What remains is polish and evidence rather than missing subsystems.
+
+Note that sections 5 and 6 below are an older snapshot and describe the gateway as detect-and-log with no enforcement branch. That has not been true since `internal/enforcement` and `internal/policy` were built; the table above is the current position.
 
 ---
 

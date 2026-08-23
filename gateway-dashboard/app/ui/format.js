@@ -22,6 +22,9 @@ export const LADDER = ["monitor", "throttle", "temp_block", "escalate"];
 export const ACTION_TONE = {
   monitor: "low",
   throttle: "mid",
+  // An outcome rather than an action: the policy said throttle, and this
+  // request was the one that went over the rate it allowed.
+  rate_limited: "mid",
   temp_block: "high",
   escalate: "high",
 };
