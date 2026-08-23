@@ -17,6 +17,7 @@ Built for JMeter 5.6.3.
 | `sqli_probe.jmx` | SQL injection in a login body and a query string | `sql_injection` | No — request-scoped, the control plane decides |
 | `path_traversal_probe.jmx` | `../` traversal and forced-browsing probes | `enumeration_path_traversal` | No — request-scoped |
 | `distributed_attack.jmx` | Flood + brute force from several addresses at once | both windowed | **Yes** |
+| `adaptive_rate_limit.jmx` | FR3: campaign-driven high-severity throttle | brute force + policy limiter | **Yes, 20/min after policy arrives** |
 
 "Windowed" detectors fire on repetition and are safe for the gateway to act on
 by itself; the request-scoped ones turn on a single request that might be
@@ -24,6 +25,27 @@ innocent, so that judgement is left to the control plane. See
 `gateway/docs/detection-signals.md`.
 
 The `.csv` files are the payload and probe dictionaries the plans read.
+
+## Adaptive rate limiting / FR3
+
+`adaptive_rate_limit.jmx` checks the complete FR3 path, not merely the
+detector:
+
+1. It sends 12 failed logins to build a high-severity brute-force campaign.
+2. It waits 45 seconds for the control plane (30-second cycle) and the
+   gateway's policy refresh.
+3. It sends 25 `GET /api/health` requests from the same address and asserts
+   that requests 1-20 return `200`, while requests 21-25 return `429`.
+
+The default `ATTACKER_IP` is `203.0.113.250`, an RFC 5737 documentation address
+that the policy writer permits for demos. The Docker bridge peer is trusted by
+the local configuration, so the plan's `X-Forwarded-For` header is used as the
+detector/policy identity. Choose another documentation address between runs if
+the earlier 15-minute policy still exists:
+
+```bash
+jmeter -n -t adaptive_rate_limit.jmx --jmeterproperty ATTACKER_IP=203.0.113.251
+```
 
 ## Two ways to run
 

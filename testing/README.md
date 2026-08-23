@@ -44,6 +44,23 @@ JMeter GUI, or run it headless:
 jmeter -n -t testing/jmeter/brute_force_demo.jmx
 ```
 
+`jmeter/adaptive_rate_limit.jmx` is the end-to-end FR3 check. It sends failed
+logins from a safe documentation address, waits for the control-plane cycle,
+then asserts that a high-severity throttle allows 20 health requests and
+returns `429` from request 21 onward:
+
+```bash
+jmeter -n -t testing/jmeter/adaptive_rate_limit.jmx
+```
+
+The plan takes about 50 seconds. It uses `203.0.113.250` by default; pick a
+different documentation address on a repeat run, or remove its previous policy
+in the console first:
+
+```bash
+jmeter -n -t testing/jmeter/adaptive_rate_limit.jmx --jmeterproperty ATTACKER_IP=203.0.113.251
+```
+
 ## Seeding instead of attacking
 
 If you only need the *control plane* to have something to reason about, the seeder writes
