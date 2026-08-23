@@ -6,6 +6,7 @@ import {
   ACTION_TONE,
   LADDER,
   actionLabel,
+  clampRiskScore,
   formatTime,
   formatTtl,
   riskTone,
@@ -226,8 +227,8 @@ export function EventTable({ events, empty, showSerialNumber = false }) {
                 </td>
                 <td className="mono">{event.status}</td>
                 <td>
-                  <span className={`risk ${riskTone(event.riskScore || 0)}`}>
-                    {event.riskScore || 0}
+                  <span className={`risk ${riskTone(clampRiskScore(event.riskScore))}`}>
+                    {clampRiskScore(event.riskScore)}
                   </span>
                 </td>
                 <td>

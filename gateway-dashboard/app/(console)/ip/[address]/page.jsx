@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
-import { ACTION_TONE, actionLabel, formatTime, formatTtl, signalMeta } from "@/app/ui/format";
+import {
+  ACTION_TONE, actionLabel, clampRiskScore, formatTime, formatTtl, signalMeta,
+} from "@/app/ui/format";
 import { ActionRow, CampaignCard, EventTable, ExportMenu } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
@@ -161,7 +163,7 @@ export default function IpPage({ params }) {
                       request <span className="mono">{event.requestId || "—"}</span> · HTTP {event.status}
                     </span>
                     <b>
-                      risk {event.riskScore || evidence.score || 0}
+                      risk {clampRiskScore(event.riskScore ?? evidence.score)}
                       <br />
                       {actionLabel(event.decision || "allow")}
                     </b>

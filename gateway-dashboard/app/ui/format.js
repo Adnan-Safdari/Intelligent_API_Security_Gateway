@@ -39,6 +39,14 @@ export function riskTone(score) {
   return "low";
 }
 
+// Telemetry risk is an integer on a fixed 0-100 scale. Keep the UI safe for
+// historical stream entries or malformed values as well as current gateway data.
+export function clampRiskScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return 0;
+  return Math.min(100, Math.max(0, Math.round(score)));
+}
+
 export function formatTtl(seconds) {
   if (seconds == null || seconds < 0) return "no expiry";
   if (seconds < 60) return `${seconds}s left`;
