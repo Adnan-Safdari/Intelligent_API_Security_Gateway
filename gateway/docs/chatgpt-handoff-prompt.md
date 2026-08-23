@@ -151,8 +151,8 @@ FR2 — Analyze Request Behavior
 
 FR3 — Adaptive Rate Limiting
 - Requirement: adaptive limits as a decision outcome.
-- STATUS: NOT WIRED.
-- Reality: YAML has rate_limit / throttle settings; flood detector uses requests_per_minute as a detect threshold only; no adaptive enforcement.
+- STATUS: COMPLETE.
+- Reality: the control plane picks a per-minute allowance from campaign severity (high 20, otherwise 50) and writes it as requests_per_minute in policy:<ip>. The gateway counts that address over a sliding minute in policy.Limiter and answers 429 with Retry-After once it is over. Addresses with no policy are never counted and keep the configured default. Recovery is the policy TTL lapsing, which returns the address to the default in one step.
 
 FR4 — Risk Scoring & Decision Engine
 - Requirement: centralized scoring + Allow/Throttle/Block.
