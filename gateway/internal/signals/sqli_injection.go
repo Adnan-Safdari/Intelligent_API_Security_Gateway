@@ -23,7 +23,7 @@ func DefaultSQLiDetectorConfig() SQLiDetectorConfig {
 		SQLPatterns: []string{
 			"' OR",
 			"--",
-			"UNION",
+			"UNION SELECT",
 			" OR 1=1",
 		},
 	}
@@ -137,13 +137,29 @@ func (sd *SQLiDetector) evidenceFrom(matched []string) Evidence {
 		Details: map[string]any{
 			"matchCount":      len(matched),
 			"matchedPatterns": matched,
+			"confidence":      "none",
 		},
 	}
 	if len(matched) == 0 {
 		return ev
 	}
+	strongMatches := 0
+	for _, pattern := range matched {
+		if !isLowConfidenceSQLPattern(pattern) {
+			strongMatches++
+		}
+	}
+	if strongMatches == 0 {
+		// A comment marker alone occurs in legitimate prose. Preserve it as
+		// low-risk context, but do not turn it into a fired SQLi event.
+		ev.Score = 20
+		ev.Details["confidence"] = "low"
+		return ev
+	}
+
 	ev.ThresholdCross = true
 	ev.AttackType = SignalSQLi
+	ev.Details["confidence"] = "high"
 	switch {
 	case len(matched) >= 3:
 		ev.Score = 100
@@ -153,6 +169,10 @@ func (sd *SQLiDetector) evidenceFrom(matched []string) Evidence {
 		ev.Score = 70
 	}
 	return ev
+}
+
+func isLowConfidenceSQLPattern(pattern string) bool {
+	return strings.TrimSpace(pattern) == "--"
 }
 
 func (sd *SQLiDetector) logAlert(ip string, r *http.Request, details string) {

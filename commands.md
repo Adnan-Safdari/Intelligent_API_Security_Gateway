@@ -70,7 +70,7 @@ curl.exe -i -X POST http://localhost:5002/api/login `
   -d '{"email":"admin@example.com","password":"definitely-wrong"}'
 ```
 
-The current backend reads `email` and `password`; the brute-force detector also extracts **only `email`** when counting distinct users for password spraying.
+The current backend reads `email` and `password`. The gateway detector counts either a JSON `email` or `username` as the attempted identity; email takes precedence if both are supplied.
 
 ## Test 4 — Same request through the Gateway
 
@@ -220,7 +220,7 @@ The ten failed logins themselves are normally HTTP 401 from the backend; the ref
 
 ### Purpose
 
-Use one source IP across many `email` values. More than three distinct emails changes the current detector classification to `password_spraying`.
+Use one source IP across many `email` values (or `username` values). More than three distinct login identities changes the current detector classification to `password_spraying`.
 
 ### Commands
 

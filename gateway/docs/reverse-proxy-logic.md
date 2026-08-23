@@ -93,10 +93,10 @@ This reads the URL path, decoded query values, and JSON/body content for known S
 
 - `' OR`
 - `--`
-- `UNION`
+- `UNION SELECT`
 - ` OR 1=1`
 
-If it finds a match, it emits standardized evidence, logs a formatted alert, and still allows the request through. The dashboard and control plane distinguish this detection from any later policy enforcement.
+The comment marker `--` by itself is retained as low-confidence context but does not fire the detector. A stronger signature emits standardized evidence, logs a formatted alert, and still allows the request through. The dashboard and control plane distinguish this detection from any later policy enforcement.
 
 ### Brute Force Detection
 

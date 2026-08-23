@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"unicode/utf8"
 )
@@ -29,6 +30,25 @@ func RedactSnippet(body []byte) string {
 		}
 	}
 	return truncate(trimmed, maxSnippetBytes)
+}
+
+// RedactQuery keeps useful non-sensitive query context while masking the same
+// secret-bearing parameter names handled for JSON request bodies.
+func RedactQuery(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		// A malformed query must never make telemetry leak a malformed secret.
+		return "[unparseable query redacted]"
+	}
+	for key := range values {
+		if isSecretKey(key) {
+			values[key] = []string{"[redacted]"}
+		}
+	}
+	return truncate(values.Encode(), maxSnippetBytes)
 }
 
 func redactValue(v any) {

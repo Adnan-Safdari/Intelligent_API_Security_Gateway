@@ -91,7 +91,7 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 				IP:        ip,
 				Method:    r.Method,
 				Path:      r.URL.Path,
-				Query:     truncate(r.URL.RawQuery, 256),
+				Query:     RedactQuery(r.URL.RawQuery),
 				Status:    status,
 				UserAgent: truncate(r.UserAgent(), 256),
 				Decision:  policy.Applied(r),

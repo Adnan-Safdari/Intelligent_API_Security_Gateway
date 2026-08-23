@@ -187,6 +187,22 @@ func TestSQLiProductSearchTelemetryContainsEvidence(t *testing.T) {
 	}
 }
 
+func TestTelemetryRedactsSensitiveQueryValues(t *testing.T) {
+	writer := &captureWriter{}
+	handler := Middleware(writer, signals.NewCollector())(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) },
+	))
+
+	send(t, handler, http.MethodGet,
+		"/api/products?q=keyboard&password=not-for-redis&token=also-not-for-redis",
+		"203.0.113.49", "")
+
+	if got, want := writer.last().Query,
+		"password=%5Bredacted%5D&q=keyboard&token=%5Bredacted%5D"; got != want {
+		t.Fatalf("query = %q, want %q", got, want)
+	}
+}
+
 // Windowed detectors are deliberately unaffected: "this address made N
 // requests in the last minute" stays true whether or not the request being
 // recorded reached the detector.

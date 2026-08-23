@@ -59,7 +59,7 @@ enforcement:
     sql_patterns:
       - "' OR"
       - "--"
-      - "UNION"
+      - "UNION SELECT"
       - " OR 1=1"
 
   # Brute force login detection (detect + emit metrics only; no blocking)

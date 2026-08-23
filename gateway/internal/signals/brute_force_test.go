@@ -70,3 +70,26 @@ func TestBruteForceExpiredFailuresFallOutOfWindow(t *testing.T) {
 		t.Fatalf("expired failures remained active: %+v", ev)
 	}
 }
+
+func TestBruteForceClassifiesUsernameSpraying(t *testing.T) {
+	const ip = "203.0.113.47"
+	detector := newBruteForceTestDetector()
+	handler := detector.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+
+	captureAlerts(t, func() {
+		for _, username := range []string{"alice", "bob", "carol", "dave", "erin"} {
+			probe(handler, http.MethodPost, "/api/login", ip,
+				`{"username":"`+username+`","password":"one-password"}`)
+		}
+	})
+
+	ev := detector.Metrics(ip)
+	if !ev.ThresholdCross || ev.AttackType != "password_spraying" {
+		t.Fatalf("username spray was not classified: %+v", ev)
+	}
+	if got := ev.Int("distinctUsers"); got != 5 {
+		t.Fatalf("distinctUsers = %d, want 5", got)
+	}
+}

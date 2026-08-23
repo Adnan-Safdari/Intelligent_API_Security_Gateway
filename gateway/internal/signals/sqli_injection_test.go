@@ -29,7 +29,6 @@ func TestSQLiDetectsSignatureInBody(t *testing.T) {
 	for _, payload := range []string{
 		`{"email":"' OR 1=1--"}`,
 		`{"q":"UNION SELECT * FROM users"}`,
-		`{"note":"-- comment"}`,
 	} {
 		out := captureAlerts(t, func() {
 			probe(sqliHandler(), http.MethodPost, "/api/login", "203.0.113.5", payload)
@@ -38,6 +37,23 @@ func TestSQLiDetectsSignatureInBody(t *testing.T) {
 		if !strings.Contains(out, sqliMarker) {
 			t.Errorf("payload %q went undetected", payload)
 		}
+	}
+}
+
+func TestSQLiCommentOnlyIsLowConfidenceEvidence(t *testing.T) {
+	const ip = "203.0.113.56"
+	detector := NewSQLiDetector(DefaultSQLiDetectorConfig())
+	handler := detector.Middleware(okBackend())
+
+	out := captureAlerts(t, func() {
+		probe(handler, http.MethodPost, "/api/login", ip, `{"note":"-- comment"}`)
+	})
+	if strings.Contains(out, sqliMarker) {
+		t.Fatalf("a comment marker alone raised SQLi: %s", out)
+	}
+	ev := detector.Metrics(ip)
+	if ev.ThresholdCross || ev.Score != 20 || ev.Details["confidence"] != "low" {
+		t.Fatalf("comment-only evidence = %+v, want low-confidence non-fired evidence", ev)
 	}
 }
 

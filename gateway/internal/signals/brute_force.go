@@ -37,6 +37,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -49,8 +50,8 @@ func (bd *BruteForceDetector) Name() string { return SignalBruteForce }
 
 // bruteForceClient tracks the recent login failures for a single IP.
 type bruteForceClient struct {
-	Failures []time.Time         // timestamps of failed login attempts inside the window
-	Emails   map[string]struct{} // distinct emails this IP has tried (spraying indicator)
+	Failures   []time.Time         // timestamps of failed login attempts inside the window
+	Identities map[string]struct{} // distinct login identities this IP has tried (spraying indicator)
 }
 
 // BruteForceDetector tracks failed login attempts per IP.
@@ -163,7 +164,7 @@ func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 
 		// Best-effort: pull the attempted email out of the JSON body
 		// so we can tell brute force from password spraying
-		email := extractEmail(r)
+		identity := extractIdentity(r)
 
 		// Forward the request, but record what the backend answered
 		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
@@ -171,7 +172,7 @@ func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 
 		switch {
 		case rec.status == http.StatusUnauthorized || rec.status == http.StatusForbidden:
-			bd.recordFailure(ip, email, r)
+			bd.recordFailure(ip, identity, r)
 		case rec.status >= 200 && rec.status < 300:
 			// Successful login clears the slate for this IP
 			bd.reset(ip)
@@ -181,14 +182,14 @@ func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
 
 // recordFailure adds a failed attempt and raises an alert once the
 // threshold is crossed. The request itself has already been forwarded.
-func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
+func (bd *BruteForceDetector) recordFailure(ip, identity string, r *http.Request) {
 	now := time.Now()
 	tun := bd.settings()
 
 	bd.mu.Lock()
 	client, exists := bd.clients[ip]
 	if !exists {
-		client = &bruteForceClient{Emails: make(map[string]struct{})}
+		client = &bruteForceClient{Identities: make(map[string]struct{})}
 		bd.clients[ip] = client
 	}
 
@@ -204,12 +205,12 @@ func (bd *BruteForceDetector) recordFailure(ip, email string, r *http.Request) {
 	client.Failures = client.Failures[firstValid:]
 
 	client.Failures = append(client.Failures, now)
-	if email != "" {
-		client.Emails[email] = struct{}{}
+	if identity != "" {
+		client.Identities[identity] = struct{}{}
 	}
 
 	failureCount := len(client.Failures)
-	distinctEmails := len(client.Emails)
+	distinctEmails := len(client.Identities)
 	bd.mu.Unlock()
 
 	if failureCount >= tun.maxFailures {
@@ -246,7 +247,7 @@ func (bd *BruteForceDetector) Metrics(ip string) Evidence {
 			failures++
 		}
 	}
-	distinct := len(client.Emails)
+	distinct := len(client.Identities)
 	crossed := failures >= tun.maxFailures
 
 	ev.Details["failedLogins"] = failures
@@ -286,18 +287,22 @@ func classifyAttack(distinctEmails int) string {
 // extractEmail reads the request body (and restores it for the next handler)
 // and returns the "email" field if the body is JSON. Failures are fine —
 // this is only used to enrich the alert.
-func extractEmail(r *http.Request) string {
+func extractIdentity(r *http.Request) string {
 	bodyBytes, err := readAndRestoreBody(r)
 	if err != nil || len(bodyBytes) == 0 {
 		return ""
 	}
 	var payload struct {
-		Email string `json:"email"`
+		Email    string `json:"email"`
+		Username string `json:"username"`
 	}
 	if json.Unmarshal(bodyBytes, &payload) != nil {
 		return ""
 	}
-	return payload.Email
+	if email := strings.TrimSpace(payload.Email); email != "" {
+		return email
+	}
+	return strings.TrimSpace(payload.Username)
 }
 
 // logAlert prints a high-visibility security alert to the console.
