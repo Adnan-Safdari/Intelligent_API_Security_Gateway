@@ -9,7 +9,9 @@ import { POLICY_COLUMNS } from "@/app/ui/export";
 import Link from "next/link";
 
 export default function PolicyPage() {
-  const { policies, escalations, learned, busy, instruct, deletePolicy } = useLive();
+  const {
+    policies, escalations, learned, busy, pendingPolicyActions, instruct, deletePolicy,
+  } = useLive();
   const [ip, setIp] = useState("");
   const [action, setAction] = useState("temp_block");
   const [reason, setReason] = useState("");
@@ -109,18 +111,24 @@ export default function PolicyPage() {
                       </td>
                       <td>
                         <div className="row-actions">
-                          {LADDER.filter((a) => a !== p.action).map((a) => (
-                            <button
-                              key={a}
-                              type="button"
-                              className="act small"
-                              disabled={Boolean(busy)}
-                              onClick={() => instruct([p.ip], a, `row-${p.ip}`)}
-                              title={`Instruct ${actionLabel(a)} for ${p.ip}`}
-                            >
-                              {busy === `row-${p.ip}:${a}` ? "…" : actionLabel(a)}
-                            </button>
-                          ))}
+                          {pendingPolicyActions[p.ip] ? (
+                            <span className="tag">
+                              changing to {actionLabel(pendingPolicyActions[p.ip])}…
+                            </span>
+                          ) : (
+                            LADDER.filter((a) => a !== p.action).map((a) => (
+                              <button
+                                key={a}
+                                type="button"
+                                className="act small"
+                                disabled={Boolean(busy)}
+                                onClick={() => instruct([p.ip], a, `row-${p.ip}`)}
+                                title={`Instruct ${actionLabel(a)} for ${p.ip}`}
+                              >
+                                {busy === `row-${p.ip}:${a}` ? "…" : actionLabel(a)}
+                              </button>
+                            ))
+                          )}
                         </div>
                       </td>
                       <td>
@@ -131,7 +139,7 @@ export default function PolicyPage() {
                           onClick={() => removePolicy(p)}
                           title={`Remove the active policy for ${p.ip}`}
                         >
-                          {busy === `delete-policy:${p.ip}` ? "Removingâ€¦" : "Delete policy"}
+                          {busy === `delete-policy:${p.ip}` ? "Removing..." : "Delete policy"}
                         </button>
                       </td>
                     </tr>

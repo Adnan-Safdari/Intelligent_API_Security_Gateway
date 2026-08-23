@@ -102,12 +102,18 @@ services:
     volumes:
       - ../gateway-dashboard:/app
       - gateway_dashboard_node_modules:/app/node_modules
+      # Keep Next's Linux build cache out of the bind mount. A cache generated
+      # on the Windows host can otherwise leave the container referencing
+      # chunks that do not exist there after an edit or rebuild.
+      - gateway_dashboard_next:/app/.next
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
       # Live panels read Redis; the campaign history reads the record.
       IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
-    command: sh -c "npm ci && npm run dev"
+    # `.next` is a mounted volume, so clear its contents rather than trying
+    # to remove the mount point itself.
+    command: sh -c "find .next -mindepth 1 -delete && npm ci && npm run dev"
     ports:
       - "5177:5177"
     depends_on:
@@ -197,4 +203,5 @@ volumes:
   redis_data:
   vulnerable_api_node_modules:
   gateway_dashboard_node_modules:
+  gateway_dashboard_next:
   vulnerable_web_node_modules:
