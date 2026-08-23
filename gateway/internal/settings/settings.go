@@ -47,7 +47,9 @@ type Wire struct {
 }
 
 type RateLimit struct {
-	Enabled           bool `json:"enabled"`
+	Enabled bool `json:"enabled"`
+	// Whether the threshold is refused rather than only reported.
+	Enforce           bool `json:"enforce"`
 	RequestsPerMinute int  `json:"requests_per_minute"`
 }
 
@@ -93,6 +95,7 @@ func FromConfig(c config.EnforcementConfig) Wire {
 	return Wire{
 		RateLimit: RateLimit{
 			Enabled:           c.RateLimit.Enabled,
+			Enforce:           c.RateLimit.Enforce,
 			RequestsPerMinute: c.RateLimit.RequestsPerMinute,
 		},
 		AttackDetection: AttackDetection{
@@ -132,6 +135,7 @@ func (w Wire) ToConfig(base config.EnforcementConfig) (config.EnforcementConfig,
 	out := base
 
 	out.RateLimit.Enabled = w.RateLimit.Enabled
+	out.RateLimit.Enforce = w.RateLimit.Enforce
 	out.RateLimit.RequestsPerMinute = w.RateLimit.RequestsPerMinute
 
 	out.AttackDetection.Enabled = w.AttackDetection.Enabled

@@ -225,15 +225,28 @@ bash testing/signals/run_all.sh
 
 ## Adaptive rate limiting
 
-A throttle carries a number, not just a verdict. The control plane picks it from how bad
-the campaign looks, and the gateway holds that address to it:
+A throttle carries a number, not just a verdict. Every address is held to a rate, and a
+policy replaces the one it would otherwise get:
 
-| Campaign | Allowed |
+| Address | Allowed |
 |---|---|
-| No policy | The configured default — 100/min |
+| No policy | The baseline — `rate_limit.requests_per_minute`, 100/min |
+| Exempt range | Everything; never counted |
 | Throttled, low or medium severity | 50/min |
 | Throttled, high severity | 20/min |
 | Blocked | Nothing — the request is refused |
+
+The policy wins in **both** directions: a campaign judged worse than the baseline is held
+tighter, one judged better is allowed more. The control plane looked at that address
+specifically, which beats the figure everyone else gets.
+
+The baseline is **off by default**. `rate_limit.enabled` counts requests and raises a flood
+signal; `rate_limit.enforce` turns that same threshold into a limit the gateway acts on.
+Two flags, because noticing a flood and refusing traffic are different decisions and only
+the second can turn a legitimate spike into an outage. It is one number either way — the
+baseline *is* the detection threshold, so the alert and the refusal cannot disagree about
+what "too fast" means. Exemptions are `block.exempt_cidrs`, the same list the reflex never
+blocks.
 
 Over the limit the gateway answers **429** with a `Retry-After`, not the **403** a block
 gets. The difference is worth keeping: a block says *not you*, a rate limit says *not this

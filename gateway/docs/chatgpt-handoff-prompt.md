@@ -152,7 +152,7 @@ FR2 — Analyze Request Behavior
 FR3 — Adaptive Rate Limiting
 - Requirement: adaptive limits as a decision outcome.
 - STATUS: COMPLETE.
-- Reality: the control plane picks a per-minute allowance from campaign severity (high 20, otherwise 50) and writes it as requests_per_minute in policy:<ip>. The gateway counts that address over a sliding minute in policy.Limiter and answers 429 with Retry-After once it is over. Addresses with no policy are never counted and keep the configured default. Recovery is the policy TTL lapsing, which returns the address to the default in one step.
+- Reality: enforcement.rate_limit.enforce (off by default) makes rate_limit.requests_per_minute a baseline every non-exempt address is held to. The control plane picks a per-minute allowance from campaign severity (high 20, otherwise 50) and writes it as requests_per_minute in policy:<ip>; that replaces the baseline for that address, tighter or looser. policy.Limiter counts over a sliding minute and answers 429 with Retry-After. Exemptions reuse block.exempt_cidrs. Recovery is the policy TTL lapsing, which returns the address to the baseline in one step.
 
 FR4 — Risk Scoring & Decision Engine
 - Requirement: centralized scoring + Allow/Throttle/Block.

@@ -55,9 +55,19 @@ storage:
 enforcement:
   # Rate limiting
   rate_limit:
-    enabled: true
+    enabled: true              # count requests per address and signal a flood
     requests_per_minute: 100
     burst: 20
+
+    # Turn the threshold above into a limit the gateway acts on: anything over
+    # it is refused with 429 instead of only being reported. Off by default --
+    # noticing a flood and refusing traffic are different decisions, and only
+    # the second can turn a legitimate spike into an outage.
+    #
+    # This is the baseline. An address the control plane has throttled is held
+    # to the rate *its* policy names instead, and the ranges in
+    # `block.exempt_cidrs` below skip the limit entirely.
+    enforce: false
 
   # Attack detection (SQL injection signatures)
   attack_detection:

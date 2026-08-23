@@ -2,6 +2,7 @@ package policy
 
 import (
 	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,8 +16,26 @@ import (
 // place where anything the control plane produced can affect real traffic.
 // enforcerTunables is what the console can move at runtime, swapped whole.
 type enforcerTunables struct {
-	enabled  bool
+	// policyOn decides whether the lookup sources are consulted at all.
+	policyOn bool
 	throttle time.Duration
+
+	// baseline is the requests per minute every address is held to when no
+	// policy names a rate for it. Zero means no baseline, which is the default:
+	// refusing ordinary traffic is a deliberate choice, not something the
+	// gateway should start doing because a threshold existed.
+	baseline int
+
+	// exempt addresses skip the baseline entirely. The reflex's list is reused
+	// so there is one answer to "who does this gateway never refuse".
+	exempt []*net.IPNet
+}
+
+// active reports whether the middleware has anything to do. When neither a
+// policy source nor a baseline can have an opinion the request is passed
+// straight through, with no lookup and no counting.
+func (t *enforcerTunables) active() bool {
+	return t.policyOn || t.baseline > 0
 }
 
 type Enforcer struct {
@@ -36,6 +55,13 @@ func NewEnforcer(l Lookuper, enabled bool, throttleDelay time.Duration) *Enforce
 	return e
 }
 
+// Baseline is the rate every non-exempt address is held to when no policy names
+// one for it, and the ranges that skip it.
+type Baseline struct {
+	RequestsPerMinute int
+	Exempt            []*net.IPNet
+}
+
 // WithLimiter gives the enforcer a rate limiter to hold throttled addresses to
 // the rate their policy names.
 func (e *Enforcer) WithLimiter(l *Limiter) *Enforcer {
@@ -45,9 +71,26 @@ func (e *Enforcer) WithLimiter(l *Limiter) *Enforcer {
 
 // Apply turns enforcement on or off and sets the throttle delay. The lookup
 // sources themselves are fixed at boot -- this only decides whether their
-// verdicts are acted on.
+// verdicts are acted on. The baseline is left as it was.
 func (e *Enforcer) Apply(enabled bool, throttleDelay time.Duration) {
-	e.tun.Store(&enforcerTunables{enabled: enabled, throttle: throttleDelay})
+	current := e.tun.Load()
+	next := &enforcerTunables{policyOn: enabled, throttle: throttleDelay}
+	if current != nil {
+		next.baseline, next.exempt = current.baseline, current.exempt
+	}
+	e.tun.Store(next)
+}
+
+// ApplyAll sets the policy switch, the throttle delay and the baseline in one
+// swap, so a request is never judged against a new baseline and an old
+// exemption list.
+func (e *Enforcer) ApplyAll(enabled bool, throttleDelay time.Duration, b Baseline) {
+	e.tun.Store(&enforcerTunables{
+		policyOn: enabled,
+		throttle: throttleDelay,
+		baseline: b.RequestsPerMinute,
+		exempt:   b.Exempt,
+	})
 }
 
 // Middleware sits at the front of the chain, so a blocked IP is turned away
@@ -55,61 +98,82 @@ func (e *Enforcer) Apply(enabled bool, throttleDelay time.Duration) {
 func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tun := e.tun.Load()
-		if !tun.enabled || e.lookup == nil {
+		if !tun.active() {
 			next.ServeHTTP(w, r)
 			return
 		}
 
 		ip := netutil.ClientIP(r)
 
-		decision, found := e.lookup.Lookup(ip)
-		if !found {
-			next.ServeHTTP(w, r)
-			return
+		var decision Decision
+		var found bool
+		if tun.policyOn && e.lookup != nil {
+			decision, found = e.lookup.Lookup(ip)
 		}
 
-		switch decision.Action {
-		case ActionTempBlock, ActionEscalate:
-			Record(r, decision.Action)
-			e.deny(w, r, ip, decision)
+		if found {
+			switch decision.Action {
+			case ActionTempBlock, ActionEscalate:
+				Record(r, decision.Action)
+				e.deny(w, r, ip, decision)
+				return
 
-		case ActionThrottle:
-			// A policy that names a rate is a real limit: this address may
-			// send that many requests a minute and no more. That is what
-			// makes the limiting adaptive -- the number came from how bad the
-			// campaign was, not from a setting that treats every throttled
-			// caller alike.
-			if decision.RequestsPerMinute > 0 {
-				allowed, count, retryAfter := e.limiter.Allow(ip, decision.RequestsPerMinute)
-				if !allowed {
-					Record(r, OutcomeRateLimited)
-					e.rateLimited(w, r, ip, decision, count, retryAfter)
+			case ActionThrottle:
+				// A policy that names a rate is a real limit, and it replaces
+				// the baseline: the number came from how bad the campaign was,
+				// which is a better answer than the figure everyone else gets.
+				if decision.RequestsPerMinute > 0 {
+					e.limited(w, r, next, tun, ip, decision, decision.RequestsPerMinute, ActionThrottle)
 					return
 				}
+
 				Record(r, ActionThrottle)
+				// No rate named -- an older control plane, or one that chose
+				// not to. Fall back to slowing the caller down. Waiting on the
+				// request context too means a client that disconnects does not
+				// pin a goroutine for the full delay.
+				select {
+				case <-time.After(tun.throttle):
+				case <-r.Context().Done():
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
-
-			Record(r, ActionThrottle)
-			// No rate named -- an older control plane, or one that chose not
-			// to. Fall back to slowing the caller down. Waiting on the request
-			// context too means a client that disconnects does not pin a
-			// goroutine for the full delay.
-			select {
-			case <-time.After(tun.throttle):
-			case <-r.Context().Done():
-				return
-			}
-			next.ServeHTTP(w, r)
-
-		default:
-			// monitor, or an action this build does not recognise. Allowing
-			// is the safe default: a typo in the control plane should never
-			// take the API offline.
-			next.ServeHTTP(w, r)
+			// monitor, or an action this build does not recognise. Neither
+			// restrains traffic, so the caller falls through to the baseline
+			// like anyone else. Allowing is the safe default: a typo in the
+			// control plane should never take the API offline.
 		}
+
+		// No policy rate applies. Hold the address to the baseline, if there is
+		// one and it is not exempt.
+		if tun.baseline > 0 && !netutil.NetworksContain(tun.exempt, ip) {
+			e.limited(w, r, next, tun, ip, decision, tun.baseline, "")
+			return
+		}
+
+		next.ServeHTTP(w, r)
 	})
+}
+
+// limited counts one request against a rate and either serves it or refuses it
+// with 429. `applied` is the outcome to record when the request is allowed
+// through -- empty for the baseline, where nothing was done to the request.
+func (e *Enforcer) limited(
+	w http.ResponseWriter, r *http.Request, next http.Handler,
+	tun *enforcerTunables, ip string, d Decision, limit int, applied string,
+) {
+	allowed, count, retryAfter := e.limiter.Allow(ip, limit)
+	if !allowed {
+		Record(r, OutcomeRateLimited)
+		e.rateLimited(w, r, ip, d, count, limit, retryAfter)
+		return
+	}
+	if applied != "" {
+		Record(r, applied)
+	}
+	next.ServeHTTP(w, r)
 }
 
 func (e *Enforcer) deny(w http.ResponseWriter, r *http.Request, ip string, d Decision) {
@@ -171,7 +235,7 @@ func (l *logLimiter) allow(ip string) bool {
 // keeping. A block says "not you"; this says "not this fast", and Retry-After
 // tells a well-behaved client exactly when it is worth trying again.
 func (e *Enforcer) rateLimited(
-	w http.ResponseWriter, r *http.Request, ip string, d Decision, count int, retryAfter time.Duration,
+	w http.ResponseWriter, r *http.Request, ip string, d Decision, count, limit int, retryAfter time.Duration,
 ) {
 	seconds := int(retryAfter.Seconds())
 	if seconds < 1 {
@@ -185,7 +249,11 @@ func (e *Enforcer) rateLimited(
 	http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 
 	if e.logged.allow(ip) {
-		log.Printf("[policy] rate limited %s: %d requests in the last minute, allowed %d (campaign %s)",
-			ip, count, d.RequestsPerMinute, d.CampaignID)
+		source := "the baseline limit"
+		if d.CampaignID != "" {
+			source = "campaign " + d.CampaignID
+		}
+		log.Printf("[policy] rate limited %s: %d requests in the last minute, allowed %d (%s)",
+			ip, count, limit, source)
 	}
 }

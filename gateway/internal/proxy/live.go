@@ -25,10 +25,16 @@ type live struct {
 
 // apply moves the whole chain to a new enforcement config.
 //
-// The reflex is applied first because it is the only part that can refuse:
-// its exempt list has to parse. Refusing there leaves everything untouched,
-// so a bad CIDR cannot land half a settings change on a running gateway.
+// Everything that can be rejected is checked before anything is changed. Two
+// parts read the exempt list and either can refuse a CIDR that will not parse;
+// doing both up front means a typo leaves the running gateway exactly as it
+// was, rather than landing half a settings change on it.
 func (l live) apply(cfg config.EnforcementConfig) error {
+	baseline, err := baselineFrom(cfg.RateLimit, cfg.Block)
+	if err != nil {
+		return err
+	}
+
 	if err := l.reflex.Apply(enforcement.Config{
 		Enabled:     cfg.Block.Enabled,
 		Duration:    cfg.Block.Duration,
@@ -49,8 +55,7 @@ func (l live) apply(cfg config.EnforcementConfig) error {
 	// Recomputed rather than read from the config: enforcement is on when
 	// either source could have an opinion, and the reflex has its own idea of
 	// whether it is armed (enabled, with at least one signal named).
-	delay := throttleDelay(cfg.Throttle)
-	l.enforcer.Apply(l.gate.On() || l.reflex.Active(), delay)
+	l.enforcer.ApplyAll(l.gate.On() || l.reflex.Active(), throttleDelay(cfg.Throttle), baseline)
 
 	log.Printf("[enforcement] %s", l.reflex.Describe())
 	return nil

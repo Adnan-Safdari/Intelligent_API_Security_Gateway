@@ -55,16 +55,38 @@ The applied action is attached to the request context via
 
 ## What makes the rate limiting adaptive
 
-A throttle carries a number. The control plane picks it from how bad the
-campaign is, so two addresses throttled at the same moment can be held to
-different rates:
+Every address is held to a rate, and a policy replaces the one it would
+otherwise get:
 
-| Campaign severity | Allowed |
+| Address | Allowed |
 | --- | --- |
-| Not throttled | The gateway default, `enforcement.rate_limit.requests_per_minute` |
-| `low` / `medium` | 50 / min |
-| `high` | 20 / min |
+| No policy | The baseline, `enforcement.rate_limit.requests_per_minute` |
+| In `block.exempt_cidrs` | Everything — never counted |
+| Throttled, `low` / `medium` severity | 50 / min |
+| Throttled, `high` severity | 20 / min |
 | Blocked (`temp_block`, `escalate`) | Nothing — the request is refused outright |
+
+The policy wins in **both** directions. A campaign judged worse than the
+baseline is held tighter, and one judged better is allowed more: the control
+plane looked at that address specifically, which is a better answer than the
+figure everyone else gets.
+
+`monitor` restrains nothing, so a monitored address falls back to the baseline
+like anyone else rather than being waved through.
+
+### The baseline is opt-in
+
+`enforcement.rate_limit.enabled` counts requests and raises a flood signal.
+`enforcement.rate_limit.enforce` — off by default — turns that same threshold
+into a limit the gateway acts on.
+
+Two flags rather than one, because noticing a flood and refusing traffic are
+different decisions and only the second can turn a legitimate spike into an
+outage. With `enforce` off the gateway behaves as it always did: it reports the
+flood, and the only thing that refuses that traffic is the reflex or a policy.
+
+One number, not two: the baseline *is* the detection threshold, so the alert and
+the refusal can never disagree about what "too fast" means.
 
 The rungs are a table rather than a formula, deliberately. The number an
 operator is asked to justify should be one they can point at, not the output of
@@ -77,9 +99,10 @@ distinction is real and worth keeping: a block says *not you*, a rate limit says
 trying again. Refused requests still count, so hammering after a refusal does
 not earn a way back in.
 
-Only addresses under a throttle policy are ever counted — the enforcer looks the
-decision up first and only then reaches the limiter — so the limiter holds
-throttled addresses, not every client the gateway has seen.
+A blocked address never reaches the counter — it is refused before there is any
+point counting it — and neither does an exempt one. The exempt list is
+`block.exempt_cidrs`, reused rather than duplicated so there is a single answer
+to "who does this gateway never refuse".
 
 A rate of `0` means the policy named none, which is what a control plane older
 than this field writes. The gateway falls back to the configured

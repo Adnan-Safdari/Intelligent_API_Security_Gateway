@@ -101,7 +101,7 @@ AI → Allow / Block
 | --- | --- | --- | --- |
 | **FR1** | Intercept API requests (reverse proxy + middleware) | **Complete** | Working |
 | **FR2** | Analyze request behavior (detectors → metrics) | **Partial** | Flood + SQLi + Brute Force detect-and-log; brute force has `Metrics(ip)` but no engine consumes it yet |
-| **FR3** | Adaptive rate limiting as a **decision outcome** | **Complete** | A throttle policy carries `requests_per_minute`, set from campaign severity; `policy.Limiter` holds the address to it and answers `429` over it. Recovery is the policy's TTL lapsing |
+| **FR3** | Adaptive rate limiting as a **decision outcome** | **Complete** | An opt-in baseline (`rate_limit.enforce`) holds every address to `requests_per_minute`; a throttle policy carries its own rate, set from campaign severity, and replaces the baseline in both directions. `policy.Limiter` answers `429` over whichever applies. Recovery is the policy's TTL lapsing |
 | **FR4** | Risk scoring + centralized decision engine | **Superseded by design** | Scoring is per-detector; decisions are split between the gateway reflex and the control plane. No central engine, and the dead `trust_engine` config has been removed |
 | **FR5** | Forward valid / reject blocked / throttle | **Complete** | `policy.Enforcer` answers `403` for `temp_block`/`escalate` and `429` for a throttled address over its rate; the gateway's own reflex blocks on a threshold cross |
 | **FR6** | Logging & monitoring (Postgres + dashboard) | **Complete** | Redis hot telemetry (capped event stream + counters), durable campaign and feedback history in Postgres, and the Next.js console on :5177 |

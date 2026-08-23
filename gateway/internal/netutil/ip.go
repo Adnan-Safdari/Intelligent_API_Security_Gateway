@@ -14,7 +14,6 @@ package netutil
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -49,50 +48,16 @@ type Resolver struct {
 // NewResolver builds a resolver from a list of CIDRs or bare addresses. An
 // empty list means no proxy is trusted, so the peer address is always used.
 func NewResolver(cidrs []string) (*Resolver, error) {
-	res := &Resolver{}
-
-	for _, entry := range cidrs {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-
-		// A bare address is the obvious thing to write, so accept it rather
-		// than silently ignoring the entry and quietly trusting nothing.
-		if !strings.Contains(entry, "/") {
-			ip := net.ParseIP(entry)
-			if ip == nil {
-				return nil, fmt.Errorf("invalid trusted proxy %q", entry)
-			}
-			if ip.To4() != nil {
-				entry += "/32"
-			} else {
-				entry += "/128"
-			}
-		}
-
-		_, network, err := net.ParseCIDR(entry)
-		if err != nil {
-			return nil, fmt.Errorf("invalid trusted proxy %q: %w", entry, err)
-		}
-		res.trusted = append(res.trusted, network)
+	trusted, err := ParseCIDRs(cidrs, "trusted proxy")
+	if err != nil {
+		return nil, err
 	}
-
-	return res, nil
+	return &Resolver{trusted: trusted}, nil
 }
 
 // Trusts reports whether an address is a configured proxy.
 func (res *Resolver) Trusts(ip string) bool {
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		return false
-	}
-	for _, network := range res.trusted {
-		if network.Contains(parsed) {
-			return true
-		}
-	}
-	return false
+	return NetworksContain(res.trusted, ip)
 }
 
 // Resolve returns the address the request should be attributed to.
