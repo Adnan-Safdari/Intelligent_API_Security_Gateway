@@ -40,6 +40,9 @@ export function LiveProvider({ children, me }) {
   const [history, setHistory] = useState(EMPTY_HISTORY);
   const [paused, setPaused] = useState(false);
   const [busy, setBusy] = useState("");
+  // A queued override has been accepted by the console but has not yet been
+  // reflected by the control plane. It must not be mistaken for current state.
+  const [pendingPolicyActions, setPendingPolicyActions] = useState({});
   const [toast, setToast] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
 
@@ -53,6 +56,15 @@ export function LiveProvider({ children, me }) {
       ]);
       setOverview(a);
       setPlane(b);
+      setPendingPolicyActions((pending) => {
+        const next = { ...pending };
+        for (const [ip, action] of Object.entries(pending)) {
+          if ((b.policies || []).some((policy) => policy.ip === ip && policy.action === action)) {
+            delete next[ip];
+          }
+        }
+        return next;
+      });
       setUpdatedAt(new Date());
     } catch {
       setOverview((prev) => ({ ...prev, redis: false }));
@@ -138,6 +150,16 @@ export function LiveProvider({ children, me }) {
         return false;
       }
 
+      // The next action must be based on the state the control plane applied,
+      // not the policy row rendered before this request was queued.
+      setPendingPolicyActions((pending) => ({
+        ...pending,
+        // Monitor intentionally writes no enforcement key, so there is no
+        // policy row that can acknowledge it.
+        ...(action === "monitor" ? {} : Object.fromEntries(targets.map((ip) => [ip, action]))),
+      }));
+      await refresh();
+
       setToast({
         tone: "good",
         text: `${actionLabel(action)} queued for ${targets.length} ${
@@ -151,7 +173,42 @@ export function LiveProvider({ children, me }) {
     } finally {
       setBusy("");
     }
-  }, [canAct]);
+  }, [canAct, refresh]);
+
+  /** Remove one current policy key immediately, rather than queueing an override. */
+  const deletePolicy = useCallback(async (ip) => {
+    if (!canAct) {
+      setToast({
+        tone: "bad",
+        text: "your account can read the console but not remove enforcement",
+      });
+      return false;
+    }
+
+    setBusy(`delete-policy:${ip}`);
+    try {
+      const res = await fetch(`/api/policies/${encodeURIComponent(ip)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setToast({ tone: "bad", text: `policy delete failed: ${data.error || res.status}` });
+        return false;
+      }
+
+      setToast({
+        tone: "good",
+        text: data.removed
+          ? `policy removed for ${ip}`
+          : `no current policy existed for ${ip}`,
+      });
+      await refresh();
+      return true;
+    } catch (err) {
+      setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
+      return false;
+    } finally {
+      setBusy("");
+    }
+  }, [canAct, refresh]);
 
   const value = useMemo(
     () => ({
@@ -165,11 +222,14 @@ export function LiveProvider({ children, me }) {
       paused,
       setPaused,
       busy,
+      pendingPolicyActions,
       toast,
       setToast,
       updatedAt,
       instruct,
+      deletePolicy,
       refresh,
+      refreshHistory,
       // Read straight off the payloads so a page never has to guess a default.
       stats: overview.stats || EMPTY_OVERVIEW.stats,
       events: overview.events || [],
@@ -181,7 +241,10 @@ export function LiveProvider({ children, me }) {
       learned: plane.learned || [],
       beat: plane.heartbeat || { alive: false },
     }),
-    [me, canAct, overview, plane, history, paused, busy, toast, updatedAt, instruct, refresh],
+    [
+      me, canAct, overview, plane, history, paused, busy, pendingPolicyActions, toast, updatedAt,
+      instruct, deletePolicy, refresh, refreshHistory,
+    ],
   );
 
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;

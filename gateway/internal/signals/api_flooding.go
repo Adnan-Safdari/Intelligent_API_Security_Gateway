@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
@@ -29,12 +30,43 @@ type floodClientData struct {
 	Requests []time.Time
 }
 
+// floodTunables is everything the console can move at runtime. It is swapped
+// whole rather than field by field, so a request either sees the old settings
+// or the new ones and never a mix of the two.
+type floodTunables struct {
+	enabled   bool
+	threshold int
+}
+
 // FloodDetector manages request tracking across multiple shards to reduce lock contention.
 type FloodDetector struct {
-	enabled   bool
-	shards    []*floodShard
-	threshold int
-	window    time.Duration
+	// One atomic load per request, no lock on the hot path.
+	tun    atomic.Pointer[floodTunables]
+	shards []*floodShard
+	window time.Duration
+}
+
+// settings returns the tunables in force right now. Never nil: the constructor
+// always stores a value before the detector can be reached.
+func (fd *FloodDetector) settings() floodTunables {
+	return *fd.tun.Load()
+}
+
+// Apply swaps in new settings. The per-IP request history is deliberately left
+// alone: a caller who is mid-flood should not get a clean slate because someone
+// opened the settings page.
+func (fd *FloodDetector) Apply(cfg config.RateLimitConfig) {
+	fd.tun.Store(&floodTunables{
+		enabled:   cfg.Enabled,
+		threshold: floodThreshold(cfg),
+	})
+}
+
+func floodThreshold(cfg config.RateLimitConfig) int {
+	if cfg.RequestsPerMinute <= 0 {
+		return 100
+	}
+	return cfg.RequestsPerMinute
 }
 
 type floodShard struct {
@@ -43,22 +75,16 @@ type floodShard struct {
 }
 
 func NewFloodDetector(cfg config.RateLimitConfig) *FloodDetector {
-	if !cfg.Enabled {
-		return &FloodDetector{enabled: false}
-	}
-
-	threshold := cfg.RequestsPerMinute
-	if threshold <= 0 {
-		threshold = 100
-	}
-
+	// The shards are built even when the detector starts disabled, so that
+	// enabling it from the console is a flag flip rather than an allocation --
+	// a disabled detector that returned an empty struct would panic on the
+	// first request after being switched on.
 	numShards := 32
 	fd := &FloodDetector{
-		enabled:   true,
-		shards:    make([]*floodShard, numShards),
-		threshold: threshold,
-		window:    time.Minute,
+		shards: make([]*floodShard, numShards),
+		window: time.Minute,
 	}
+	fd.Apply(cfg)
 
 	for i := 0; i < numShards; i++ {
 		fd.shards[i] = &floodShard{
@@ -98,7 +124,11 @@ func (fd *FloodDetector) startCleanupTimer() {
 
 func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !fd.enabled || fd.threshold <= 0 {
+		// Read once per request: the settings can change underneath a request
+		// otherwise, and counting against one threshold while alerting on
+		// another would be a confusing way to fail.
+		tun := fd.settings()
+		if !tun.enabled || tun.threshold <= 0 {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -117,8 +147,8 @@ func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 		requestCount := len(client.Requests)
 		shard.mu.Unlock()
 
-		if requestCount > fd.threshold {
-			fd.logAlert(ip, r, requestCount)
+		if requestCount > tun.threshold {
+			fd.logAlert(ip, r, requestCount, tun.threshold)
 		}
 
 		next.ServeHTTP(w, r)
@@ -127,12 +157,13 @@ func (fd *FloodDetector) Middleware(next http.Handler) http.Handler {
 
 // Metrics returns flood evidence for an IP. Safe to call concurrently.
 func (fd *FloodDetector) Metrics(ip string) Evidence {
+	tun := fd.settings()
 	ev := Evidence{Signal: SignalFlood, Details: map[string]any{
 		"requestRate": 0,
-		"threshold":   fd.threshold,
+		"threshold":   tun.threshold,
 		"window":      fd.window.String(),
 	}}
-	if !fd.enabled || len(fd.shards) == 0 {
+	if !tun.enabled || len(fd.shards) == 0 {
 		return ev
 	}
 
@@ -145,9 +176,9 @@ func (fd *FloodDetector) Metrics(ip string) Evidence {
 	}
 	shard.mu.Unlock()
 
-	crossed := count > fd.threshold
+	crossed := count > tun.threshold
 	ev.Details["requestRate"] = count
-	ev.Score = floodScore(count, fd.threshold)
+	ev.Score = floodScore(count, tun.threshold)
 	ev.ThresholdCross = crossed
 	if crossed {
 		ev.AttackType = SignalFlood
@@ -183,11 +214,11 @@ func trimExpired(times []time.Time, cutoff time.Time) []time.Time {
 	return times[firstValid:]
 }
 
-func (fd *FloodDetector) logAlert(ip string, r *http.Request, count int) {
+func (fd *FloodDetector) logAlert(ip string, r *http.Request, count, threshold int) {
 	severity := "LOW"
-	if count > fd.threshold*5 {
+	if count > threshold*5 {
 		severity = "HIGH"
-	} else if count > fd.threshold*2 {
+	} else if count > threshold*2 {
 		severity = "MEDIUM"
 	}
 

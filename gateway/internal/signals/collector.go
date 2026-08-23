@@ -67,10 +67,14 @@ func summarize(evs []Evidence) Snapshot {
 			}
 		}
 	}
+	// Individual signals contribute on a 0-100 scale, but several can fire on
+	// one request. Telemetry exposes one risk score, so retain the combined
+	// evidence while keeping that public value on its documented 0-100 scale.
+	snap.TotalScore = clampScore(snap.TotalScore)
 	return snap
 }
 
-// TotalScore sums detector scores. Useful as a first-pass risk input.
+// TotalScore is the combined detector score, bounded to the 0-100 risk scale.
 func (c *Collector) TotalScore(ip string) int {
 	return c.Snapshot(ip).TotalScore
 }

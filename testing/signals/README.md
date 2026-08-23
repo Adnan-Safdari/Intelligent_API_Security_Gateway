@@ -50,6 +50,6 @@ Watch the **gateway process logs** for `SECURITY ALERT`. A passing script only p
 
 ## What “pass” means
 
-Detectors are detect-only. Scripts fail if the gateway returns `429 Too Many Requests`. Backend codes such as `200`, `401`, or `404` are success for these scripts.
+Detectors are detect-only. Scripts fail if the gateway returns `429 Too Many Requests`. Backend codes such as `200`, `401`, or `404` are success for these scripts. The flood script hits the successful `/api/products` endpoint; traversal uses the isolated `demo-files` fixtures and enumeration uses `/.env-demo`, all of which are safe demo data.
 
 `Metrics()` is an in-process Go API. These HTTP scripts cannot read it; they only exercise the live middleware path.

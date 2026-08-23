@@ -1,57 +1,47 @@
 # Vulnerable app — the target
 
-A deliberately insecure API and a small front end for it. It exists to be attacked, so
-that the gateway in front of it has something real to detect.
+A deliberately insecure API and a small front end for it. It exists only so the gateway has a safe, local target to detect.
 
-> **Do not deploy this anywhere.** It stores passwords in plain text and will happily
-> concatenate your input into SQL. That is the point. Run it on a machine you control,
-> behind the gateway, and nowhere else.
-
-## Layout
-
-```text
-vulnerable-app/
-  backend/          Express API on :5002
-    routes/auth.js  login, and the switch between auth modes
-    data/           in-memory users, plain text on purpose
-    middleware/     request logging
-  src/              Vite + React front end on :5175
-```
+> **Do not deploy this anywhere.** The single intentionally unsafe route is isolated to the demo products table and must only run on a machine you control.
 
 ## Endpoints
 
 | Method | Path | What it does |
 |---|---|---|
-| `POST` | `/login` | Authenticates, in whichever mode is active |
-| `POST` | `/set-mode` | Switches auth mode at runtime, without a restart |
+| `POST` | `/api/login` | Parameterized login; it remains the brute-force demo target. |
+| `GET` | `/api/products` | Successful product-list endpoint for the flood demo. |
+| `GET` | `/api/products/search?q=<query>` | Intentionally vulnerable product search for the SQLi demo only. |
+| `GET` | `/api/products/search-secure?q=<query>` | Parameterized comparison route. |
+| `GET` | `/backup-demo`, `/config-demo`, `/.env-demo` | Harmless planted resources for forced-browsing enumeration. |
+| `GET` | `/api/demo-files?file=<relative-path>` | Deliberately permissive, but filesystem-bounded traversal demonstration. |
 
-## The three auth modes
+## SQL injection demo
 
-`AUTH_MODE` decides how a login is checked, and each mode fails differently. Being able to
-switch between them live is what makes this useful for a demo: the *same* attack produces
-a different outcome, and the gateway's detection should not care which mode is running.
+There are no runtime authentication modes and no `/api/set-mode` endpoint. Login always uses a parameterized query, which keeps its failed-login behavior predictable for the brute-force demo. The only intentional SQL injection surface is `/api/products/search`.
 
-| Mode | Behaviour |
-|---|---|
-| `memory` | Checks the in-memory user list. Plain text comparison, no database |
-| `db_vulnerable` | Builds SQL by string concatenation — injectable, on purpose |
-| `db_secure` | Parameterised queries. Injection fails; brute force still works |
-
-Set it at start:
+Normal input returns the matching demo products:
 
 ```bash
-AUTH_MODE=db_vulnerable npm start
+curl 'http://localhost:5002/api/products/search?q=keyboard'
 ```
 
-or flip it while running:
+The direct SQLi demonstration makes the database-only consequence visible:
 
 ```bash
-curl -X POST http://localhost:5002/set-mode \
-  -H 'Content-Type: application/json' -d '{"mode":"db_secure"}'
+curl -G 'http://localhost:5002/api/products/search' \
+  --data-urlencode "q=' OR 1=1 --"
 ```
 
-`db_secure` is the Compose default, so the stack starts in the mode where SQL injection
-is *not* the easy win and the brute force detector has to earn its keep.
+The unsafe `WHERE name ILIKE '%<input>%'` query is changed by the payload and returns the demo catalogue. No secrets, host files, or command execution are exposed. The optional `search-secure` route retains the same input as a parameter and does not change its query semantics.
+
+Repeat the same payload through IASG to create telemetry evidence:
+
+```bash
+curl -G 'http://localhost:8082/api/products/search' \
+  --data-urlencode "q=' OR 1=1 --"
+```
+
+The detector records SQL Injection evidence and forwards the request. Open **Dashboard → IP address → SQL injection evidence** to see the timestamp, endpoint, matched patterns, risk, request ID, HTTP result, and separate gateway decision. Detection is not a claim that the request was blocked; later control-plane policy may throttle or block it.
 
 ## Running it
 
@@ -74,23 +64,54 @@ cd vulnerable-app/backend && npm install && npm start
 cd vulnerable-app && npm install && npm run dev
 ```
 
-**Attack it through :8082, not :5002.** Hitting the backend directly bypasses the gateway
-entirely, so nothing is detected and the console stays empty — which looks like a broken
-detector rather than a bypassed one. If a demo produces no events, this is the first thing
-to check.
+For the SQLi story, use :5002 first to demonstrate the isolated vulnerable endpoint, then repeat the exact request through :8082. Direct traffic intentionally bypasses the gateway; only traffic through :8082 appears in telemetry and the dashboard.
 
-## Attacking it
-
-The scripts in [`../testing/`](../testing/) drive every detector:
+## Tests
 
 ```bash
-bash testing/signals/run_all.sh
+cd vulnerable-app/backend && npm test
+cd gateway && go test ./...
 ```
 
-`../testing/jmeter/brute_force_demo.jmx` provides sustained volume with a password list,
-which is closer to what a real credential attack looks like than a shell loop.
+The shared scripts can also drive a running gateway:
 
-## Further reading
+```bash
+bash testing/signals/sqli.sh
+```
 
-[`walkthrough.md`](walkthrough.md) goes through the backend's deliberate weaknesses one at
-a time, with the code that causes each.
+## Other direct-backend demonstrations
+
+`GET /api/products` is a normal successful endpoint, so a direct burst to
+`:5002` reaches the application unrestricted. `POST /api/login` intentionally
+has no native IP lockout: repeated invalid attempts and attempts against the
+seeded demo usernames are normal `401` responses for brute-force and
+password-spraying demonstrations.
+
+The planted forced-browsing resources return explicit harmless markers, not
+configuration or secrets:
+
+```bash
+curl 'http://localhost:5002/.env-demo'
+```
+
+The bounded traversal route deliberately resolves relative paths inside
+`backend/demo-files` only. This demonstrates a relative-path mistake without
+ever exposing container or host files:
+
+```bash
+curl -G 'http://localhost:5002/api/demo-files' \
+  --data-urlencode 'file=public/../fake-secret.txt'
+```
+
+It can return the static `fake-secret.txt` fixture, but a path that resolves
+outside `demo-files` is rejected. Use the same requests through `:8082` to
+produce traversal/enumeration evidence in IASG.
+
+The signal scripts exercise every direct-demo counterpart through IASG:
+
+```bash
+bash testing/signals/sqli.sh
+bash testing/signals/flood.sh
+bash testing/signals/traversal.sh
+bash testing/signals/brute_force.sh
+```

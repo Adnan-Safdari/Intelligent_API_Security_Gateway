@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
@@ -34,14 +35,22 @@ func DefaultEnumerationPatterns() []string {
 }
 
 // TraversalEnumDetector inspects URLs for path traversal and enumeration patterns.
-type TraversalEnumDetector struct {
+// travTunables is what the console can move at runtime, swapped whole.
+type travTunables struct {
 	enabled             bool
 	traversalPatterns   []string
 	enumerationPatterns []string
-	last                *lastEvidenceStore
 }
 
-func NewTraversalEnumDetector(cfg config.EnumerationConfig) *TraversalEnumDetector {
+type TraversalEnumDetector struct {
+	tun  atomic.Pointer[travTunables]
+	last *lastEvidenceStore
+}
+
+func (ted *TraversalEnumDetector) settings() travTunables { return *ted.tun.Load() }
+
+// Apply swaps in new settings, leaving the recent-evidence store intact.
+func (ted *TraversalEnumDetector) Apply(cfg config.EnumerationConfig) {
 	traversal := cfg.TraversalPatterns
 	if len(traversal) == 0 {
 		traversal = DefaultTraversalPatterns()
@@ -50,20 +59,25 @@ func NewTraversalEnumDetector(cfg config.EnumerationConfig) *TraversalEnumDetect
 	if len(enumeration) == 0 {
 		enumeration = DefaultEnumerationPatterns()
 	}
-
-	return &TraversalEnumDetector{
+	ted.tun.Store(&travTunables{
 		enabled:             cfg.Enabled,
 		traversalPatterns:   traversal,
 		enumerationPatterns: enumeration,
-		last:                newLastEvidenceStore(lastEvidenceTTL),
-	}
+	})
+}
+
+func NewTraversalEnumDetector(cfg config.EnumerationConfig) *TraversalEnumDetector {
+	ted := &TraversalEnumDetector{last: newLastEvidenceStore(lastEvidenceTTL)}
+	ted.Apply(cfg)
+	return ted
 }
 
 func (ted *TraversalEnumDetector) Name() string { return SignalTraversal }
 
 func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !ted.enabled {
+		tun := ted.settings()
+		if !tun.enabled {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -71,8 +85,8 @@ func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 		ip := netutil.ClientIP(r)
 		path := r.URL.Path
 		query := r.URL.RawQuery
-		traversalHits := findPatternHits(path+" "+query, ted.traversalPatterns)
-		enumHits := findPatternHits(path, ted.enumerationPatterns)
+		traversalHits := findPatternHits(path+" "+query, tun.traversalPatterns)
+		enumHits := findPatternHits(path, tun.enumerationPatterns)
 		ev := ted.evidenceFrom(traversalHits, enumHits)
 		ted.last.Put(ip, r.Header.Get(RequestIDHeader), ev)
 

@@ -37,7 +37,7 @@ make, and *writes* evidence it does not interpret.
 |---|---|
 | `brute_force.go` | Repeated failed logins against one account |
 | `api_flooding.go` | Request volume from one address |
-| `sqli_injection.go` | Injection patterns in query, body and headers |
+| `sqli_injection.go` | Injection patterns in path, decoded query values and body |
 | `enumeration_path_traversal.go` | Directory walking and resource enumeration |
 
 Each one emits `Evidence` onto `iasg:events`. They score and report; they do not decide
@@ -85,12 +85,15 @@ go test ./...
 For traffic that exercises the detectors end to end, the shell scripts in
 [`../testing/`](../testing/) hit a running gateway over HTTP.
 
-## Not implemented
+## No separate trust engine
 
-`trust_engine` in `configs/config.yaml` is parsed and validated but nothing reads it. No
-request is scored by trust today — the detectors and the control plane make every
-decision. It is left in the file because removing it would lose the shape of the intended
-design, but it should not be described as working.
+There is no central trust-scoring component, and no `trust_engine` block in
+`configs/config.yaml` any more. It was parsed into structs that nothing read, so it has
+been removed rather than left advertising a component that does not exist.
+
+Every decision is made by the parts that already hold the evidence: each detector scores
+what it sees, [`internal/enforcement`](internal/enforcement/) acts on a threshold cross
+immediately, and the control plane re-decides off-path with the wider view.
 
 ## Documentation
 

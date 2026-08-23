@@ -53,6 +53,34 @@ const makeToken = (id) => btoa(id)
 // ─── Product API ──────────────────────────────────────────────────────────────
 // Real: GET /api/products
 export const productApi = {
+  // Fetches the whole catalogue from the real backend (GET /api/products),
+  // through the gateway or straight to the API depending on the API mode. This
+  // is the one product call that leaves the browser; the rest below are still
+  // the in-memory mock. If the backend is unreachable it falls back to the mock
+  // so the storefront stays usable offline, the same way login does.
+  getAllProducts: async (params = {}) => {
+    const qs = new URLSearchParams()
+    if (params.category) qs.set('category', params.category)
+    if (params.search) qs.set('search', params.search)
+    const suffix = qs.toString() ? `?${qs}` : ''
+
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/products${suffix}`)
+      if (!res.ok) throw new Error(`products request failed: ${res.status}`)
+      const data = await res.json()
+      return { products: data.products || [], total: data.total ?? (data.products || []).length }
+    } catch {
+      // Offline fallback: the same local list the mock getAll works from.
+      let result = [...products]
+      if (params.category) result = result.filter((p) => p.category === params.category)
+      if (params.search) {
+        const q = params.search.toLowerCase()
+        result = result.filter((p) => p.name.toLowerCase().includes(q))
+      }
+      return { products: result, total: result.length }
+    }
+  },
+
   getAll: async (params = {}) => {
     await delay()
     let result = [...products]

@@ -1,49 +1,18 @@
-import { redirect } from "next/navigation";
-import { currentUser, userCount } from "@/lib/auth";
 import { LiveProvider } from "@/app/ui/store";
 import { Shell } from "@/app/ui/chrome";
 
-// Every page behind the gate is per-request. Without this Next prerendered
-// them at build time, baking the signed-out page into HTML and skipping the
-// auth check entirely in production -- it only behaved correctly under
-// `npm run dev`.
+// Auth removed: the console is open, so there is no gate here any more. It
+// still renders per-request rather than at build time -- the live panels must
+// never be prerendered, or a stale snapshot gets baked into the HTML.
 export const dynamic = "force-dynamic";
 
-/**
- * The gate for everything in the console.
- *
- * A server component, so the check happens before any of it is sent. The API
- * routes check again for themselves -- this stops a page being rendered, not a
- * request being made, and only one of those is authorisation.
- */
-export default async function ConsoleLayout({ children }) {
-  let needsSetup = false;
-  try {
-    needsSetup = (await userCount()) === 0;
-  } catch (err) {
-    // No database means no accounts, and a security console that runs
-    // unauthenticated is worse than one that refuses to start.
-    return (
-      <div className="gate">
-        <div className="gate-card">
-          <h1>Console unavailable</h1>
-          <p>{err.message}</p>
-          <p className="form-note">
-            Campaign memory and user accounts both live in Postgres. Set{" "}
-            <code>IASG_POSTGRES_URL</code> and restart the dashboard.
-          </p>
-        </div>
-      </div>
-    );
-  }
+// Every request runs as this identity. Admin so the action controls stay
+// enabled; see lib/auth.js.
+const OPEN_USER = { id: "0", username: "operator", role: "admin" };
 
-  if (needsSetup) redirect("/setup");
-
-  const user = await currentUser();
-  if (!user) redirect("/login");
-
+export default function ConsoleLayout({ children }) {
   return (
-    <LiveProvider me={user}>
+    <LiveProvider me={OPEN_USER}>
       <Shell>{children}</Shell>
     </LiveProvider>
   );

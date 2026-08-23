@@ -51,6 +51,14 @@ temp/
 *.tmp
 .next/
 
+# JMeter test assets
+testing/jmeter/
+# Keep the maintained FR3 verification plan under version control.
+!testing/
+!testing/jmeter/
+testing/jmeter/*
+!testing/jmeter/adaptive_rate_limit.jmx
+
 # Database
 *.db
 *.sqlite

@@ -151,13 +151,13 @@ FR2 — Analyze Request Behavior
 
 FR3 — Adaptive Rate Limiting
 - Requirement: adaptive limits as a decision outcome.
-- STATUS: NOT WIRED.
-- Reality: YAML has rate_limit / throttle settings; flood detector uses requests_per_minute as a detect threshold only; no adaptive enforcement.
+- STATUS: COMPLETE.
+- Reality: enforcement.rate_limit.enforce (off by default) makes rate_limit.requests_per_minute a baseline every non-exempt address is held to. The control plane picks a per-minute allowance from campaign severity (high 20, otherwise 50) and writes it as requests_per_minute in policy:<ip>; that replaces the baseline for that address, tighter or looser. policy.Limiter counts over a sliding minute and answers 429 with Retry-After. Exemptions reuse block.exempt_cidrs. Recovery is the policy TTL lapsing, which returns the address to the baseline in one step.
 
 FR4 — Risk Scoring & Decision Engine
 - Requirement: centralized scoring + Allow/Throttle/Block.
-- STATUS: NOT IMPLEMENTED.
-- Reality: YAML has trust_engine thresholds/weights loaded into Go structs, but nothing in the request path uses them.
+- STATUS: SUPERSEDED BY DESIGN — do not build this.
+- Reality: scoring is per-detector (0-100); acting on it is split between internal/enforcement in the gateway and the Python control plane. The trust_engine YAML block was loaded into Go structs that nothing read, and has been deleted.
 
 FR5 — Forward Valid Requests / Enforce Decisions
 - Requirement: only safe requests reach backend; blocked=403; throttled=429.
@@ -307,7 +307,6 @@ USED by live request path / server start:
 - enforcement.brute_force.enabled / max_failures / window / login_paths
 
 LOADED into structs but NOT consumed by request handling yet:
-- trust_engine.block_threshold / throttle_threshold / allow_threshold / weights
 - storage.redis / storage.postgres
 - enforcement.throttle / enforcement.block
 - signals.ip_reputation / geo_location / payload_analysis / behavioral
@@ -502,12 +501,6 @@ proxy:
   timeout: 30s
   max_idle_conns: 100
   max_conns_per_host: 10
-
-trust_engine:          # loaded, unused at runtime
-  block_threshold: 20
-  throttle_threshold: 50
-  allow_threshold: 80
-  weights: ...
 
 storage:               # loaded, unused at runtime
   redis: ...

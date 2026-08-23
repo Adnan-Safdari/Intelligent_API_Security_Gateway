@@ -3,7 +3,40 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useLive } from "./store";
+
+/* Inline so the icon cannot arrive after the header it sits in. */
+function SunIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="4.2" fill="currentColor" />
+      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
+        <rect
+          key={deg}
+          x="11.2"
+          y="1.4"
+          width="1.6"
+          height="3.4"
+          rx="0.8"
+          fill="currentColor"
+          transform={`rotate(${deg} 12 12)`}
+        />
+      ))}
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+      <path
+        d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2Z"
+        fill="currentColor"
+      />
+    </svg>
+  );
+}
 
 const NAV = [
   { href: "/", label: "Overview" },
@@ -11,11 +44,11 @@ const NAV = [
   { href: "/policy", label: "Policy" },
   { href: "/events", label: "Events" },
   { href: "/history", label: "History" },
-  { href: "/users", label: "Users", adminOnly: true },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Shell({ children }) {
-  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast, me } =
+  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast } =
     useLive();
   const pathname = usePathname();
   const [theme, setTheme] = useState("dark");
@@ -53,7 +86,7 @@ export function Shell({ children }) {
         </div>
 
         <nav className="nav">
-          {NAV.filter((item) => !item.adminOnly || me?.role === "admin").map((item) => {
+          {NAV.map((item) => {
             const active =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
             return (
@@ -70,33 +103,25 @@ export function Shell({ children }) {
         </nav>
 
         <div className="top-actions">
-          {me ? (
-            <span className="whoami" title={`Signed in as ${me.username}`}>
-              {me.username}
-              <em>{me.role}</em>
-            </span>
-          ) : null}
           <button
             type="button"
-            className="theme-btn"
-            onClick={async () => {
-              await fetch("/api/auth/logout", { method: "POST" });
-              window.location.href = "/login";
-            }}
-          >
-            Sign out
-          </button>
-          <button
-            type="button"
-            className={paused ? "theme-btn on" : "theme-btn"}
+            className={paused ? "icon-btn on" : "icon-btn"}
             onClick={() => setPaused((p) => !p)}
             title="Stop the 2.5s refresh while you read"
           >
             {paused ? "Resume" : "Pause"}
           </button>
-          <button type="button" className="theme-btn" onClick={toggleTheme}>
-            {theme === "dark" ? "Light" : "Dark"}
+
+          <button
+            type="button"
+            className="icon-btn"
+            onClick={toggleTheme}
+            title={theme === "dark" ? "Switch to light" : "Switch to dark"}
+            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+          >
+            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
           </button>
+
         </div>
       </header>
 
@@ -144,6 +169,139 @@ export function Shell({ children }) {
 
       <main>{children}</main>
     </div>
+  );
+}
+
+/**
+ * Reset the console to a clean slate.
+ *
+ * Destructive, so it is two steps: a Settings-page control that opens a
+ * dialog, and a dialog that will not act until you type the word the server
+ * also demands.
+ * On success it refreshes the live data, so the console visibly empties rather
+ * than waiting for the next poll.
+ */
+export function ResetControl({ className = "icon-btn", label = "Reset console" }) {
+  const { refresh, refreshHistory, setToast } = useLive();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function escape(event) {
+      if (event.key === "Escape" && !busy) close();
+    }
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [open, busy]);
+
+  function close() {
+    setOpen(false);
+    setConfirm("");
+  }
+
+  async function run() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/reset", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "reset" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setToast({ tone: "bad", text: `reset failed: ${data.error || res.status}` });
+        return;
+      }
+      const pg = data.postgres?.ok
+        ? Object.values(data.postgres.cleared || {}).reduce((a, b) => a + b, 0)
+        : 0;
+      const keys = data.redis?.ok ? data.redis.removed : 0;
+      const events = data.redis?.ok ? data.redis.trimmed : 0;
+      setToast({
+        tone: "good",
+        text: `console reset — cleared ${pg} campaign record(s), ${events} event(s) and ${keys} live key(s)`,
+      });
+      close();
+      // The live panels read Redis, but History reads Postgres on its own
+      // slower cadence. Refresh both lanes now so a successful reset does not
+      // leave deleted campaigns visible until the next 30-second history poll.
+      await Promise.all([refresh(), refreshHistory()]);
+    } catch (err) {
+      setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={className}
+        onClick={() => setOpen(true)}
+        title="Reset the console to a clean slate"
+      >
+        {label}
+      </button>
+
+      {open && typeof document !== "undefined"
+        ? createPortal(
+        <div className="modal-overlay" onMouseDown={() => !busy && close()}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-dialog-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 id="reset-dialog-title">Reset the console?</h2>
+            <p>
+              This clears the campaign history in Postgres and the live telemetry
+              in Redis — Overview, Events, Campaigns and History all go back to
+              empty.
+            </p>
+            <p className="modal-note">
+              To lift a current policy key, use Delete policy on the Policy page.
+            </p>
+            <p className="modal-note">
+              Active policy blocks are left running; they expire on their own.
+              This cannot be undone.
+            </p>
+            <label className="modal-label">
+              Type <b>reset</b> to confirm
+              <input
+                type="text"
+                value={confirm}
+                autoFocus
+                disabled={busy}
+                onChange={(e) => setConfirm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && confirm === "reset" && !busy) run();
+                }}
+                placeholder="reset"
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="act" onClick={close} disabled={busy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="act danger"
+                onClick={run}
+                disabled={busy || confirm !== "reset"}
+              >
+                {busy ? "Resetting…" : "Reset console"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+        : null}
+    </>
   );
 }
 

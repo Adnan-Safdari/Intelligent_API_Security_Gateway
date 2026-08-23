@@ -13,7 +13,6 @@ import (
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
 	Proxy       ProxyConfig       `yaml:"proxy"`
-	TrustEngine TrustEngineConfig `yaml:"trust_engine"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Enforcement EnforcementConfig `yaml:"enforcement"`
 	Signals     SignalsConfig     `yaml:"signals"`
@@ -39,21 +38,6 @@ type ProxyConfig struct {
 	Timeout         time.Duration `yaml:"timeout"`
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
 	MaxConnsPerHost int           `yaml:"max_conns_per_host"`
-}
-
-type TrustEngineConfig struct {
-	BlockThreshold    int                `yaml:"block_threshold"`
-	ThrottleThreshold int                `yaml:"throttle_threshold"`
-	AllowThreshold    int                `yaml:"allow_threshold"`
-	Weights           TrustWeightsConfig `yaml:"weights"`
-}
-
-type TrustWeightsConfig struct {
-	IPReputation    float64 `yaml:"ip_reputation"`
-	RateLimiting    float64 `yaml:"rate_limiting"`
-	Authentication  float64 `yaml:"authentication"`
-	PayloadAnalysis float64 `yaml:"payload_analysis"`
-	Behavioral      float64 `yaml:"behavioral"`
 }
 
 type StorageConfig struct {
@@ -134,9 +118,21 @@ type EnumerationConfig struct {
 }
 
 type RateLimitConfig struct {
-	Enabled           bool `yaml:"enabled"`
-	RequestsPerMinute int  `yaml:"requests_per_minute"`
-	Burst             int  `yaml:"burst"`
+	// Enabled turns on flood *detection*: counting requests per address and
+	// raising a signal when RequestsPerMinute is exceeded.
+	Enabled bool `yaml:"enabled"`
+
+	// Enforce turns that threshold into a limit the gateway acts on, refusing
+	// anything over it with 429 rather than only reporting it. Separate from
+	// Enabled because refusing traffic is a different decision from noticing
+	// it, and this one can turn a legitimate spike into an outage.
+	//
+	// An address under a throttle policy is held to the rate that policy names
+	// instead; this is the baseline everyone else gets.
+	Enforce bool `yaml:"enforce"`
+
+	RequestsPerMinute int `yaml:"requests_per_minute"`
+	Burst             int `yaml:"burst"`
 }
 
 type ThrottleConfig struct {
@@ -144,9 +140,24 @@ type ThrottleConfig struct {
 	DelayMS int  `yaml:"delay_ms"`
 }
 
+// BlockConfig controls the gateway's own blocking -- its reflex, as opposed to
+// the considered decisions the control plane writes as policy keys.
+//
+// Enabled on its own does nothing: Signals has to name at least one detector
+// that may act. That is deliberate. This block existed in the config long
+// before anything read it, so a build that suddenly honoured Enabled alone
+// would start refusing traffic on configuration nobody had revisited.
 type BlockConfig struct {
 	Enabled  bool          `yaml:"enabled"`
 	Duration time.Duration `yaml:"duration"`
+	// Detectors trusted to block on their own. Omit the key entirely to take
+	// the safe defaults; an explicit empty list enforces nothing.
+	Signals []string `yaml:"signals"`
+	// A score floor on top of the detector's own threshold, so a marginal hit
+	// is not enough on its own.
+	MinScore int `yaml:"min_score"`
+	// Never blocked. Omit to take loopback and the private ranges.
+	ExemptCIDRs []string `yaml:"exempt_cidrs"`
 }
 
 type SignalsConfig struct {

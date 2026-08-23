@@ -6,6 +6,12 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/enforcement"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
 
 // tag records the order middleware runs in.
@@ -99,6 +105,140 @@ func TestRequestInspectionRestoresBody(t *testing.T) {
 	if seen != payload {
 		t.Fatalf("handler saw %q, want the original body %q", seen, payload)
 	}
+}
+
+// Brute force can only be recorded after the backend replies. The observer
+// must therefore wrap the detector: on the return path the detector records
+// the 401 before the observer takes its snapshot and arms the reflex.
+func TestBruteForceReflexBlocksTheRequestAfterTheTenthFailure(t *testing.T) {
+	const attacker = "203.0.113.44"
+
+	brute := signals.NewBruteForceDetector(config.BruteForceConfig{
+		Enabled:     true,
+		MaxFailures: 5,
+		Window:      time.Minute,
+		LoginPaths:  []string{"/api/login"},
+	})
+	collector := signals.NewCollector(brute)
+	reflex, err := enforcement.New(enforcement.Config{
+		Enabled:     true,
+		Duration:    time.Minute,
+		Signals:     []string{signals.SignalBruteForce},
+		MinScore:    80,
+		ExemptCIDRs: []string{},
+	})
+	if err != nil {
+		t.Fatalf("new reflex: %v", err)
+	}
+
+	backendCalls := 0
+	backend := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		backendCalls++
+		if r.URL.Path == "/api/login" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+
+	// This has the same relevant nesting as Server.Start: enforcement remains
+	// outermost, and the reflex observer wraps the response-aware detector.
+	handler := ChainMiddleware(
+		policy.NewEnforcer(reflex, true, 0).Middleware,
+		observedDetectors(reflex, collector, brute.Middleware),
+	)(backend)
+
+	for i := 0; i < 5; i++ {
+		rec := bruteForceRequest(handler, http.MethodPost, "/api/login", attacker)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("failure %d status = %d, want 401", i+1, rec.Code)
+		}
+	}
+
+	// Five failures fire the detector but score 60, below the reflex floor.
+	atFive := brute.Metrics(attacker)
+	if !atFive.ThresholdCross || atFive.Int("failedLogins") != 5 || atFive.Score != 60 {
+		t.Fatalf("five failures = %+v, want fired score 60 with five failures", atFive)
+	}
+	if _, found := reflex.Lookup(attacker); found {
+		t.Fatal("reflex blocked at score 60")
+	}
+
+	for i := 0; i < 5; i++ {
+		rec := bruteForceRequest(handler, http.MethodPost, "/api/login", attacker)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("failure %d status = %d, want 401", i+6, rec.Code)
+		}
+	}
+
+	ev := brute.Metrics(attacker)
+	if ev.Int("failedLogins") < 10 || ev.Score < 80 || !ev.ThresholdCross {
+		t.Fatalf("ten failures = %+v, want at least ten, score >= 80, and fired", ev)
+	}
+	if _, found := reflex.Lookup(attacker); !found {
+		t.Fatal("reflex was not armed after the response-aware brute-force evidence")
+	}
+
+	blocked := bruteForceRequest(handler, http.MethodGet, "/api/products", attacker)
+	if blocked.Code != http.StatusForbidden {
+		t.Fatalf("request after reflex block = %d, want 403", blocked.Code)
+	}
+	if backendCalls != 10 {
+		t.Fatalf("backend calls = %d, want the ten login attempts only", backendCalls)
+	}
+}
+
+func TestObservedDetectorsStillBlocksFlooding(t *testing.T) {
+	const attacker = "203.0.113.47"
+
+	flood := signals.NewFloodDetector(config.RateLimitConfig{
+		Enabled:           true,
+		RequestsPerMinute: 5,
+	})
+	collector := signals.NewCollector(flood)
+	reflex, err := enforcement.New(enforcement.Config{
+		Enabled:     true,
+		Duration:    time.Minute,
+		Signals:     []string{signals.SignalFlood},
+		MinScore:    80,
+		ExemptCIDRs: []string{},
+	})
+	if err != nil {
+		t.Fatalf("new reflex: %v", err)
+	}
+
+	backendCalls := 0
+	backend := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		backendCalls++
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := ChainMiddleware(
+		policy.NewEnforcer(reflex, true, 0).Middleware,
+		observedDetectors(reflex, collector, flood.Middleware),
+	)(backend)
+
+	for i := 0; i < 10; i++ {
+		if rec := bruteForceRequest(handler, http.MethodGet, "/api/products", attacker); rec.Code != http.StatusOK {
+			t.Fatalf("flood request %d status = %d, want 200", i+1, rec.Code)
+		}
+	}
+	if _, found := reflex.Lookup(attacker); !found {
+		t.Fatal("flood evidence did not arm the reflex")
+	}
+	if rec := bruteForceRequest(handler, http.MethodGet, "/api/products", attacker); rec.Code != http.StatusForbidden {
+		t.Fatalf("request after flood reflex block = %d, want 403", rec.Code)
+	}
+	if backendCalls != 10 {
+		t.Fatalf("backend calls = %d, want the ten allowed flood requests only", backendCalls)
+	}
+}
+
+func bruteForceRequest(handler http.Handler, method, target, ip string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, target, nil)
+	req.RemoteAddr = ip + ":54321"
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	return rec
 }
 
 func ExampleChainMiddleware() {

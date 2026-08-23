@@ -35,13 +35,14 @@ between the lanes:
 | `Reason` | `reason` | Human-readable justification |
 | `IssuedAt` | `issued_at` | When it was decided |
 | `ExpiresIn` | `expires_in` | The agent's *intent* for the lifetime |
+| `RequestsPerMinute` | `requests_per_minute` | What a throttled address may send. `0` means no rate named |
 
 ## What each action does
 
 | Action | Gateway behaviour |
 | --- | --- |
 | `monitor` | Nothing. Never written as a key — it would be a no-op |
-| `throttle` | Sleeps `enforcement.throttle.delay_ms`, then continues |
+| `throttle` | Holds the address to `requests_per_minute`; `429` once it is over |
 | `temp_block` | Responds `403` and stops |
 | `escalate` | Responds `403` and stops |
 
@@ -49,8 +50,79 @@ An unrecognised action is allowed through. An action nobody understands must
 never be able to block traffic.
 
 The applied action is attached to the request context via
-`policy.AttachOutcome`, so telemetry records `throttle` or `temp_block` in
-`iasg:events` rather than always writing `allow`.
+`policy.AttachOutcome`, so telemetry records `throttle`, `rate_limited` or
+`temp_block` in `iasg:events` rather than always writing `allow`.
+
+## What makes the rate limiting adaptive
+
+Every address is held to a rate, and a policy replaces the one it would
+otherwise get:
+
+| Address | Allowed |
+| --- | --- |
+| No policy | The baseline, `enforcement.rate_limit.requests_per_minute` |
+| In `block.exempt_cidrs` | Everything — never counted |
+| Throttled, `low` / `medium` severity | 50 / min |
+| Throttled, `high` severity | 20 / min |
+| Blocked (`temp_block`, `escalate`) | Nothing — the request is refused outright |
+
+The policy wins in **both** directions. A campaign judged worse than the
+baseline is held tighter, and one judged better is allowed more: the control
+plane looked at that address specifically, which is a better answer than the
+figure everyone else gets.
+
+`monitor` restrains nothing, so a monitored address falls back to the baseline
+like anyone else rather than being waved through.
+
+### The baseline is opt-in
+
+`enforcement.rate_limit.enabled` counts requests and raises a flood signal.
+`enforcement.rate_limit.enforce` — off by default — turns that same threshold
+into a limit the gateway acts on.
+
+Two flags rather than one, because noticing a flood and refusing traffic are
+different decisions and only the second can turn a legitimate spike into an
+outage. With `enforce` off the gateway behaves as it always did: it reports the
+flood, and the only thing that refuses that traffic is the reflex or a policy.
+
+One number, not two: the baseline *is* the detection threshold, so the alert and
+the refusal can never disagree about what "too fast" means.
+
+The rungs are a table rather than a formula, deliberately. The number an
+operator is asked to justify should be one they can point at, not the output of
+a weighting nobody can re-derive.
+
+`policy.Limiter` counts each address over a sliding one-minute window and the
+enforcer refuses anything past the allowance with **429**, not 403. The
+distinction is real and worth keeping: a block says *not you*, a rate limit says
+*not this fast*, and `Retry-After` tells a well-behaved client when it is worth
+trying again. Refused requests still count, so hammering after a refusal does
+not earn a way back in.
+
+A blocked address never reaches the counter — it is refused before there is any
+point counting it — and neither does an exempt one. The exempt list is
+`block.exempt_cidrs`, reused rather than duplicated so there is a single answer
+to "who does this gateway never refuse".
+
+A rate of `0` means the policy named none, which is what a control plane older
+than this field writes. The gateway falls back to the configured
+`enforcement.throttle.delay_ms` then, so an old policy still enforces something
+rather than silently becoming a pass-through.
+
+### Recovery
+
+Recovery is the policy expiring. When the key goes, the enforcer stops finding a
+decision for that address and never consults the limiter for it again, so the
+caller returns to the default limit immediately rather than waiting out the
+counting window. The whole arc is therefore:
+
+```
+normal (100/min) → throttled (20/min, 429 over it) → policy TTL lapses → normal
+```
+
+No de-escalation ladder is involved. Each rung already carries its own TTL
+(throttle 900s, block 1800s, escalate 3600s), and an address that goes quiet is
+returned to normal in one step by expiry.
 
 ## Why the snapshot exists
 

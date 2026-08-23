@@ -17,9 +17,9 @@ const CATEGORIES = [
 export default function Home() {
   const navigate = useNavigate()
   const [featured, setFeatured] = useState([])
-  const [newArrivals, setNewArrivals] = useState([])
+  const [allProducts, setAllProducts] = useState([])
   const [loadingFeatured, setLoadingFeatured] = useState(true)
-  const [loadingNew, setLoadingNew] = useState(true)
+  const [loadingAll, setLoadingAll] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
   useEffect(() => {
@@ -27,9 +27,10 @@ export default function Home() {
       .then((d) => setFeatured(d.products))
       .finally(() => setLoadingFeatured(false))
 
-    productApi.getAll({ newArrival: true, limit: 4 })
-      .then((d) => setNewArrivals(d.products))
-      .finally(() => setLoadingNew(false))
+    // The whole catalogue from the real backend, first eight shown here.
+    productApi.getAllProducts()
+      .then((d) => setAllProducts(d.products.slice(0, 8)))
+      .finally(() => setLoadingAll(false))
   }, [])
 
   const handleSearch = (e) => {
@@ -62,7 +63,7 @@ export default function Home() {
             </form>
             <div className="hero-cta">
               <Link to="/shop" className="btn btn-primary btn-lg">Shop All Products</Link>
-              <Link to="/shop?newArrival=true" className="btn btn-secondary btn-lg">New Arrivals</Link>
+              <Link to="/products" className="btn btn-secondary btn-lg">All Products</Link>
             </div>
           </div>
           <div className="hero-visual">
@@ -119,17 +120,17 @@ export default function Home() {
         </div>
       </section>
 
-      {/* New Arrivals */}
+      {/* All Products */}
       <section className="section-products">
         <div className="container">
           <div className="section-header">
-            <h2 className="section-title">New Arrivals</h2>
-            <Link to="/shop?newArrival=true" className="see-all">See all →</Link>
+            <h2 className="section-title">All Products</h2>
+            <Link to="/products" className="see-all">See all →</Link>
           </div>
           <div className="product-grid">
-            {loadingNew
-              ? range(4).map((i) => <ProductCardSkeleton key={i} />)
-              : newArrivals.map((p) => <ProductCard key={p._id} product={p} />)}
+            {loadingAll
+              ? range(8).map((i) => <ProductCardSkeleton key={i} />)
+              : allProducts.map((p) => <ProductCard key={p._id} product={p} />)}
           </div>
         </div>
       </section>

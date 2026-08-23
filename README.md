@@ -76,8 +76,8 @@ Ports:
 | Postgres | localhost:5434 |
 | Redis | localhost:6379 |
 
-Then open the dashboard at http://localhost:5177 and create the first administrator — see
-[Signing in](#signing-in).
+Then open the console at http://localhost:5177. There is no sign-in — see
+[Reaching the console](#reaching-the-console).
 
 ## Run locally, piece by piece
 
@@ -94,7 +94,7 @@ Bring the rest up in this order. Each runs in its own terminal.
 ```bash
 cd vulnerable-app/backend
 npm install
-PORT=5002 AUTH_MODE=memory npm start
+PORT=5002 npm start
 ```
 
 **2. Gateway** — the data plane, proxying to the target:
@@ -160,22 +160,31 @@ Scenarios: `credential-stuffing`, `brute-force`, `flood`, `enumeration`, `path-t
 The seeder skips the gateway. To watch the whole chain — detect → correlate → decide →
 enforce — send real traffic instead.
 
-Two config changes turn the gateway from observe-only into enforcing. Both are deliberate
-choices, off by default, in `gateway/configs/config.yaml`:
+Two things have to be true for the gateway to enforce rather than watch. Both are set in
+the committed `gateway/configs/config.yaml`, so a fresh clone is already enforcing:
 
 ```yaml
 server:
   trusted_proxies:        # believe X-Forwarded-For from these, so a local
     - 127.0.0.1/32        # test can present a public client IP
-    - ::1/128
+    - 172.16.0.0/12       # the Compose bridge
 enforcement:
   policy:
-    enabled: true         # actually act on policy:<ip>, not just observe
+    enabled: true         # act on policy:<ip>, not just observe
 ```
 
-Restart the gateway, then attack it — the `X-Forwarded-For` gives the request a public
-source address the control plane will act on (loopback and private ranges are never
-written policy for):
+`enforcement.policy.enabled` can also be turned on and off from the console's **Settings**
+page while the gateway is running, which is the easier way to show the difference between
+observing and enforcing without restarting anything.
+
+Now attack it — the `X-Forwarded-For` gives the request a public source address the control
+plane will act on (loopback and private ranges are never written policy for).
+
+The commands below assume the gateway is running **on your machine** (the "run locally"
+path above), where the request arrives from `127.0.0.1` and the header is believed. Under
+Compose on Docker Desktop it arrives from the port forwarder instead and the header is
+ignored — run the loop inside a container there, as in
+[Adaptive rate limiting](#adaptive-rate-limiting).
 
 ```bash
 # 40 failed logins from one "attacker"
@@ -203,12 +212,99 @@ curl -s -o /dev/null -w "clean    %{http_code}\n" \
   -H 'Content-Type: application/json' -d '{"username":"a","password":"b"}'
 ```
 
+`403` means the address was blocked outright. `429` means it was throttled and has just
+gone over the rate its policy allows — see [Adaptive rate limiting](#adaptive-rate-limiting)
+below. The clean address should answer normally throughout.
+
 The scripts in [`testing/`](testing/README.md) drive every detector this way, not just
 brute force:
 
 ```bash
 bash testing/signals/run_all.sh
 ```
+
+## Adaptive rate limiting
+
+A throttle carries a number, not just a verdict. Every address is held to a rate, and a
+policy replaces the one it would otherwise get:
+
+| Address | Allowed |
+|---|---|
+| No policy | The baseline — `rate_limit.requests_per_minute`, 100/min |
+| Exempt range | Everything; never counted |
+| Throttled, low or medium severity | 50/min |
+| Throttled, high severity | 20/min |
+| Blocked | Nothing — the request is refused |
+
+The policy wins in **both** directions: a campaign judged worse than the baseline is held
+tighter, one judged better is allowed more. The control plane looked at that address
+specifically, which beats the figure everyone else gets.
+
+The baseline is **off by default**. `rate_limit.enabled` counts requests and raises a flood
+signal; `rate_limit.enforce` turns that same threshold into a limit the gateway acts on.
+Two flags, because noticing a flood and refusing traffic are different decisions and only
+the second can turn a legitimate spike into an outage. It is one number either way — the
+baseline *is* the detection threshold, so the alert and the refusal cannot disagree about
+what "too fast" means. Exemptions are `block.exempt_cidrs`, the same list the reflex never
+blocks.
+
+Over the limit the gateway answers **429** with a `Retry-After`, not the **403** a block
+gets. The difference is worth keeping: a block says *not you*, a rate limit says *not this
+fast*. Refused requests still count toward the window, so hammering after a refusal does
+not earn a way back in.
+
+Recovery is the policy expiring. When the key goes the gateway stops finding a decision for
+that address, stops counting it, and it is back to the default immediately — there is no
+de-escalation ladder to walk down. Each rung already carries its own TTL: throttle 15
+minutes, block 30, escalation an hour.
+
+Watching it happen, without waiting for the agent — write a policy by hand and spend it:
+
+```bash
+docker exec infra-redis-1 redis-cli SET policy:203.0.113.50 \
+  '{"action":"throttle","campaign_id":"demo","confidence":0.8,"reason":"demo","source":"agent","issued_at":"2026-01-01T00:00:00+00:00","expires_in":300,"requests_per_minute":20}' EX 300
+
+sleep 6      # the gateway refreshes its policy snapshot every 5s
+
+docker exec infra-gateway-1 sh -c 'for i in $(seq 1 26); do
+  wget -S -q -O /dev/null --header="X-Forwarded-For: 203.0.113.50" \
+    http://127.0.0.1:8082/api/products 2>&1 | grep -o "HTTP/1.1 [0-9]*" | tail -1
+done | sort | uniq -c'
+```
+
+```
+  20 HTTP/1.1 200
+   6 HTTP/1.1 429
+```
+
+The loop runs **inside** the gateway container, and against `127.0.0.1` rather than
+`localhost`, for two reasons that will otherwise waste an afternoon:
+
+- Run from your own machine under Docker Desktop, the request reaches the gateway as
+  `192.168.65.1` — the port forwarder's address, not yours. That is not a trusted proxy, so
+  `X-Forwarded-For` is ignored (correctly) and every request is attributed to one address.
+  See the warning in [Running with Docker](gateway/docs/running-with-docker.md).
+- Inside the container, `localhost` resolves to `::1` first, and the shipped
+  `trusted_proxies` lists `127.0.0.1/32` but not `::1/128` — same silent outcome.
+
+Only addresses under a throttle policy are ever counted — everyone else never touches the
+limiter — so this costs nothing for ordinary traffic.
+
+## Changing what it enforces, while it runs
+
+The console's **Settings** page edits the whole `enforcement` block of a running gateway:
+detector thresholds, which detectors may block on their own, the score floor, block
+duration, exempt ranges, and whether the agent's decisions are acted on at all. Changes
+apply within a few seconds, without a restart.
+
+The YAML file stays the source of truth at boot. The console writes an override into Redis
+on top of it, and **Revert to file** drops the override and returns the gateway to exactly
+what it started with. The page always shows what the gateway reports it is *actually*
+enforcing, not what it was last asked for, so a change the gateway refused — an unparseable
+duration, a malformed CIDR — shows as refused rather than appearing to have worked.
+
+Listen address, backend URL, timeouts and the Redis connection stay in the file. Changing
+those means rebuilding the server, which a live apply cannot do.
 
 ## What each side does
 
@@ -220,6 +316,11 @@ bash testing/signals/run_all.sh
   trusted, so the header cannot be spoofed to frame another address
 - Reads `policy:<ip>` from a background-refreshed snapshot, so the request path does no
   Redis I/O. A dead Redis means "no policy", never added latency. Unknown actions fail open
+- Enforces what it finds: `403` for a block, `429` for a throttled address over the rate its
+  policy names
+- Has a reflex of its own for the cases too fast to wait 30s for: a detector crossing its
+  threshold with a high enough score blocks the address immediately, for a short fixed
+  period, and only for detectors named in the config
 
 **Control plane (Python)**
 
@@ -229,7 +330,8 @@ bash testing/signals/run_all.sh
   addresses never seen before
 - Notices whether acting worked, and answers an action that failed with a stronger one
 - Reads several attack phases from one actor as one intrusion rather than separate attacks
-- Writes `monitor` / `throttle` / `temp_block` / `escalate`, always by rule
+- Writes `monitor` / `throttle` / `temp_block` / `escalate`, always by rule, and puts a
+  per-minute allowance on a throttle so the limit fits the campaign
 - Checks the response is safe before writing it — allowlisted and shared ranges are
   protected, and a standing policy is never traded for a weaker one
 - Takes instructions from a human, and learns from being overruled
@@ -278,53 +380,20 @@ SELECT type, count(*), round(avg(confidence)::numeric, 2) AS avg_confidence
 Everything degrades: no driver, no database, or a database that is down means the agent
 says so once and carries on with Redis.
 
-## Signing in
+## Reaching the console
 
-The console can change enforcement, so it requires an account. On first run every page
-redirects to `/setup` to create the administrator; that page closes permanently once one
-exists.
+The console runs open. There is no login, no accounts and no roles: whoever can reach
+http://localhost:5177 can use every control on it, including the ones that change what the
+gateway enforces and the one that wipes the history.
 
-| Role | May |
-|---|---|
-| `viewer` | Read every page. No action buttons, and the server refuses the write anyway |
-| `operator` | Instruct the agent — monitor, throttle, temp block, escalate |
-| `admin` | Everything, plus adding, disabling and removing accounts |
+That is a deliberate trade for a project that runs on one machine, and it is the only thing
+protecting it. **Do not expose port 5177 to a network you do not trust.** Bind it to
+loopback, or put it behind something that does authenticate, before it leaves your laptop.
 
-Roles are checked server-side on every write. Hiding a button is presentation; the check
-in the route handler is the authorisation.
-
-Accounts live in Postgres alongside campaigns, so **the console needs `IASG_POSTGRES_URL`**
-— without a durable store there is nowhere to keep them, and it refuses to start rather
-than run unauthenticated.
-
-Details worth knowing:
-
-- Passwords are hashed with scrypt (`N=16384, r=8, p=1`) and a per-password salt, using
-  Node's standard library rather than a dependency. The parameters are stored with the
-  hash so they can be raised later without invalidating anyone's password.
-- Sessions are random 256-bit tokens in an `httpOnly`, `SameSite=Lax` cookie. Only the
-  SHA-256 of the token is stored, so a database leak cannot be replayed as a live session.
-- Ten failed attempts locks a username for fifteen minutes. A console that detects brute
-  force should not be trivially brute forced.
-- Wrong password and unknown user return the same message after the same amount of work.
-- Disabling an account, changing its password, or signing out revokes the sessions
-  immediately rather than waiting for them to expire.
-- The last enabled admin cannot be deleted, demoted or disabled.
-- Overrides record the actor from the session, never from the request body.
-
-### Starting over
-
-Accounts live in Postgres, not in git, so a fresh database already starts at `/setup`. To
-clear the accounts in an existing database — handing the project to someone else, or
-resetting after a demo — run:
-
-```bash
-cd gateway-dashboard
-IASG_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg npm run reset-accounts
-```
-
-It wipes only `users` and `sessions`; campaigns, feedback and policy are untouched. The
-next visit to the console goes to `/setup`.
+The login system that used to be here — accounts, sessions, scrypt hashing, viewer /
+operator / admin roles — was removed because it was one more thing to keep working during
+a demo. It is in the git history if it is ever wanted back; `gateway-dashboard/lib/auth.js`
+says what to restore.
 
 ## Testing
 
@@ -346,27 +415,55 @@ IASG_TEST_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg_test 
     .venv/bin/python -m pytest tests/test_postgres.py
 ```
 
-## Not built yet
+## Deliberately not built
 
-Honest about the gaps, since the config file implies more than exists:
+- **A central trust engine.** There is no separate scoring service, and the `trust_engine`
+  config block that used to imply one has been deleted rather than left in the file — it
+  was parsed into Go structs that nothing ever read. Scoring already happens where the
+  evidence is: each detector scores what it sees, the gateway's reflex acts on a threshold
+  cross in nanoseconds, and the control plane re-decides every 30s with the wider view. An
+  engine in between would only re-derive what both already have.
 
-- **Trust engine** — `trust_engine` in `gateway/configs/config.yaml` is parsed but not
-  used. Nothing scores requests by trust today; the detectors and the control plane decide.
-Postgres was on this list until campaigns and feedback were moved into it. See
+Postgres was a real gap on this list until campaigns and feedback were moved into it. See
 **Durable memory** above.
 
 ## Documentation
 
-- [Client IP resolution](gateway/docs/client-ip.md)
-- [Reverse proxy logic](gateway/docs/reverse-proxy-logic.md)
-- [Request lifecycle](gateway/docs/request-lifecycle.md)
+The full site builds with MkDocs and is served at http://localhost:8000 by the Compose
+stack. The pages worth starting from:
+
+**How a request is handled**
+
 - [System architecture](gateway/docs/system-architecture.md)
-- [Project structure](gateway/docs/project-structure.md)
-- [Control plane README](control-plane/README.md), [guide](control-plane/GUIDE.md) and
-  [every algorithm it runs](control-plane/ALGORITHMS.md)
-- [Gateway README](gateway/README.md), [dashboard README](gateway-dashboard/README.md),
-  [infra README](infra/README.md), [testing README](testing/README.md)
-- [Demo walkthrough](DEMO.md)
+- [Request lifecycle](gateway/docs/request-lifecycle.md)
+- [Reverse proxy logic](gateway/docs/reverse-proxy-logic.md)
+- [Client IP resolution](gateway/docs/client-ip.md) — why `X-Forwarded-For` is only
+  believed from configured proxies
+
+**Security pipeline**
+
+- [Detection signals](gateway/docs/detection-signals.md) — what each detector looks for
+- [Policy enforcement](gateway/docs/policy-enforcement.md) — the decision contract, the
+  adaptive rate limit, and why every action must be able to expire
+- [Control plane](gateway/docs/control-plane.md)
+
+**Running and operating it**
+
+- [Running with Docker](gateway/docs/running-with-docker.md),
+  [running locally](gateway/docs/running-locally.md)
+- [Operations console](gateway/docs/modules/dashboard.md) — pages, API routes, and the
+  live Settings page
+- [Redis telemetry](gateway/docs/modules/redis-telemetry.md),
+  [project structure](gateway/docs/project-structure.md)
+
+**Per-component READMEs**
+
+- [Gateway](gateway/README.md), [control plane](control-plane/README.md),
+  [dashboard](gateway-dashboard/README.md), [infra](infra/README.md),
+  [testing](testing/README.md)
+- [Every algorithm the agent runs](control-plane/ALGORITHMS.md) and its
+  [guide](control-plane/GUIDE.md)
+- [Demo walkthrough](DEMO.md) and [command reference](commands.md)
 
 ## Stopping
 

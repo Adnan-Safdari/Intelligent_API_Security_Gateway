@@ -15,6 +15,12 @@ export function isPrivateIP(ip = "") {
 const cache = globalThis.__iasgGeoCache || new Map();
 globalThis.__iasgGeoCache = cache;
 
+function clampRiskScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return 0;
+  return Math.min(100, Math.max(0, Math.round(score)));
+}
+
 async function fetchJson(url, options = {}, timeoutMs = 1800) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -71,7 +77,7 @@ export function summarizeSources(events = []) {
     const current = byIp.get(ip) || { ip, requests: 0, alerts: 0, lastRisk: 0 };
     current.requests += 1;
     if (event.fired?.length) current.alerts += 1;
-    current.lastRisk = Math.max(current.lastRisk, event.riskScore || 0);
+    current.lastRisk = Math.max(current.lastRisk, clampRiskScore(event.riskScore));
     byIp.set(ip, current);
   }
   return [...byIp.values()].sort((a, b) => b.requests - a.requests);

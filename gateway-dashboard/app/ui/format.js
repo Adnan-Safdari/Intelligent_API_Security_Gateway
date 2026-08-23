@@ -22,6 +22,9 @@ export const LADDER = ["monitor", "throttle", "temp_block", "escalate"];
 export const ACTION_TONE = {
   monitor: "low",
   throttle: "mid",
+  // An outcome rather than an action: the policy said throttle, and this
+  // request was the one that went over the rate it allowed.
+  rate_limited: "mid",
   temp_block: "high",
   escalate: "high",
 };
@@ -34,6 +37,14 @@ export function riskTone(score) {
   if (score >= 70) return "high";
   if (score >= 30) return "mid";
   return "low";
+}
+
+// Telemetry risk is an integer on a fixed 0-100 scale. Keep the UI safe for
+// historical stream entries or malformed values as well as current gateway data.
+export function clampRiskScore(value) {
+  const score = Number(value);
+  if (!Number.isFinite(score)) return 0;
+  return Math.min(100, Math.max(0, Math.round(score)));
 }
 
 export function formatTtl(seconds) {

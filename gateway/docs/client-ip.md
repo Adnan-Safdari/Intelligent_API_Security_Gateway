@@ -177,10 +177,7 @@ about who the caller is.
 
 ## Things this page does not fix
 
-Two known gaps, both deliberately left alone:
+One known gap is deliberately left alone:
 
-- **SQL injection detection reads only the request body**, not the URL. So
-  `?id=1' OR 1=1--` is invisible. A test records this, and will fail if someone
-  closes the gap without updating it.
 - **Detectors log but never block.** That is the team's decision, not an
   oversight. Blocking happens only through the control plane.

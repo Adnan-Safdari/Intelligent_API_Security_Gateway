@@ -1,4 +1,10 @@
 # IASG Configuration Example
+#
+# This file is what the gateway boots with. The `enforcement` block below can
+# also be changed at runtime from the console's Settings page, which stores an
+# override in Redis and leaves this file untouched -- "Revert to file" there
+# brings the gateway back to exactly what is written here. Everything outside
+# `enforcement` is structural and only takes effect on a restart.
 
 server:
   port: 8082
@@ -17,20 +23,6 @@ proxy:
   timeout: 30s
   max_idle_conns: 100
   max_conns_per_host: 10
-
-trust_engine:
-  # Trust scoring thresholds
-  block_threshold: 20
-  throttle_threshold: 50
-  allow_threshold: 80
-  
-  # Signal weights
-  weights:
-    ip_reputation: 0.2
-    rate_limiting: 0.25
-    authentication: 0.3
-    payload_analysis: 0.15
-    behavioral: 0.1
 
 storage:
   redis:
@@ -57,9 +49,21 @@ storage:
 enforcement:
   # Rate limiting
   rate_limit:
-    enabled: true
+    enabled: true              # count requests per address and signal a flood
     requests_per_minute: 100
     burst: 20
+
+    # Turn the threshold above into a limit the gateway acts on: anything over
+    # it is refused with 429 instead of only being reported.
+    #
+    # Off by default, and separate from `enabled`, because noticing a flood and
+    # refusing traffic are different decisions -- only the second can turn a
+    # legitimate spike into an outage.
+    #
+    # This is the baseline. An address the control plane has throttled is held
+    # to the rate *its* policy names instead, and the ranges in
+    # `block.exempt_cidrs` skip the limit entirely.
+    enforce: false
 
   # Attack detection (SQL injection signatures)
   attack_detection:
@@ -67,7 +71,7 @@ enforcement:
     sql_patterns:
       - "' OR"
       - "--"
-      - "UNION"
+      - "UNION SELECT"
       - " OR 1=1"
 
   # Brute force login detection (detect + emit metrics only; no blocking)
@@ -103,9 +107,46 @@ enforcement:
     delay_ms: 500
   
   # Blocking
+  # The gateway's own blocking -- its reflex, as opposed to the considered
+  # decisions the control plane writes as policy keys.
+  #
+  # A policy decision takes up to one agent cycle (30s) plus one snapshot
+  # refresh (5s) to reach the gateway, which is too slow for a flood. This
+  # closes that gap for signals you are willing to trust without a second
+  # opinion, and leaves correlation, campaigns and escalation to the agent.
+  #
+  # `enabled` alone does nothing: `signals` has to name at least one detector.
+  # Naming them is the act of consent, because this flag existed in config
+  # files long before anything read it.
   block:
     enabled: true
-    duration: 300s # 5 minutes
+    duration: 300s # how long a gateway-side block lasts; nothing renews it
+
+    # Only these may block on their own. Both are windowed -- they fire on
+    # repetition rather than on one request that happened to look odd. The
+    # request-scoped detectors (sql_injection, enumeration_path_traversal) are
+    # left out on purpose: a single request carrying "UNION" may be an attack
+    # or may be someone searching a catalogue, and that judgement is the
+    # control plane's job.
+    signals:
+      - api_flooding
+      - brute_force
+
+    # A score floor on top of each detector's own threshold, so a marginal hit
+    # is not enough. Raise it to make this less trigger-happy without turning
+    # a detector off.
+    min_score: 80
+
+    # Never blocked. Omit the key entirely to take loopback and the private
+    # ranges. The RFC 5737 documentation ranges are deliberately blockable:
+    # they can never belong to a real host, and the demo drives traffic from
+    # them.
+    exempt_cidrs:
+      - 127.0.0.0/8
+      - ::1/128
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
 
   # Acting on decisions written by the Python control plane at policy:<ip>.
   # Off by default so detectors stay recommend-only until you opt in.
