@@ -244,6 +244,7 @@ function EventsView() {
       <article className="card table-card">
         <EventTable
           events={shown}
+          showSerialNumber
           empty={
             rows.length
               ? "No events match this filter."

@@ -9,7 +9,7 @@ import { POLICY_COLUMNS } from "@/app/ui/export";
 import Link from "next/link";
 
 export default function PolicyPage() {
-  const { policies, escalations, learned, busy, instruct } = useLive();
+  const { policies, escalations, learned, busy, instruct, deletePolicy } = useLive();
   const [ip, setIp] = useState("");
   const [action, setAction] = useState("temp_block");
   const [reason, setReason] = useState("");
@@ -28,6 +28,14 @@ export default function PolicyPage() {
     }
   }
 
+  function removePolicy(policy) {
+    if (!window.confirm(
+      `Remove the active ${actionLabel(policy.action)} policy for ${policy.ip}? ` +
+      "This takes effect immediately. The agent can recreate it if the campaign remains active.",
+    )) return;
+    deletePolicy(policy.ip);
+  }
+
   return (
     <>
       <PageHead title="Policy">
@@ -36,6 +44,11 @@ export default function PolicyPage() {
         override stream and are applied on the next cycle, after the same allowlist and
         collateral checks the agent’s own decisions face.
       </PageHead>
+
+      <p className="form-note">
+        Delete policy removes the current Redis policy key immediately. It does not end the
+        underlying campaign, so the agent may create a new policy on a later cycle.
+      </p>
 
       <section className="workbench">
         <article className="card">
@@ -68,6 +81,7 @@ export default function PolicyPage() {
                     <th>Expires</th>
                     <th>Origin</th>
                     <th>Change to</th>
+                    <th>Remove</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -108,6 +122,17 @@ export default function PolicyPage() {
                             </button>
                           ))}
                         </div>
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="act danger small"
+                          disabled={Boolean(busy)}
+                          onClick={() => removePolicy(p)}
+                          title={`Remove the active policy for ${p.ip}`}
+                        >
+                          {busy === `delete-policy:${p.ip}` ? "Removingâ€¦" : "Delete policy"}
+                        </button>
                       </td>
                     </tr>
                   ))}

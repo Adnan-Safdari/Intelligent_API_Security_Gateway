@@ -15,10 +15,10 @@ type Observer interface {
 
 // Middleware watches what the detectors concluded about each request.
 //
-// It belongs at the very end of the chain, immediately before the reverse
-// proxy. Detectors do their work on the way in, so this is the first point at
-// which all of them have run and their evidence is complete -- placing it any
-// further out would read a snapshot that is missing whatever ran inside it.
+// It belongs outside every detector, but inside the policy enforcer. Most
+// detectors record on the way in; response-aware detectors such as brute force
+// record after next returns. Wrapping all of them makes this middleware's
+// post-next snapshot run only after both kinds have finished.
 //
 // It only reads. Nothing here can refuse a request: the block it records
 // applies from the caller's next request, and it is policy.Enforcer at the

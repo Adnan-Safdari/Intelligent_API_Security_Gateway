@@ -81,7 +81,11 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 
 		ip := netutil.ClientIP(r)
 		bodyBytes, _ := readAndRestoreBody(r)
-		haystack := r.URL.Path + " " + r.URL.RawQuery + " " + string(bodyBytes)
+		// URL.RawQuery is escaped, so inspecting it alone misses a real payload
+		// such as q=%27+OR+1%3D1+--. Query() decodes values before matching,
+		// while Path/RawPath still cover path-based signatures.
+		queryText := decodedQuery(r)
+		haystack := r.URL.Path + " " + r.URL.RawPath + " " + queryText + " " + string(bodyBytes)
 		matched := sd.findMatches(haystack, tun.sqlPatterns)
 		ev := sd.evidenceFrom(matched)
 		sd.last.Put(ip, r.Header.Get(RequestIDHeader), ev)
@@ -92,6 +96,16 @@ func (sd *SQLiDetector) Middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func decodedQuery(r *http.Request) string {
+	values := r.URL.Query()
+	parts := make([]string, 0, len(values)*2)
+	for key, entries := range values {
+		parts = append(parts, key)
+		parts = append(parts, entries...)
+	}
+	return strings.Join(parts, " ")
 }
 
 // Metrics returns the latest SQLi evidence for an IP, from whichever request

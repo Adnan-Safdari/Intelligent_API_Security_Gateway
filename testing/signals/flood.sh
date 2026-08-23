@@ -9,11 +9,11 @@ source "$SCRIPT_DIR/lib.sh"
 require_gateway
 
 COUNT="${FLOOD_COUNT:-105}"
-echo "Sending $COUNT GET requests to $GATEWAY_URL/ ..."
+echo "Sending $COUNT GET requests to $GATEWAY_URL/api/products ..."
 
 last_code=""
 for i in $(seq 1 "$COUNT"); do
-	last_code="$(curl_code "$GATEWAY_URL/")"
+	last_code="$(curl_code "$GATEWAY_URL/api/products")"
 	assert_not_throttled "$last_code" "flood request $i"
 done
 

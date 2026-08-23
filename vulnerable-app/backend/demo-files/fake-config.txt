@@ -1,0 +1,2 @@
+demo_mode=true
+message=This is fake configuration data for the academic traversal demonstration.

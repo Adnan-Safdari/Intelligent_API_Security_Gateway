@@ -151,6 +151,42 @@ func TestInspectedRequestsReportTheirOwnSignals(t *testing.T) {
 	}
 }
 
+func TestSQLiProductSearchTelemetryContainsEvidence(t *testing.T) {
+	const ip = "203.0.113.48"
+
+	sqli := signals.NewSQLiDetector(signals.DefaultSQLiDetectorConfig())
+	collector := signals.NewCollector(sqli)
+	writer := &captureWriter{}
+	backendCalls := 0
+	handler := Middleware(writer, collector)(sqli.Middleware(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) {
+			backendCalls++
+			w.WriteHeader(http.StatusOK)
+		},
+	)))
+
+	silenceAlerts(t, func() {
+		send(t, handler, http.MethodGet, "/api/products/search?q=%27+OR+1%3D1+--", ip, "")
+	})
+
+	ev := writer.last()
+	if ev.Decision != "allow" || ev.Status != http.StatusOK || backendCalls != 1 {
+		t.Fatalf("SQLi request was not forwarded as an allowed request: %+v, calls=%d", ev, backendCalls)
+	}
+	if !firedContains(ev, signals.SignalSQLi) {
+		t.Fatalf("telemetry did not fire SQLi: %v", ev.Fired)
+	}
+	if len(ev.Signals) != 1 || ev.Signals[0].Signal != signals.SignalSQLi {
+		t.Fatalf("telemetry omitted SQLi evidence: %+v", ev.Signals)
+	}
+	if ev.Signals[0].Int("matchCount") == 0 || len(ev.Signals[0].Strings("matchedPatterns")) == 0 {
+		t.Fatalf("telemetry omitted SQLi match details: %+v", ev.Signals[0])
+	}
+	if ev.Snippet != "" {
+		t.Fatalf("GET request unexpectedly acquired a body snippet: %q", ev.Snippet)
+	}
+}
+
 // Windowed detectors are deliberately unaffected: "this address made N
 // requests in the last minute" stays true whether or not the request being
 // recorded reached the detector.

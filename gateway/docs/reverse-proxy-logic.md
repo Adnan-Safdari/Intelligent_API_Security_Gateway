@@ -89,14 +89,14 @@ Behavior:
 
 File: `gateway/internal/signals/sqli_injection.go`
 
-This reads the request body and looks for known SQLi signatures such as:
+This reads the URL path, decoded query values, and JSON/body content for known SQLi signatures such as:
 
 - `' OR`
 - `--`
 - `UNION`
 - ` OR 1=1`
 
-If it finds a match, it logs a formatted alert and still allows the request through.
+If it finds a match, it emits standardized evidence, logs a formatted alert, and still allows the request through. The dashboard and control plane distinguish this detection from any later policy enforcement.
 
 ### Brute Force Detection
 

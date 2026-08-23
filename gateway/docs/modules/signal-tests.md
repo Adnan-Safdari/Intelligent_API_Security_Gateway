@@ -59,9 +59,9 @@ GATEWAY_URL=http://localhost:8082 bash testing/signals/run_all.sh
 
 | Script | Traffic | Pass condition | What to look for in gateway logs |
 | --- | --- | --- | --- |
-| `flood.sh` | 105 `GET /` (above default 100/min) | no `429` | `SECURITY ALERT: API FLOOD DETECTED` |
-| `sqli.sh` | JSON body `UNION SELECT` and query `id=UNION` | no `429` | `SECURITY ALERT: SQL INJECTION DETECTED` |
-| `traversal.sh` | `../` query, `/.env`, both together | no `429` | `PATH TRAVERSAL` / `ENUMERATION ATTACK` |
+| `flood.sh` | 105 `GET /api/products` (above default 100/min) | no `429` | `SECURITY ALERT: API FLOOD DETECTED` |
+| `sqli.sh` | Product search with normal input, then `' OR 1=1 --` in `q` | no detector-originated block | `SECURITY ALERT: SQL INJECTION DETECTED`; Dashboard → IP → SQL injection evidence |
+| `traversal.sh` | bounded `demo-files` traversal, `/.env-demo`, both together | no `429` | `PATH TRAVERSAL` / `ENUMERATION ATTACK` |
 | `brute_force.sh` | 8 `POST /api/login` with wrong passwords | no `429` (backend `401` is OK) | `SECURITY ALERT: BRUTE FORCE DETECTED` |
 
 `lib.sh` holds `GATEWAY_URL`, `require_gateway`, and `assert_not_throttled`.

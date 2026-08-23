@@ -37,7 +37,7 @@ make, and *writes* evidence it does not interpret.
 |---|---|
 | `brute_force.go` | Repeated failed logins against one account |
 | `api_flooding.go` | Request volume from one address |
-| `sqli_injection.go` | Injection patterns in query, body and headers |
+| `sqli_injection.go` | Injection patterns in path, decoded query values and body |
 | `enumeration_path_traversal.go` | Directory walking and resource enumeration |
 
 Each one emits `Evidence` onto `iasg:events`. They score and report; they do not decide

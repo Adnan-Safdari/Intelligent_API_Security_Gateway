@@ -2,6 +2,8 @@ package signals
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -140,5 +142,40 @@ func TestSQLiInspectsQueryString(t *testing.T) {
 
 	if !strings.Contains(out, sqliMarker) {
 		t.Fatal("SQLi in the query string should be detected")
+	}
+}
+
+func TestSQLiProductSearchEvidenceUsesDecodedQueryValues(t *testing.T) {
+	const ip = "203.0.113.55"
+	detector := NewSQLiDetector(DefaultSQLiDetectorConfig())
+	backendReached := 0
+	handler := detector.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		backendReached++
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	clean := httptest.NewRequest(http.MethodGet, "/api/products/search?q=keyboard", nil)
+	clean.RemoteAddr = ip + ":1234"
+	handler.ServeHTTP(httptest.NewRecorder(), clean)
+	if ev := detector.Metrics(ip); ev.ThresholdCross {
+		t.Fatalf("normal product search fired SQLi: %+v", ev)
+	}
+
+	payload := "' OR 1=1 --"
+	attack := httptest.NewRequest(http.MethodGet, "/api/products/search?q="+url.QueryEscape(payload), nil)
+	attack.RemoteAddr = ip + ":1234"
+	captureAlerts(t, func() {
+		handler.ServeHTTP(httptest.NewRecorder(), attack)
+	})
+
+	ev := detector.Metrics(ip)
+	if !ev.ThresholdCross || ev.Score <= 0 {
+		t.Fatalf("SQLi product search did not fire: %+v", ev)
+	}
+	if ev.Int("matchCount") == 0 || len(ev.Strings("matchedPatterns")) == 0 {
+		t.Fatalf("SQLi evidence omitted matched patterns: %+v", ev)
+	}
+	if backendReached != 2 {
+		t.Fatalf("backend reached %d times, want both forwarded requests", backendReached)
 	}
 }

@@ -111,9 +111,10 @@ func NewServer(cfg Config) *Server {
 //  2. Client-IP resolver — trusted-proxy X-Forwarded-For, then context IP
 //  3. Logging
 //  4. Policy enforcer — optional; blocked IPs never reach detectors
-//  5. Request inspection, then flood / SQLi / traversal / brute force
+//  5. Request inspection
 //  6. Reflex observer — optional; records gateway-side blocks after the
-//     detectors have run, applying from the caller's next request
+//     flood / SQLi / traversal / brute force detectors and observes after
+//     they unwind, applying from the caller's next request
 //  7. Reverse proxy
 //
 // Returns:
@@ -191,12 +192,12 @@ func (s *Server) Start() error {
 		LoggingMiddleware,
 		enforcer.Middleware,
 		RequestInspectionMiddleware,
-		floodDetector.Middleware,
-		sqliDetector.Middleware,
-		traversalEnumDetector.Middleware,
-		bruteForceDetector.Middleware,
-		// Last, so every detector has run by the time it reads the evidence.
-		enforcement.Middleware(reflex, s.collector),
+		observedDetectors(reflex, s.collector,
+			floodDetector.Middleware,
+			sqliDetector.Middleware,
+			traversalEnumDetector.Middleware,
+			bruteForceDetector.Middleware,
+		),
 	)(proxy)
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler
@@ -211,6 +212,17 @@ func (s *Server) Start() error {
 	// Start the HTTP server and listen for incoming connections
 	// This is a blocking call that returns only on error or shutdown
 	return server.ListenAndServe()
+}
+
+// observedDetectors keeps the observer outside response-aware detectors. On
+// the return path, brute force records the backend status before Reflex reads
+// the collector. The policy enforcer remains outside this group, so a blocked
+// request reaches neither the detectors nor the observer.
+func observedDetectors(reflex *enforcement.Reflex, collector enforcement.Observer, detectors ...Middleware) Middleware {
+	middlewares := make([]Middleware, 0, len(detectors)+1)
+	middlewares = append(middlewares, enforcement.Middleware(reflex, collector))
+	middlewares = append(middlewares, detectors...)
+	return ChainMiddleware(middlewares...)
 }
 
 // newEnforcer builds the policy enforcement middleware.

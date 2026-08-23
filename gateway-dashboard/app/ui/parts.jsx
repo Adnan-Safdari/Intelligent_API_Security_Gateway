@@ -188,12 +188,13 @@ export function PolicyList({ policies }) {
   );
 }
 
-export function EventTable({ events, empty }) {
+export function EventTable({ events, empty, showSerialNumber = false }) {
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
+            {showSerialNumber ? <th>S. No.</th> : null}
             <th>Time</th>
             <th>Source</th>
             <th>Endpoint</th>
@@ -205,16 +206,17 @@ export function EventTable({ events, empty }) {
         <tbody>
           {events.length === 0 ? (
             <tr>
-              <td colSpan={6} className="empty">
+              <td colSpan={showSerialNumber ? 7 : 6} className="empty">
                 {empty}
               </td>
             </tr>
           ) : (
-            events.map((event) => (
+            events.map((event, index) => (
               <tr
                 key={event.id || event.requestId}
                 className={event.fired?.length ? "alert-row" : ""}
               >
+                {showSerialNumber ? <td className="mono">{index + 1}</td> : null}
                 <td className="mono">{formatTime(event.ts)}</td>
                 <td>
                   <IpLink ip={event.ip} />

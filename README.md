@@ -94,7 +94,7 @@ Bring the rest up in this order. Each runs in its own terminal.
 ```bash
 cd vulnerable-app/backend
 npm install
-PORT=5002 AUTH_MODE=memory npm start
+PORT=5002 npm start
 ```
 
 **2. Gateway** — the data plane, proxying to the target:

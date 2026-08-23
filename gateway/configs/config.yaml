@@ -17,9 +17,10 @@ server:
   # gateway really does sit behind a proxy: anyone can set the header, so
   # trusting it from arbitrary callers would let an attacker have someone
   # else's IP detected and blocked. When empty, the TCP peer address is used.
-  trusted_proxies: []
-    # - 127.0.0.1/32     # local testing
-    # - 10.0.0.0/8       # load balancer subnet
+  trusted_proxies:
+  - 127.0.0.1/32
+  - 10.0.0.0/8
+  - 172.16.0.0/12
 
 proxy:
   # Backend API to protect

@@ -263,6 +263,9 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
               empty.
             </p>
             <p className="modal-note">
+              To lift a current policy key, use Delete policy on the Policy page.
+            </p>
+            <p className="modal-note">
               Active policy blocks are left running; they expire on their own.
               This cannot be undone.
             </p>

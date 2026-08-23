@@ -153,6 +153,41 @@ export function LiveProvider({ children, me }) {
     }
   }, [canAct]);
 
+  /** Remove one current policy key immediately, rather than queueing an override. */
+  const deletePolicy = useCallback(async (ip) => {
+    if (!canAct) {
+      setToast({
+        tone: "bad",
+        text: "your account can read the console but not remove enforcement",
+      });
+      return false;
+    }
+
+    setBusy(`delete-policy:${ip}`);
+    try {
+      const res = await fetch(`/api/policies/${encodeURIComponent(ip)}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setToast({ tone: "bad", text: `policy delete failed: ${data.error || res.status}` });
+        return false;
+      }
+
+      setToast({
+        tone: "good",
+        text: data.removed
+          ? `policy removed for ${ip}`
+          : `no current policy existed for ${ip}`,
+      });
+      await refresh();
+      return true;
+    } catch (err) {
+      setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
+      return false;
+    } finally {
+      setBusy("");
+    }
+  }, [canAct, refresh]);
+
   const value = useMemo(
     () => ({
       me,
@@ -169,7 +204,9 @@ export function LiveProvider({ children, me }) {
       setToast,
       updatedAt,
       instruct,
+      deletePolicy,
       refresh,
+      refreshHistory,
       // Read straight off the payloads so a page never has to guess a default.
       stats: overview.stats || EMPTY_OVERVIEW.stats,
       events: overview.events || [],
@@ -181,7 +218,10 @@ export function LiveProvider({ children, me }) {
       learned: plane.learned || [],
       beat: plane.heartbeat || { alive: false },
     }),
-    [me, canAct, overview, plane, history, paused, busy, toast, updatedAt, instruct, refresh],
+    [
+      me, canAct, overview, plane, history, paused, busy, toast, updatedAt,
+      instruct, deletePolicy, refresh, refreshHistory,
+    ],
   );
 
   return <LiveContext.Provider value={value}>{children}</LiveContext.Provider>;

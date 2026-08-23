@@ -53,6 +53,14 @@ export default function IpPage({ params }) {
   const policy = data?.policy;
   const campaigns = data?.campaigns || [];
   const events = data?.events || [];
+  const sqliEvents = events
+    .map((event) => ({
+      event,
+      evidence: (event.signals || []).find(
+        (signal) => signal.signal === "sql_injection" && signal.thresholdCross,
+      ),
+    }))
+    .filter(({ evidence }) => evidence);
 
   return (
     <>
@@ -129,6 +137,38 @@ export default function IpPage({ params }) {
               events={events}
               empty={`Nothing from ${ip} in the events the gateway still holds.`}
             />
+          </article>
+
+          <article className="card">
+            <div className="card-head">
+              <h2>SQL injection evidence</h2>
+              <small>Detection is evidence; enforcement is shown separately.</small>
+            </div>
+            {sqliEvents.length === 0 ? (
+              <p className="empty">No SQL injection evidence for this address.</p>
+            ) : (
+              <ul className="fact-list">
+                {sqliEvents.slice(0, 8).map(({ event, evidence }) => (
+                  <li key={event.id || event.requestId}>
+                    <span>
+                      <b>Detected</b> {formatTime(event.ts)} · <span className="method">{event.method}</span>{" "}
+                      {event.path}
+                      <br />
+                      {evidence.details?.matchCount || 0} pattern
+                      {(evidence.details?.matchCount || 0) === 1 ? "" : "s"}: {" "}
+                      {(evidence.details?.matchedPatterns || []).join(", ") || "—"}
+                      <br />
+                      request <span className="mono">{event.requestId || "—"}</span> · HTTP {event.status}
+                    </span>
+                    <b>
+                      risk {event.riskScore || evidence.score || 0}
+                      <br />
+                      {actionLabel(event.decision || "allow")}
+                    </b>
+                  </li>
+                ))}
+              </ul>
+            )}
           </article>
 
           {campaigns.length ? (
