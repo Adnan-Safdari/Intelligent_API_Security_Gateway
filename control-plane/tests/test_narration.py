@@ -15,6 +15,7 @@ from iasg.config import Settings
 from iasg.explanation.agent import ExplanationAgent
 from iasg.models import Campaign, PolicyDecision
 from iasg.reasoning import open_provider
+from iasg.reasoning.budget import BudgetedProvider
 from iasg.reasoning.null import NullProvider
 from iasg.reasoning.ollama import OllamaProvider
 
@@ -71,7 +72,17 @@ def test_open_provider_defaults_to_null():
 
 def test_open_provider_selects_ollama():
     s = dataclasses.replace(Settings(), llm_provider="ollama")
-    assert isinstance(open_provider(s), OllamaProvider)
+    provider = open_provider(s)
+
+    # Wrapped in a spending cap, but still ollama underneath: the name is what
+    # the rest of the system reports, so it has to survive the wrapping.
+    assert isinstance(provider, BudgetedProvider)
+    assert provider.name == "ollama"
+
+
+def test_null_provider_is_not_budgeted():
+    """Nothing to budget: NullProvider returns "" without doing any work."""
+    assert isinstance(open_provider(Settings()), NullProvider)
 
 
 def test_unknown_provider_falls_back_to_null():
@@ -212,3 +223,115 @@ def test_generated_text_cannot_change_a_decision():
     assert c.confidence == 0.97
     assert c.severity == "high"
     assert c.ips == ["203.0.113.5", "203.0.113.9"]
+
+
+# --------------------------- narration budget ---------------------------
+#
+# Narration runs inside the cycle, so its cost has to be bounded by wall clock
+# rather than by call count: one slow campaign must not push the next cycle
+# late. These lean on a provider that burns a controllable amount of time.
+
+class Slow:
+    """A provider that costs a fixed number of seconds per call."""
+
+    name = "slow"
+
+    def __init__(self, cost: float, answer: str = "text", boom: bool = False) -> None:
+        self._cost = cost
+        self._answer = answer
+        self._boom = boom
+        self.calls = 0
+
+    def generate(self, system: str, prompt: str) -> str:
+        self.calls += 1
+        _advance(self._cost)
+        if self._boom:
+            raise RuntimeError("model exploded")
+        return self._answer
+
+
+_clock = {"now": 0.0}
+
+
+def _advance(seconds: float) -> None:
+    _clock["now"] += seconds
+
+
+def _budgeted(monkeypatch, inner, budget):
+    """A BudgetedProvider on a clock the test drives, not the wall."""
+    _clock["now"] = 0.0
+    monkeypatch.setattr("iasg.reasoning.budget.time.monotonic", lambda: _clock["now"])
+    return BudgetedProvider(inner, budget)
+
+
+def test_budget_allows_calls_until_it_is_spent(monkeypatch):
+    inner = Slow(cost=4.0)
+    provider = _budgeted(monkeypatch, inner, budget=10)
+
+    assert provider.generate("s", "p") == "text"   # 4s spent
+    assert provider.generate("s", "p") == "text"   # 8s spent
+    assert provider.generate("s", "p") == "text"   # 12s -- allowed, then over
+
+    # Budget is now exhausted, so the next call never reaches the model.
+    assert provider.generate("s", "p") == ""
+    assert inner.calls == 3
+
+
+def test_exhausted_budget_is_counted_not_hidden(monkeypatch):
+    provider = _budgeted(monkeypatch, Slow(cost=20.0), budget=5)
+
+    provider.generate("s", "p")
+    provider.generate("s", "p")
+    provider.generate("s", "p")
+
+    # Two refusals, reported so a template-looking campaign is explained.
+    assert provider.skipped == 2
+
+
+def test_begin_cycle_restores_the_allowance(monkeypatch):
+    inner = Slow(cost=9.0)
+    provider = _budgeted(monkeypatch, inner, budget=5)
+
+    provider.generate("s", "p")
+    assert provider.exhausted
+    assert provider.generate("s", "p") == ""
+
+    provider.begin_cycle()
+
+    assert not provider.exhausted
+    assert provider.skipped == 0
+    assert provider.generate("s", "p") == "text"
+    assert inner.calls == 2
+
+
+def test_a_failing_call_still_costs_its_time(monkeypatch):
+    """
+    The point of charging in a finally block.
+
+    A provider that reliably times out would otherwise be free, and would be
+    retried for every campaign in the cycle -- turning one broken model into
+    the slowest possible cycle.
+    """
+    inner = Slow(cost=30.0, boom=True)
+    provider = _budgeted(monkeypatch, inner, budget=10)
+
+    try:
+        provider.generate("s", "p")
+    except RuntimeError:
+        pass
+
+    assert provider.exhausted
+    assert provider.generate("s", "p") == ""
+    assert inner.calls == 1
+
+
+def test_zero_budget_refuses_without_calling(monkeypatch):
+    inner = Slow(cost=1.0)
+    provider = _budgeted(monkeypatch, inner, budget=0)
+
+    assert provider.generate("s", "p") == ""
+    assert inner.calls == 0
+
+
+def test_budget_reports_the_wrapped_provider_name(monkeypatch):
+    assert _budgeted(monkeypatch, Slow(cost=0.0), budget=5).name == "slow"

@@ -172,9 +172,31 @@ services:
       IASG_REDIS_URL: redis://redis:6379/0
       IASG_EVIDENCE_STREAM: iasg:events
       IASG_DRY_RUN: "false"
+      # Narration. The explanation and assessment agents write the prose the
+      # console shows; without a provider the first falls back to a template
+      # and the second produces nothing at all.
+      #
+      # Points at Ollama on the HOST, not a container: on Apple Silicon the
+      # native app reaches the GPU and a Linux container here cannot, and it
+      # avoids a second copy of a 2GB model. `extra_hosts` makes the same name
+      # resolve on Linux, where it is not built in.
+      #
+      # One platform difference: Docker Desktop proxies this name to the host's
+      # loopback, so an Ollama listening only on 127.0.0.1 is reachable. Native
+      # Linux Docker routes to the bridge address instead, where it is not --
+      # run Ollama with OLLAMA_HOST=0.0.0.0 there.
+      #
+      # Set IASG_LLM_PROVIDER=null in infra/.env to switch narration off. A
+      # provider that is configured but unreachable is not an error either --
+      # every call degrades to the template and says so once.
+      IASG_LLM_PROVIDER: ${IASG_LLM_PROVIDER:-ollama}
+      IASG_OLLAMA_URL: ${IASG_OLLAMA_URL:-http://host.docker.internal:11434}
+      IASG_OLLAMA_MODEL: ${IASG_OLLAMA_MODEL:-llama3.2}
       # Campaigns and feedback outlive a restart. Policy keys stay in Redis.
       IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
     command: sh -c "pip install --no-cache-dir redis 'psycopg[binary]' && PYTHONPATH=/app python -m iasg"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy

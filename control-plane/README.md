@@ -197,7 +197,9 @@ and a review of the grouping (`campaign.assessment`). Both run *after* policy is
 written, and nothing reads them back to make a decision. A hallucinated or
 prompt-injected assessment can mislead a human reader; it cannot unblock an attacker.
 
-Default provider is `null`, which renders templates offline. To use a real model:
+Compose enables this: it sets `IASG_LLM_PROVIDER=ollama` and points the container at
+Ollama on the *host*, so there is no second copy of the model. A bare `python -m iasg`
+still defaults to `null` and renders templates offline. To use a real model there:
 
 ```bash
 brew install ollama
@@ -233,7 +235,7 @@ there together:
 | `iasg/policy/writer.py` | the only code that writes policy, and its rails |
 | `iasg/feedback/` | human overrides, and what the agent learns from them |
 | `iasg/alerts.py` | escalation to a human, on its own stream |
-| `iasg/reasoning/` | LLM providers — offline template by default, Ollama opt-in |
+| `iasg/reasoning/` | LLM providers, and the per-cycle narration budget |
 | `iasg/explanation/` | the admin-facing paragraph |
 | `iasg/assessment/` | the LLM's review of what the rules concluded |
 | `iasg/runner.py` | the loop |

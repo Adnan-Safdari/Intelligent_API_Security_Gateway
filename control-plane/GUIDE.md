@@ -214,8 +214,9 @@ the key itself when it expires.
 | File | Purpose |
 |---|---|
 | `reasoning/provider.py` | The `LLMProvider` interface: `generate(system, prompt) -> str` |
-| `reasoning/null.py` | No LLM. Returns `""` so callers fall back to templates. **Default.** |
-| `reasoning/ollama.py` | Talks to a local Ollama model. Opt-in, uses stdlib `urllib` so it adds no dependency. |
+| `reasoning/null.py` | No LLM. Returns `""` so callers fall back to templates. Default for a bare `python -m iasg`. |
+| `reasoning/ollama.py` | Talks to a local Ollama model. Uses stdlib `urllib`, so it adds no dependency. |
+| `reasoning/budget.py` | Caps the wall-clock one cycle may spend narrating, so a slow model cannot delay policy. |
 | `explanation/agent.py` | The admin-facing paragraph → `campaign.explanation` |
 | `assessment/agent.py` | The LLM's review of the grouping → `campaign.assessment` |
 
@@ -224,8 +225,13 @@ deterministic Python. The LLM writes **text only**, runs *after* policy is alrea
 and nothing reads its output back to make a decision. A hallucinated or prompt-injected
 assessment can mislead a human reader; it cannot unblock an attacker.
 
-Right now it's inert — `IASG_LLM_PROVIDER=null` means those paragraphs are templates. To
-switch on real generation:
+**Under Compose this is on.** `infra/docker-compose.yml` sets
+`IASG_LLM_PROVIDER=ollama` and points the container at Ollama running on the *host*
+(`host.docker.internal:11434`) rather than shipping a second copy of a 2GB model. Set
+`IASG_LLM_PROVIDER=null` in `infra/.env` to turn narration off.
+
+A bare `python -m iasg` still defaults to `null`, so the offline path is unchanged. To use
+a model there:
 
 ```bash
 brew install ollama
@@ -234,7 +240,17 @@ ollama pull llama3.2         # ~2GB, stored in ~/.ollama (not in this repo)
 IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg --once
 ```
 
-No code changes needed.
+No code changes needed either way.
+
+**Narration is time-boxed.** Explanation and assessment are one model call each, per
+campaign, so a busy cycle is many calls and the cost scales with how bad the hour is.
+`IASG_NARRATION_BUDGET_SECONDS` (default 12) caps the total wall clock one cycle may
+spend; past it, the remaining campaigns fall back to their templates and the cycle
+reports how many calls it skipped. `IASG_OLLAMA_TIMEOUT_SECONDS` (default 15) bounds a
+single call. A late decision is worse than an unnarrated one.
+
+**Degradation is total.** An unreachable, slow or broken model costs the explanation its
+prose and the assessment entirely — never a cycle, and never a policy.
 
 ---
 

@@ -70,6 +70,16 @@ class Settings:
     ollama_url : str = "http://localhost:11434"
     ollama_model: str = "llama3.2"
 
+    # How long one call may block. Narration runs inside the cycle, so a model
+    # that hangs must give up well before the cycle is due to end.
+    ollama_timeout_seconds : int = 15
+
+    # Total wall-clock one cycle may spend on narration, across every campaign
+    # and both agents. Once spent, the remaining campaigns fall back to their
+    # templates rather than pushing the cycle past its interval: a late
+    # decision is worse than an unnarrated one.
+    narration_budget_seconds : int = 12
+
     postgres_url : str | None = None
 
     @classmethod
@@ -99,6 +109,12 @@ class Settings:
             llm_provider=os.getenv("IASG_LLM_PROVIDER", cls.llm_provider),
             ollama_url=os.getenv("IASG_OLLAMA_URL", cls.ollama_url),
             ollama_model=os.getenv("IASG_OLLAMA_MODEL", cls.ollama_model),
+            ollama_timeout_seconds=_env_int(
+                "IASG_OLLAMA_TIMEOUT_SECONDS", cls.ollama_timeout_seconds
+            ),
+            narration_budget_seconds=_env_int(
+                "IASG_NARRATION_BUDGET_SECONDS", cls.narration_budget_seconds
+            ),
             postgres_url=os.getenv("IASG_POSTGRES_URL"),
         )
 
