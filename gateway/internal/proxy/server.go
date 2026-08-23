@@ -158,7 +158,10 @@ func (s *Server) Start() error {
 	defer reflex.Close()
 	log.Printf("[enforcement] %s", reflex.Describe())
 
-	enforcer, gate := s.newEnforcer(reflex)
+	enforcer, gate, err := s.newEnforcer(reflex)
+	if err != nil {
+		return err
+	}
 
 	// Live settings. The file is what the gateway boots with; the console can
 	// put an override on top of it, and deleting that override comes straight
@@ -238,7 +241,7 @@ func observedDetectors(reflex *enforcement.Reflex, collector enforcement.Observe
 // requests are flowing. Each source answers "no opinion" while it is off:
 // the gate short-circuits, and the reflex checks its own enabled flag. The
 // returned gate is nil when there is no Redis to read policy from.
-func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *policy.Gate) {
+func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *policy.Gate, error) {
 	// The control plane first, then the gateway's own reflex. policy.Chain
 	// documents why that order and not the other one.
 	var sources policy.Chain
@@ -269,7 +272,40 @@ func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *pol
 		sources, s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle),
 	).WithLimiter(limiter)
 
-	return enforcer, gate
+	baseline, err := baselineFrom(s.config.RateLimit, s.config.Block)
+	if err != nil {
+		return nil, nil, err
+	}
+	enforcer.ApplyAll(s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle), baseline)
+	if baseline.RequestsPerMinute > 0 {
+		log.Printf("[enforcement] baseline rate limit %d/min for every address not under a policy",
+			baseline.RequestsPerMinute)
+	}
+
+	return enforcer, gate, nil
+}
+
+// baselineFrom builds the rate every address is held to when no policy names
+// one. Zero unless rate_limit.enforce is on: noticing a flood and refusing one
+// are different decisions, and only the second can turn a spike into an outage.
+//
+// The exempt list is the reflex's, so there is a single answer to "who does
+// this gateway never refuse" rather than two lists that can disagree.
+func baselineFrom(rl config.RateLimitConfig, block config.BlockConfig) (policy.Baseline, error) {
+	if !rl.Enforce || rl.RequestsPerMinute <= 0 {
+		return policy.Baseline{}, nil
+	}
+
+	entries := block.ExemptCIDRs
+	if entries == nil {
+		entries = enforcement.DefaultExempt
+	}
+	exempt, err := netutil.ParseCIDRs(entries, "exempt range")
+	if err != nil {
+		return policy.Baseline{}, err
+	}
+
+	return policy.Baseline{RequestsPerMinute: rl.RequestsPerMinute, Exempt: exempt}, nil
 }
 
 // throttleDelay is the pause applied to a throttled caller, or zero when

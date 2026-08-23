@@ -200,7 +200,7 @@ export default function SettingsPage() {
       <section className="workbench settings-grid">
         <Card
           title="API flooding"
-          note="Counts requests per IP in a one-minute window. Detection only — blocking is the reflex below."
+          note="Counts requests per IP in a one-minute window."
         >
           <Toggle
             label="Detector on"
@@ -214,6 +214,17 @@ export default function SettingsPage() {
             onChange={(v) => edit("rate_limit", "requests_per_minute", v)}
             hint="The count that has to be exceeded before the signal fires."
           />
+          <Toggle
+            label="Refuse traffic over this rate"
+            checked={draft.rate_limit.enforce}
+            onChange={(v) => edit("rate_limit", "enforce", v)}
+          />
+          <small className="field-note">
+            Off, the count above only raises a signal. On, it becomes a limit every
+            address is held to and anything over it gets a 429. An address the agent has
+            throttled is held to <b>its</b> rate instead; the ranges under “Never block
+            these” skip the limit entirely.
+          </small>
         </Card>
 
         <Card title="SQL injection" note="Matches signatures in the path, query and body.">

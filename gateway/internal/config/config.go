@@ -118,9 +118,21 @@ type EnumerationConfig struct {
 }
 
 type RateLimitConfig struct {
-	Enabled           bool `yaml:"enabled"`
-	RequestsPerMinute int  `yaml:"requests_per_minute"`
-	Burst             int  `yaml:"burst"`
+	// Enabled turns on flood *detection*: counting requests per address and
+	// raising a signal when RequestsPerMinute is exceeded.
+	Enabled bool `yaml:"enabled"`
+
+	// Enforce turns that threshold into a limit the gateway acts on, refusing
+	// anything over it with 429 rather than only reporting it. Separate from
+	// Enabled because refusing traffic is a different decision from noticing
+	// it, and this one can turn a legitimate spike into an outage.
+	//
+	// An address under a throttle policy is held to the rate that policy names
+	// instead; this is the baseline everyone else gets.
+	Enforce bool `yaml:"enforce"`
+
+	RequestsPerMinute int `yaml:"requests_per_minute"`
+	Burst             int `yaml:"burst"`
 }
 
 type ThrottleConfig struct {

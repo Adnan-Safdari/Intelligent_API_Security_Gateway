@@ -34,6 +34,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
@@ -153,34 +154,15 @@ func buildTunables(cfg Config) (*reflexTunables, error) {
 		}
 	}
 
-	exempt := cfg.ExemptCIDRs
-	if exempt == nil {
-		exempt = DefaultExempt
+	entries := cfg.ExemptCIDRs
+	if entries == nil {
+		entries = DefaultExempt
 	}
-	for _, entry := range exempt {
-		entry = strings.TrimSpace(entry)
-		if entry == "" {
-			continue
-		}
-		// A bare address is the obvious thing to write, so accept it rather
-		// than silently trusting nothing.
-		if !strings.Contains(entry, "/") {
-			ip := net.ParseIP(entry)
-			if ip == nil {
-				return nil, &configError{entry: entry}
-			}
-			if ip.To4() != nil {
-				entry += "/32"
-			} else {
-				entry += "/128"
-			}
-		}
-		_, network, err := net.ParseCIDR(entry)
-		if err != nil {
-			return nil, &configError{entry: entry, err: err}
-		}
-		t.exempt = append(t.exempt, network)
+	exempt, err := netutil.ParseCIDRs(entries, "exempt range")
+	if err != nil {
+		return nil, err
 	}
+	t.exempt = exempt
 
 	return t, nil
 }
@@ -198,18 +180,6 @@ func New(cfg Config) (*Reflex, error) {
 		return nil, err
 	}
 	return r, nil
-}
-
-type configError struct {
-	entry string
-	err   error
-}
-
-func (e *configError) Error() string {
-	if e.err != nil {
-		return "enforcement: invalid exempt range " + e.entry + ": " + e.err.Error()
-	}
-	return "enforcement: invalid exempt range " + e.entry
 }
 
 // Active reports whether this will ever block anything, which is what the
@@ -377,18 +347,13 @@ func (r *Reflex) Close() {
 }
 
 func (r *Reflex) isExempt(t *reflexTunables, ip string) bool {
-	parsed := net.ParseIP(ip)
-	if parsed == nil {
-		// An address that will not parse cannot be matched against a range
-		// either, so refusing to block it is the only safe answer.
+	// An address that will not parse cannot be matched against a range either,
+	// so refusing to block it is the only safe answer. NetworksContain says
+	// "not contained" for those, which for this caller means the opposite.
+	if net.ParseIP(ip) == nil {
 		return true
 	}
-	for _, network := range t.exempt {
-		if network.Contains(parsed) {
-			return true
-		}
-	}
-	return false
+	return netutil.NetworksContain(t.exempt, ip)
 }
 
 func sortStrings(s []string) {

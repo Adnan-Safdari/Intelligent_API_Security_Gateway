@@ -1806,3 +1806,12 @@ td select {
     display: none;
   }
 }
+
+/* A note attached to a control rather than to a whole card — used where a
+   toggle changes what another field means. */
+.settings-fields .field-note {
+  margin-top: -6px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
