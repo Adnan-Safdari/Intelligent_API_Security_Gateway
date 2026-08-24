@@ -44,8 +44,12 @@ make, and *writes* evidence it does not interpret.
 
 Reputation is the odd one out, and deliberately so. The other four are behavioural and
 windowed: they count requests, failures or pattern matches, and cannot say anything until
-the attacker has repeated themselves. Reputation is a standing fact about an address, so
-it is the only one that can answer on a first request. It pays for that by firing on a
+the attacker has repeated themselves -- a flood needs a hundred requests before it exists.
+Reputation is a standing fact about an address, so it is the only one that *knows* on the
+first request, and the only evidence the control plane can receive about an address that
+has done nothing yet. Enforcement still lands on the request after, because the reflex
+observes after the handler rather than deciding in front of it -- see
+`internal/enforcement/middleware.go`. It pays for its head start by firing on a
 cooldown -- a listed address is listed on *every* request, and raising a signal each time
 would drown the real attack in the event stream. Inside the cooldown it still scores; it
 just does not fire again.

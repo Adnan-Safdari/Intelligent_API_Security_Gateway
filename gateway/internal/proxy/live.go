@@ -74,23 +74,13 @@ func (s *Server) startSettingsWatcher(l live) *settings.Watcher {
 		return nil
 	}
 
-	boot := config.EnforcementConfig{
-		RateLimit:       s.config.RateLimit,
-		AttackDetection: s.config.AttackDetection,
-		BruteForce:      s.config.BruteForce,
-		Enumeration:     s.config.Enumeration,
-		Throttle:        s.config.Throttle,
-		Block:           s.config.Block,
-		Policy:          s.config.Policy,
-	}
-
 	w := settings.NewWatcher(settings.Config{
 		Addr:     s.config.Redis.Addr(),
 		Password: s.config.Redis.Password,
 		DB:       s.config.Redis.DB,
 		PoolSize: s.config.Redis.PoolSize,
 		Interval: s.config.Policy.RefreshInterval,
-	}, boot, l.apply)
+	}, s.config.Enforcement(), l.apply)
 
 	w.Start()
 	return w

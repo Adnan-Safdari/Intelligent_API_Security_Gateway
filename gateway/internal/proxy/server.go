@@ -221,6 +221,10 @@ func (s *Server) Start() error {
 		enforcer.Middleware,
 		RequestInspectionMiddleware,
 		observedDetectors(reflex, s.collector,
+			// First among the detectors because it is the cheapest -- one set
+			// lookup, no body, no window. Its position does not affect when a
+			// block lands: the reflex observes after the handler by design, so
+			// every gateway-side block takes effect on the next request.
 			reputationDetector.Middleware,
 			floodDetector.Middleware,
 			sqliDetector.Middleware,
@@ -373,5 +377,25 @@ func reputationSourceFrom(cfg config.IPReputationConfig) reputation.Source {
 		URL:             cfg.FeedURL,
 		RefreshInterval: cfg.RefreshInterval,
 		Timeout:         timeout,
+	}
+}
+
+// Enforcement reassembles the enforcement block from the flat fields the
+// server was built with.
+//
+// It exists so there is exactly one place that knows which sections make up
+// that block. Adding a section used to mean remembering three separate
+// literals -- main.go, this, and the settings wire -- and forgetting one left
+// the feature silently switched off with nothing to say so.
+func (c Config) Enforcement() config.EnforcementConfig {
+	return config.EnforcementConfig{
+		RateLimit:       c.RateLimit,
+		AttackDetection: c.AttackDetection,
+		BruteForce:      c.BruteForce,
+		Enumeration:     c.Enumeration,
+		IPReputation:    c.IPReputation,
+		Throttle:        c.Throttle,
+		Block:           c.Block,
+		Policy:          c.Policy,
 	}
 }
