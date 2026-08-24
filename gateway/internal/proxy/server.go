@@ -12,6 +12,7 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/enforcement"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/reputation"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 	redisstore "github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/storage/redis"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/telemetry"
@@ -60,6 +61,9 @@ type Config struct {
 
 	// Enumeration holds path-traversal and forced-browsing detection settings.
 	Enumeration config.EnumerationConfig
+
+	// IPReputation holds the known-bad address list and how loudly it answers.
+	IPReputation config.IPReputationConfig
 
 	// Policy controls enforcement of control-plane decisions.
 	Policy config.PolicyConfig
@@ -131,7 +135,27 @@ func (s *Server) Start() error {
 	bruteForceDetector := signals.NewBruteForceDetector(s.config.BruteForce)
 	traversalEnumDetector := signals.NewTraversalEnumDetector(s.config.Enumeration)
 
-	s.collector = signals.NewCollector(floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector)
+	// The reputation feed is loaded before the chain is built. A list that will
+	// not parse is a configuration error and stops the gateway, exactly as a
+	// bad exempt CIDR does -- a security control that silently loaded nothing
+	// looks identical to one where no attacker is listed.
+	reputationFeed, reputationSource := reputation.New(), reputationSourceFrom(s.config.IPReputation)
+	reputationLoader := reputation.NewLoader(reputationFeed)
+	if s.config.IPReputation.Enabled {
+		if err := reputationLoader.Load(reputationSource); err != nil {
+			return err
+		}
+		log.Printf("[reputation] %s", reputationFeed.Describe())
+
+		stopFeed := make(chan struct{})
+		defer close(stopFeed)
+		reputationLoader.Start(reputationSource, stopFeed)
+	}
+	reputationDetector := signals.NewReputationDetector(reputationFeed, s.config.IPReputation)
+
+	s.collector = signals.NewCollector(
+		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, reputationDetector,
+	)
 
 	var eventWriter telemetry.Writer
 	if s.config.Redis.Enabled {
@@ -168,13 +192,14 @@ func (s *Server) Start() error {
 	// back here. Only the enforcement block travels this way -- see the
 	// settings package for why the structural settings do not.
 	watcher := s.startSettingsWatcher(live{
-		flood:     floodDetector,
-		sqli:      sqliDetector,
-		brute:     bruteForceDetector,
-		traversal: traversalEnumDetector,
-		reflex:    reflex,
-		enforcer:  enforcer,
-		gate:      gate,
+		flood:      floodDetector,
+		sqli:       sqliDetector,
+		brute:      bruteForceDetector,
+		traversal:  traversalEnumDetector,
+		reputation: reputationDetector,
+		reflex:     reflex,
+		enforcer:   enforcer,
+		gate:       gate,
 	})
 	if watcher != nil {
 		defer watcher.Close()
@@ -196,6 +221,7 @@ func (s *Server) Start() error {
 		enforcer.Middleware,
 		RequestInspectionMiddleware,
 		observedDetectors(reflex, s.collector,
+			reputationDetector.Middleware,
 			floodDetector.Middleware,
 			sqliDetector.Middleware,
 			traversalEnumDetector.Middleware,
@@ -333,4 +359,19 @@ func (s *Server) newReflex() (*enforcement.Reflex, error) {
 		MinScore:    s.config.Block.MinScore,
 		ExemptCIDRs: s.config.Block.ExemptCIDRs,
 	})
+}
+
+// reputationSourceFrom turns config into a feed source, applying the defaults
+// for anything left unset.
+func reputationSourceFrom(cfg config.IPReputationConfig) reputation.Source {
+	timeout := cfg.FetchTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	return reputation.Source{
+		Path:            cfg.FeedPath,
+		URL:             cfg.FeedURL,
+		RefreshInterval: cfg.RefreshInterval,
+		Timeout:         timeout,
+	}
 }

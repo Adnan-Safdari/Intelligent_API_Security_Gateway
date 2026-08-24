@@ -27,7 +27,8 @@ make, and *writes* evidence it does not interpret.
 | `internal/proxy/` | Reverse proxy, middleware chain, server |
 | `internal/signals/` | The detectors, and the evidence they emit |
 | `internal/policy/` | Reads `policy:<ip>`, caches it, enforces the action |
-| `internal/netutil/` | Client IP resolution |
+| `internal/netutil/` | Client IP resolution, and shared CIDR parsing |
+| `internal/reputation/` | The known-bad list: loading, refreshing, lookup |
 | `internal/storage/redis/` | Stream and key access |
 | `internal/telemetry/` | Per-request records for the dashboard |
 
@@ -39,6 +40,15 @@ make, and *writes* evidence it does not interpret.
 | `api_flooding.go` | Request volume from one address |
 | `sqli_injection.go` | Injection patterns in path, decoded query values and body |
 | `enumeration_path_traversal.go` | Directory walking and resource enumeration |
+| `ip_reputation.go` | Addresses already known to be malicious |
+
+Reputation is the odd one out, and deliberately so. The other four are behavioural and
+windowed: they count requests, failures or pattern matches, and cannot say anything until
+the attacker has repeated themselves. Reputation is a standing fact about an address, so
+it is the only one that can answer on a first request. It pays for that by firing on a
+cooldown -- a listed address is listed on *every* request, and raising a signal each time
+would drown the real attack in the event stream. Inside the cooldown it still scores; it
+just does not fire again.
 
 Each one emits `Evidence` onto `iasg:events`. They score and report; they do not decide
 what to do about it. That is the control plane's job, and keeping it there is what lets

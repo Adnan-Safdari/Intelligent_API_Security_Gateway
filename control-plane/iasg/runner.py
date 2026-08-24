@@ -25,7 +25,7 @@ from iasg.feedback import overrides as human
 from iasg.feedback.memory import FeedbackMemory
 from iasg.feedback.overrides import OverrideChannel
 from iasg.models import ACTION_ESCALATE, ACTION_MONITOR, Campaign
-from iasg.policy.agent import PolicyAgent
+from iasg.policy.agent import PolicyAgent, reputation_bias
 from iasg.policy.simulation import Simulator
 from iasg.policy.writer import PolicyWriter
 from iasg.reasoning import open_provider
@@ -196,10 +196,23 @@ class Runner:
     def _respond(self, campaign, evidence, pending, result: CycleResult) -> None:
         """Decide, check the decision is safe, let a human overrule it, write."""
         # 4. decide -- rules only, no LLM anywhere near this
-        bias = self.feedback.bias_for(campaign.type)
+        learned_bias = self.feedback.bias_for(campaign.type)
+
+        # Two independent reasons to answer more firmly, added before the
+        # ladder clamps them: what humans keep correcting, and what someone
+        # else already knew about the address. _promote allows one rung in
+        # total, so these cannot compound.
+        known_bias = reputation_bias(campaign, evidence, self.policy)
+        bias = learned_bias + known_bias
+
         decisions = self.policy.decide(campaign, bias=bias)
-        if bias:
+        if learned_bias:
             result.learned.append(self.feedback.explain(campaign.type))
+        if known_bias:
+            result.notes.append(
+                f"[reputation] {campaign.campaign_id} includes an address on a "
+                f"reputation feed -- answering one rung firmer"
+            )
 
         # 4b. a person outranks the agent, and disagreeing with us is the only
         # thing here worth learning from.

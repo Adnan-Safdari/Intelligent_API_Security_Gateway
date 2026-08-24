@@ -85,6 +85,7 @@ type EnforcementConfig struct {
 	AttackDetection AttackDetectionConfig `yaml:"attack_detection"`
 	BruteForce      BruteForceConfig      `yaml:"brute_force"`
 	Enumeration     EnumerationConfig     `yaml:"enumeration_path_traversal"`
+	IPReputation    IPReputationConfig    `yaml:"ip_reputation"`
 	Throttle        ThrottleConfig        `yaml:"throttle"`
 	Block           BlockConfig           `yaml:"block"`
 	Policy          PolicyConfig          `yaml:"policy"`
@@ -115,6 +116,30 @@ type EnumerationConfig struct {
 	Enabled             bool     `yaml:"enabled"`
 	TraversalPatterns   []string `yaml:"traversal_patterns"`
 	EnumerationPatterns []string `yaml:"enumeration_patterns"`
+}
+
+// IPReputationConfig controls the one detector that knows something before the
+// attacker does anything. It lives under `enforcement` rather than the
+// top-level `signals` block for two reasons: that block is parsed and never
+// read by anything, and only `enforcement` travels through the settings
+// watcher, which is what makes this changeable from the console.
+type IPReputationConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	// Where the list comes from. Structural, like a listen address: read once
+	// at startup, not carried by a live settings change.
+	FeedPath        string        `yaml:"feed_path"`
+	FeedURL         string        `yaml:"feed_url"`
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
+	FetchTimeout    time.Duration `yaml:"fetch_timeout"`
+
+	// Score a listed address contributes. Defaults to the reflex's own
+	// min_score floor, so naming this in `block.signals` actually lets it act.
+	Score int `yaml:"score"`
+
+	// How long an address stays quiet after firing. A listed address is listed
+	// on every request; without this it would raise a signal on each one.
+	Cooldown time.Duration `yaml:"cooldown"`
 }
 
 type RateLimitConfig struct {
@@ -161,15 +186,11 @@ type BlockConfig struct {
 }
 
 type SignalsConfig struct {
-	IPReputation    IPReputationSignalConfig    `yaml:"ip_reputation"`
+	// ip_reputation used to be declared here and read by nothing. It now lives
+	// in EnforcementConfig, where it is implemented and live-tunable.
 	GeoLocation     GeoLocationSignalConfig     `yaml:"geo_location"`
 	PayloadAnalysis PayloadAnalysisSignalConfig `yaml:"payload_analysis"`
 	Behavioral      BehavioralSignalConfig      `yaml:"behavioral"`
-}
-
-type IPReputationSignalConfig struct {
-	Enabled       bool          `yaml:"enabled"`
-	CheckInterval time.Duration `yaml:"check_interval"`
 }
 
 type GeoLocationSignalConfig struct {

@@ -213,6 +213,8 @@ IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg --once
 `policy/writer.py` is the only code that can influence the gateway, so the guards live
 there together:
 
+- reputation can firm up an answer by one rung but never originate one: a campaign the
+  evidence itself would only monitor stays monitored, however well known the address is
 - never writes policy for loopback, private, link-local or reserved addresses
   (the RFC 5737 documentation ranges used by the seeder are explicitly allowed)
 - `monitor` writes nothing at all

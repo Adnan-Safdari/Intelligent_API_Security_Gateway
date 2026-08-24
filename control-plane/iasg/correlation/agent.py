@@ -15,6 +15,7 @@ from iasg.models import (
     DETECTOR_BRUTE_FORCE,
     DETECTOR_ENUMERATION,
     DETECTOR_FLOOD,
+    DETECTOR_REPUTATION,
     DETECTOR_SQLI,
     DETECTOR_TRAVERSAL,
     SEVERITY_HIGH,
@@ -196,6 +197,8 @@ class CorrelationAgent:
             return "SQL Injection Probing"
         if detector in (DETECTOR_TRAVERSAL, DETECTOR_ENUMERATION):
             return "Reconnaissance"
+        if detector == DETECTOR_REPUTATION:
+            return "Known Bad Address"
         return "Unclassified Activity"
 
     def _severity(self, members: list[IPProfile], confidence: float) -> str:
@@ -278,4 +281,13 @@ def _dominant_detector(members: list[IPProfile]) -> str:
             totals[detector] = totals.get(detector, 0) + count
     if not totals:
         return ""
+
+    # Reputation describes who an address is, not what it did, so it never
+    # out-votes a detector that actually watched behaviour -- otherwise a
+    # listed attacker running a brute force would produce a campaign named
+    # after the list it appears on. It can still name a campaign when it is
+    # genuinely all we have.
+    behavioural = {d: c for d, c in totals.items() if d != DETECTOR_REPUTATION}
+    if behavioural:
+        return max(behavioural, key=lambda k: behavioural[k])
     return max(totals, key=lambda k: totals[k])

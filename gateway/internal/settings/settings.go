@@ -41,6 +41,7 @@ type Wire struct {
 	AttackDetection AttackDetection `json:"attack_detection"`
 	BruteForce      BruteForce      `json:"brute_force"`
 	Enumeration     Enumeration     `json:"enumeration_path_traversal"`
+	IPReputation    IPReputation    `json:"ip_reputation"`
 	Throttle        Throttle        `json:"throttle"`
 	Block           Block           `json:"block"`
 	Policy          Policy          `json:"policy"`
@@ -63,6 +64,16 @@ type BruteForce struct {
 	MaxFailures int      `json:"max_failures"`
 	Window      string   `json:"window"`
 	LoginPaths  []string `json:"login_paths"`
+}
+
+// IPReputation carries only what may move at runtime. feed_path, feed_url and
+// refresh_interval are structural and deliberately absent: repointing a running
+// gateway at another list is not a settings tweak, and ToConfig keeps the boot
+// values for them.
+type IPReputation struct {
+	Enabled  bool   `json:"enabled"`
+	Score    int    `json:"score"`
+	Cooldown string `json:"cooldown"`
 }
 
 type Enumeration struct {
@@ -107,6 +118,11 @@ func FromConfig(c config.EnforcementConfig) Wire {
 			MaxFailures: c.BruteForce.MaxFailures,
 			Window:      durationString(c.BruteForce.Window),
 			LoginPaths:  c.BruteForce.LoginPaths,
+		},
+		IPReputation: IPReputation{
+			Enabled:  c.IPReputation.Enabled,
+			Score:    c.IPReputation.Score,
+			Cooldown: durationString(c.IPReputation.Cooldown),
 		},
 		Enumeration: Enumeration{
 			Enabled:             c.Enumeration.Enabled,
@@ -153,6 +169,14 @@ func (w Wire) ToConfig(base config.EnforcementConfig) (config.EnforcementConfig,
 	out.Enumeration.Enabled = w.Enumeration.Enabled
 	out.Enumeration.TraversalPatterns = w.Enumeration.TraversalPatterns
 	out.Enumeration.EnumerationPatterns = w.Enumeration.EnumerationPatterns
+
+	cooldown, err := parseDuration(w.IPReputation.Cooldown, "ip_reputation.cooldown")
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
+	out.IPReputation.Enabled = w.IPReputation.Enabled
+	out.IPReputation.Score = w.IPReputation.Score
+	out.IPReputation.Cooldown = cooldown
 
 	out.Throttle.Enabled = w.Throttle.Enabled
 	out.Throttle.DelayMS = w.Throttle.DelayMS

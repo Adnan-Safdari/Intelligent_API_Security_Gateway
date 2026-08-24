@@ -17,6 +17,7 @@ const SIGNALS = [
   { name: "brute_force", label: "Brute force" },
   { name: "sql_injection", label: "SQL injection" },
   { name: "path_traversal", label: "Path traversal" },
+  { name: "ip_reputation", label: "Known bad address" },
 ];
 
 export default function SettingsPage() {
@@ -285,6 +286,30 @@ export default function SettingsPage() {
             label="Enumeration paths"
             value={draft.enumeration_path_traversal.enumeration_patterns || []}
             onChange={(v) => edit("enumeration_path_traversal", "enumeration_patterns", v)}
+          />
+        </Card>
+
+        <Card
+          title="Known bad addresses"
+          note="The only detector that answers on a first request: it knows the address rather than watching what it does. The feed itself is set in config.yaml — what moves here is whether it counts and how loudly."
+        >
+          <Toggle
+            label="Detector on"
+            checked={draft.ip_reputation.enabled}
+            onChange={(v) => edit("ip_reputation", "enabled", v)}
+          />
+          <Num
+            label="Score a listed address carries"
+            value={draft.ip_reputation.score}
+            min={0}
+            max={100}
+            onChange={(v) => edit("ip_reputation", "score", v)}
+          />
+          <Text
+            label="Quiet period after firing"
+            value={draft.ip_reputation.cooldown}
+            onChange={(v) => edit("ip_reputation", "cooldown", v)}
+            hint='A listed address is listed on every request. This is how long it stays quiet after raising a signal, like "5m".'
           />
         </Card>
 

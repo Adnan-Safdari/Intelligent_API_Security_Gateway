@@ -101,6 +101,42 @@ enforcement:
       - "/.bash_history"
       - "/.ssh"
 
+
+  # Addresses already known to be malicious.
+  #
+  # Every other detector here is behavioural: it counts requests, failures or
+  # pattern matches, and needs the attacker to repeat themselves before it
+  # knows anything. This one answers on the first request, because being
+  # listed is a fact about the address rather than something it just did.
+  #
+  # It does NOT block on its own. Like every detector it emits evidence; to let
+  # it act, name `ip_reputation` in `block.signals` below.
+  ip_reputation:
+    enabled: true
+
+    # The bundled list. Ships almost empty on purpose -- see the file. Whatever
+    # `feed_url` returns is ADDED to this, never replaces it.
+    feed_path: configs/reputation.txt
+
+    # Optional live feed: a plain list of addresses or CIDRs, one per line.
+    # Left empty, the gateway makes no outbound requests at all.
+    #   Tor exits    https://check.torproject.org/torbulkexitlist
+    #   FireHOL L1   https://raw.githubusercontent.com/firehol/blocklists/master/firehol_level1.netset
+    feed_url: ""
+    refresh_interval: 1h
+    fetch_timeout: 10s
+
+    # What a listed address contributes. Defaults to the same value as
+    # `block.min_score`, so naming this in `block.signals` actually lets it
+    # act -- a lower score would make that entry look armed and do nothing.
+    score: 80
+
+    # A listed address is listed on every request it makes. Without a cooldown
+    # it would raise a fresh signal each time, which floods the event stream
+    # and makes every campaign it touches look like a "reputation" campaign.
+    # Inside the cooldown the address still scores; it just does not re-fire.
+    cooldown: 5m
+
   # Throttling
   throttle:
     enabled: true
@@ -156,10 +192,6 @@ enforcement:
     refresh_interval: 5s
 
 signals:
-  ip_reputation:
-    enabled: true
-    check_interval: 1h
-  
   geo_location:
     enabled: true
   
