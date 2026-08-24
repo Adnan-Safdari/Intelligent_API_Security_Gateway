@@ -72,8 +72,11 @@ func TestAListedAddressFiresOnItsFirstRequest(t *testing.T) {
 	if ev.Score != 80 {
 		t.Errorf("want score 80, got %d", ev.Score)
 	}
-	if ev.AttackType != AttackTypeKnownBad {
-		t.Errorf("want attack type %q, got %q", AttackTypeKnownBad, ev.AttackType)
+	// Deliberately the same as the signal name: summarize() only adds the
+	// attack type to `fired` when it differs, and a second chip reading
+	// "known bad address" next to "Known bad" tells a reader nothing.
+	if ev.AttackType != SignalReputation {
+		t.Errorf("want attack type %q, got %q", SignalReputation, ev.AttackType)
 	}
 }
 

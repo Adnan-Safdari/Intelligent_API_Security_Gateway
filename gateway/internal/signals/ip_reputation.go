@@ -33,10 +33,6 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/reputation"
 )
 
-// AttackTypeKnownBad labels evidence from an address that was already known,
-// as opposed to one this gateway worked out for itself.
-const AttackTypeKnownBad = "known_bad_address"
-
 // reputationTunables is what the console can move at runtime, swapped whole.
 //
 // The feed's *source* is deliberately not in here. Where the list comes from
@@ -158,7 +154,11 @@ func (d *ReputationDetector) Metrics(ip string) Evidence {
 
 	if seen && time.Since(last.at) < tun.cooldown {
 		ev.ThresholdCross = true
-		ev.AttackType = AttackTypeKnownBad
+		// Same as the signal name, which is how summarize() knows not to list
+		// it twice. This detector has one kind of finding: unlike brute force,
+		// where the attack type distinguishes spraying from classic guessing,
+		// there is nothing here the signal name does not already say.
+		ev.AttackType = SignalReputation
 	}
 	return ev
 }
@@ -179,7 +179,7 @@ func (d *ReputationDetector) MetricsFor(ip, requestID string) Evidence {
 
 	if seen && last.requestID == requestID {
 		ev.ThresholdCross = true
-		ev.AttackType = AttackTypeKnownBad
+		ev.AttackType = SignalReputation
 	}
 	return ev
 }
