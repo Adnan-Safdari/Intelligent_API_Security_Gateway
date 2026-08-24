@@ -25,16 +25,24 @@ Go gateway is one of them, not the whole system.
 | `internal/config/` | YAML schema, defaults, and validation |
 | `internal/proxy/` | Server, middleware chain, reverse proxy |
 | `internal/netutil/` | Client IP resolution and the trusted-proxy rules |
-| `internal/signals/` | The four detectors, evidence, collector, evidence store |
+| `internal/signals/` | The five detectors, evidence, collector, evidence store |
 | `internal/telemetry/` | Event shape, redaction, and the recording middleware |
-| `internal/policy/` | Policy snapshot store and the enforcing middleware |
+| `internal/policy/` | Policy snapshot store, the enforcing middleware, the rate limiter |
+| `internal/enforcement/` | The gateway's own reflex: block on a threshold cross |
+| `internal/reputation/` | The known-bad list: load, refresh, look up |
+| `internal/settings/` | Live reconfiguration over Redis, from the console |
 | `internal/storage/redis/` | Redis telemetry writer |
 | `configs/` | `config.yaml` and `config.yaml.example` |
 | `docs/` | This documentation |
 
-`internal/enforcement/` and `internal/trust/` exist but are empty. Enforcement
-lives in `internal/policy`; the trust-scoring weights in `config.yaml` are
-parsed but not yet consumed.
+Enforcement is split on purpose. `internal/policy` acts on decisions the
+control plane wrote and holds the per-address rate limiter;
+`internal/enforcement` is the gateway's own reflex, for a threshold cross too
+fast to wait a full agent cycle for.
+
+There is no trust-scoring package. `internal/trust/` and the `trust_engine`
+config block were both removed: the block was parsed into structs nothing read,
+so it advertised a component that did not exist.
 
 ## Tests
 
@@ -74,14 +82,15 @@ cd control-plane && python -m pytest
 │   │   └── requirements.txt
 │   ├── internal/
 │   │   ├── config/
+│   │   ├── enforcement/
 │   │   ├── netutil/
 │   │   ├── policy/
 │   │   ├── proxy/
+│   │   ├── reputation/
+│   │   ├── settings/
 │   │   ├── signals/
 │   │   ├── storage/redis/
-│   │   ├── telemetry/
-│   │   ├── enforcement/          # empty
-│   │   └── trust/                # empty
+│   │   └── telemetry/
 │   └── go.mod
 ├── control-plane/
 │   ├── iasg/
@@ -93,13 +102,11 @@ cd control-plane && python -m pytest
 │   └── tests/
 ├── gateway-dashboard/
 │   ├── app/
-│   │   ├── (console)/            # overview, campaigns, events, history, policy, users
+│   │   ├── (console)/            # overview, campaigns, events, history, ip, policy, settings
 │   │   ├── api/
 │   │   ├── ui/
-│   │   ├── login/  setup/
 │   │   └── globals.css
-│   ├── lib/                      # redis, postgres, auth, geo, telemetry
-│   └── scripts/reset-accounts.mjs
+│   └── lib/                      # redis, postgres, auth, geo, telemetry
 ├── vulnerable-app/
 │   └── backend/
 ├── testing/signals/

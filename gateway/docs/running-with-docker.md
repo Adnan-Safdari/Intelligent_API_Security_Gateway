@@ -39,12 +39,13 @@ override them; Compose reads it automatically.
 
 ## Schema and first run
 
-Nothing needs migrating. Every table is created with `CREATE TABLE IF NOT
-EXISTS` at startup — `campaigns` and `feedback` by the control plane, `users`
-and `sessions` by the dashboard. A fresh volume is a working system.
+Nothing needs migrating. `campaigns` and `feedback` are created with `CREATE
+TABLE IF NOT EXISTS` at startup by the control plane. A fresh volume is a
+working system.
 
-On a new database the dashboard has no accounts, so `/` redirects to `/setup`
-to create the first operator.
+The console has no accounts and no login. Whoever can reach port 5177 is
+treated as an operator, which is worth knowing before exposing it: that page
+can disable enforcement and clear the record. See `gateway-dashboard/lib/auth.js`.
 
 ## Port conflicts
 
@@ -124,8 +125,8 @@ docker compose -f infra/docker-compose.yml up -d --force-recreate control_plane
 docker compose -f infra/docker-compose.yml down -v
 ```
 
-`down -v` deletes the named volumes, which means campaigns, dashboard accounts,
-and backend data all go. The next `up` starts from an empty system.
+`down -v` deletes the named volumes, which means campaigns, agent feedback and
+backend data all go. The next `up` starts from an empty system.
 
 ## Code references
 

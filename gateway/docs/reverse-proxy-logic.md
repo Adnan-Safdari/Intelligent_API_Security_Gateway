@@ -69,7 +69,9 @@ It also restores the request body afterward so the reverse proxy can still forwa
 
 ## Attack Detection Layer
 
-The gateway currently has three detection middlewares in `internal/signals`:
+The gateway has five detection middlewares in `internal/signals`. None of them
+refuses a request -- that is the enforcer's job, acting on a decision made
+earlier -- so a false positive here costs a log line rather than a customer.
 
 ### API Flood Detection
 
@@ -83,7 +85,7 @@ Behavior:
 - keeps a one minute window
 - counts requests in that window
 - logs a flood alert if the count goes above the configured threshold
-- still allows the request through for now
+- records evidence and allows the request; refusing is the enforcer's job
 
 ### SQL Injection Detection
 
@@ -108,10 +110,40 @@ This watches configured login paths (default `/api/login`), forwards the request
 - `2xx` → reset the failure counter
 - threshold crossed → log SECURITY ALERT (still allows)
 - also classifies classic brute force vs password spraying
-- exposes `Metrics(ip)` for a future decision engine
+- exposes `Metrics(ip)`, which the collector and the reflex read
 - unit tests + `DEMO.md` + JMeter plan exist
 
 Config comes from `enforcement.brute_force` (`enabled`, `max_failures`, `window`, `login_paths`).
+
+### Path Traversal and Enumeration Detection
+
+File: `gateway/internal/signals/enumeration_path_traversal.go`
+
+Matches traversal signatures (`../`, `%2e%2e%2f` and the encoded variants) in
+the path and decoded query, and known-sensitive paths such as `/.env`, `/.git`
+and `/wp-admin`. Request-scoped: it describes one request, not a window.
+
+Config comes from `enforcement.enumeration_path_traversal`.
+
+### IP Reputation
+
+File: `gateway/internal/signals/ip_reputation.go`
+
+The other four ask what an address just did. This one asks who it is, against a
+list loaded from `configs/reputation.txt` plus an optional feed fetched on an
+interval. Being listed is a standing fact, so this is the only detector that
+knows something on a first request -- and the only source of evidence about an
+address that has not yet tripped anything.
+
+It fires on a **cooldown**, because a listed address is listed on every request
+it makes. Firing each time would write one `Evidence` per request, swamping the
+control plane's detector counts and the event stream both. Inside the cooldown
+the address still contributes its score; it simply does not fire again.
+
+Config comes from `enforcement.ip_reputation` (`enabled`, `feed_path`,
+`feed_url`, `refresh_interval`, `score`, `cooldown`). The list and refresh
+interval are structural; `enabled`, `score` and `cooldown` can be changed on a
+running gateway from the console.
 
 ## Configuration Folder
 
@@ -183,21 +215,33 @@ Because it was unused, the package has been removed.
 The gateway now does exactly this at runtime:
 
 1. Accept the request on port `8082`.
-2. Log basic request details.
-3. Print headers and body.
-4. Detect API flooding and print an alert.
-5. Detect SQL injection and print an alert.
-6. For login paths, detect brute force / password spraying after the backend responds, print an alert, and keep Metrics(ip) available.
-7. Forward the request to the backend API on `5002`.
+2. Resolve the real client IP, believing `X-Forwarded-For` only from a
+   configured trusted proxy.
+3. Assign a request ID and start the telemetry record.
+4. Consult policy: a `temp_block` or `escalate` decision answers `403` here,
+   and a throttled address over its rate answers `429`. Nothing below runs.
+5. Print headers and body.
+6. Run the five detectors, each filling in `Evidence`.
+7. Let the reflex observe what they found, after the response, and record a
+   block if a trusted detector crossed its threshold.
+8. Forward the request to the backend API on `5002`.
+9. Publish the telemetry record to `iasg:events`.
 
-It is currently a detect-and-log gateway, not a blocking gateway.
+So it detects *and* enforces, but only ever on a decision made earlier — by the
+control plane, or by the reflex on a previous request. Nothing in the request
+path waits on Redis, on the control plane, or on a model.
 
 ## If You Want To Extend It Later
 
-Good next steps would be:
+Genuinely open, in rough order of value:
 
-- make flood detection and SQLi detection configurable from YAML thresholds
-- add a gateway health endpoint
+- cap the request body: `internal/telemetry` and `internal/signals` both read it
+  with `io.ReadAll` and no limit, and the telemetry read happens *before* the
+  enforcer, so a blocked address's body is still buffered whole
+- add a gateway health endpoint — there is no mux, so every path proxies and
+  liveness cannot be checked without reaching the backend
 - convert alert logging into structured JSON logs
-- add request IDs to every middleware log line
-- add unit tests for the proxy middleware chain
+- export metrics, so throughput and latency are observable without reading
+  container logs
+- graceful shutdown: there is no `signal.Notify` or `Shutdown` call, so
+  `docker compose stop` drops in-flight requests

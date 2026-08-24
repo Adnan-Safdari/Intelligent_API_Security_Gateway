@@ -12,7 +12,7 @@ composed here.
 `proxy.NewServer` takes the loaded configuration. `Server.Start` then builds
 the runtime in this order:
 
-1. The four detectors, from `enforcement:` config
+1. The five detectors, from `enforcement:` config
 2. A `signals.Collector` over them
 3. The Redis telemetry writer, if `storage.redis.enabled` — a failure here is
    logged and telemetry is disabled, not fatal

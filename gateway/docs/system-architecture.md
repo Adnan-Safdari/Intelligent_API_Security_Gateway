@@ -109,4 +109,4 @@ to `enforcement.policy.refresh_interval` (5s by default) — far shorter than th
 | `internal/netutil/ip.go` | Client IP resolution |
 | `internal/telemetry/` | Event shape, redaction, recording middleware |
 | `internal/policy/` | Policy snapshot store and the enforcing middleware |
-| `internal/signals/` | The four detectors, evidence, and the collector |
+| `internal/signals/` | The five detectors, evidence, and the collector |

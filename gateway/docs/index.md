@@ -51,7 +51,7 @@ flowchart LR
     Logging --> Policy[Policy enforcement]
     Policy -->|refused| Client
     Policy --> Inspect[Request inspection]
-    Inspect --> Detectors[Four detectors]
+    Inspect --> Detectors[Five detectors]
     Detectors --> Proxy[Reverse proxy]
     Proxy --> Backend[Backend API]
     Backend --> Client
@@ -85,7 +85,7 @@ it happens again. See [Policy Enforcement](policy-enforcement.md).
 | --- | --- |
 | [System Architecture](system-architecture.md) | The runtime structure of both lanes |
 | [Request Lifecycle](request-lifecycle.md) | The middleware chain and why it is ordered as it is |
-| [Detection Signals](detection-signals.md) | The four detectors and the evidence they produce |
+| [Detection Signals](detection-signals.md) | The five detectors and the evidence they produce |
 | [Policy Enforcement](policy-enforcement.md) | How the gateway acts on the control plane's decisions |
 | [Control Plane](control-plane.md) | The agent cycle, campaigns, and the escalation ladder |
 | [Identifying the Client](client-ip.md) | Why the attributed IP is the foundation of everything else |
