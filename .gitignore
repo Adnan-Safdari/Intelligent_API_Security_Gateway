@@ -77,3 +77,6 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .pytest_cache/
+
+# Generated PDF build intermediates (tools/build-overview-pdf.sh)
+build/

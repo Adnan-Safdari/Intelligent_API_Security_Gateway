@@ -104,15 +104,15 @@ knows anything on a first request.
 ## What happens to an attack
 
 ```mermaid
-flowchart TD
-    O[1 Observe<br/>read evidence from the stream] --> C[2 Correlate<br/>union-find over shared traits]
-    C --> M[3 Remember<br/>merge with existing campaigns]
-    M --> D[4 Decide<br/>rules only, no LLM]
-    D --> S[5 Simulate<br/>who else would this hurt?]
-    S --> W[6 Write<br/>policy key with a TTL]
-    W --> X[7 Explain<br/>LLM writes the incident note]
-    X --> V[8 Review<br/>did acting on it work?]
-    V --> O
+flowchart LR
+    O["1 Observe<br/>read the stream"] --> C["2 Correlate<br/>union-find"]
+    C --> M["3 Remember<br/>merge campaigns"]
+    M --> D["4 Decide<br/>rules, no LLM"]
+    D --> S["5 Simulate<br/>who else is hurt?"]
+    S --> W["6 Write<br/>policy + TTL"]
+    W --> X["7 Explain<br/>LLM note"]
+    X --> V["8 Review<br/>did it work?"]
+    V -.->|next cycle| O
 ```
 
 Step 2 is the point of the project. Union-find clustering turns six separate
