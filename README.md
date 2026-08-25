@@ -4,6 +4,11 @@ An API gateway that detects attacks in the request path and decides what to do a
 out of it — a fast Go proxy that enforces, and a Python agent that watches, correlates and
 adapts.
 
+> **New to the project?** [`OVERVIEW.md`](OVERVIEW.md) explains the whole system in about
+> three pages with diagrams — what problem it solves, why it is split in two, and which
+> design decisions were deliberate. This file is the runbook: how to start it, drive a real
+> attack through it, and watch a policy appear.
+
 ## How it works
 
 Two lanes, deliberately separate.
