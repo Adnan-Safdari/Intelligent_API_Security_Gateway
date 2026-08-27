@@ -80,3 +80,4 @@ __pycache__/
 
 # Generated build intermediates
 build/
+.claude/settings.json
