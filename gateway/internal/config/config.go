@@ -26,6 +26,11 @@ type ServerConfig struct {
 	WriteTimeout time.Duration `yaml:"write_timeout"`
 	IdleTimeout  time.Duration `yaml:"idle_timeout"`
 
+	// MaxBodyBytes caps the request body the gateway will read. Unset falls
+	// back to the gateway's own default; it is deliberately not possible to
+	// disable, because everything downstream buffers what it is handed.
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
+
 	// TrustedProxies lists the CIDRs whose X-Forwarded-For header may be
 	// believed. Empty means trust nothing and always use the peer address,
 	// which is the safe default: anyone can set the header, so trusting it

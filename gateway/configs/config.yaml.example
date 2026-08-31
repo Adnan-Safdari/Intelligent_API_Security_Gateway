@@ -13,6 +13,11 @@ server:
   write_timeout: 30s
   idle_timeout: 120s
 
+  # Largest request body the gateway will read, in bytes. Every stage below the
+  # cap buffers the body, so this bounds what one request can make the gateway
+  # allocate. Omit for 1 MiB; it cannot be disabled.
+  max_body_bytes: 1048576
+
   # CIDRs whose X-Forwarded-For header is believed. Leave empty unless the
   # gateway sits behind a proxy you control.
   trusted_proxies: []

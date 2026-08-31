@@ -44,6 +44,7 @@ func main() {
 		ProxyTimeout:    cfg.Proxy.Timeout,
 		MaxIdleConns:    cfg.Proxy.MaxIdleConns,
 		MaxConnsPerHost: cfg.Proxy.MaxConnsPerHost,
+		MaxBodyBytes:    cfg.Server.MaxBodyBytes,
 		RateLimit:       cfg.Enforcement.RateLimit,
 		AttackDetection: cfg.Enforcement.AttackDetection,
 		BruteForce:      cfg.Enforcement.BruteForce,

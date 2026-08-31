@@ -135,6 +135,10 @@ func newRequestID() string {
 	return hex.EncodeToString(b[:])
 }
 
+// Unbounded on its own, and this runs above the enforcer -- so before
+// proxy.BodyLimitMiddleware existed, an address the control plane had already
+// blocked still had its whole body read here before the 403 was written. The
+// cap is what makes this safe; it must stay ahead of this middleware.
 func readBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil

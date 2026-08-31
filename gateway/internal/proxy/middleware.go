@@ -1,9 +1,7 @@
 package proxy
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net/http"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
@@ -36,27 +34,9 @@ func LoggingMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func RequestInspectionMiddleware(next http.Handler) http.Handler {
-
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		fmt.Println("Headers:")
-
-		for k, v := range r.Header {
-			fmt.Printf("%s: %v\n", k, v)
-		}
-
-		if r.Body != nil {
-
-			bodyBytes, err := io.ReadAll(r.Body)
-			if err == nil {
-
-				fmt.Println("Body:", string(bodyBytes))
-
-				r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-			}
-		}
-
-		next.ServeHTTP(w, r)
-	})
-}
+// RequestInspectionMiddleware is deliberately gone. It printed every header and
+// the raw request body to stdout for every request, which put passwords and
+// tokens in the logs -- the exact disclosure telemetry/redact.go exists to
+// prevent, undone one middleware later. It also read the body a second time
+// with no limit. Neither is worth keeping for a debug printer; use the recorded
+// event, which is redacted.

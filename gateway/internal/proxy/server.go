@@ -50,6 +50,11 @@ type Config struct {
 	// MaxConnsPerHost limits total connections per upstream host.
 	MaxConnsPerHost int
 
+	// MaxBodyBytes is the largest request body the gateway will read. Zero
+	// falls back to DefaultMaxBodyBytes; the cap cannot be turned off from
+	// config, because every stage below it buffers whatever it is handed.
+	MaxBodyBytes int64
+
 	// RateLimit holds the configuration for API flooding detection.
 	RateLimit config.RateLimitConfig
 
@@ -214,12 +219,26 @@ func (s *Server) Start() error {
 	// logged the peer address, then looked up detector state under that wrong
 	// IP -- so every event behind a proxy recorded fired:[] and the control
 	// plane never saw an attack.
+	// Zero means unset rather than unlimited. A gateway that reads whatever it
+	// is sent is the failure this guards, so the config may raise or lower the
+	// cap but may not remove it.
+	maxBody := s.config.MaxBodyBytes
+	if maxBody <= 0 {
+		maxBody = DefaultMaxBodyBytes
+	}
+
+	// The body cap is first, ahead of even the resolver: it is the only stage
+	// that does not need to know who the client is, and every stage after it
+	// reads the whole body into memory. Telemetry does so above the enforcer,
+	// so before this existed a blocked address still got its body buffered
+	// before receiving the 403 -- enforcement did not protect the one resource
+	// it could not recover.
 	handler := ChainMiddleware(
+		BodyLimitMiddleware(maxBody),
 		resolver.Middleware,
 		telemetry.Middleware(eventWriter, s.collector),
 		LoggingMiddleware,
 		enforcer.Middleware,
-		RequestInspectionMiddleware,
 		observedDetectors(reflex, s.collector,
 			// First among the detectors because it is the cheapest -- one set
 			// lookup, no body, no window. Its position does not affect when a
