@@ -29,11 +29,15 @@ func NewReverseProxy(cfg Config) http.Handler {
 	}
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
-	proxy.Transport = &http.Transport{
-		Proxy:           http.ProxyFromEnvironment,
-		MaxIdleConns:    maxIdleConns,
-		MaxConnsPerHost: maxConnsPerHost,
-		IdleConnTimeout: timeout,
+	// Wrapped so the recorded backend duration is the backend call itself
+	// rather than the whole middleware chain around it.
+	proxy.Transport = &timedTransport{
+		base: &http.Transport{
+			Proxy:           http.ProxyFromEnvironment,
+			MaxIdleConns:    maxIdleConns,
+			MaxConnsPerHost: maxConnsPerHost,
+			IdleConnTimeout: timeout,
+		},
 	}
 
 	originalDirector := proxy.Director

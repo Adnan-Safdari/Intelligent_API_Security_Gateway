@@ -78,6 +78,10 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table) func
 			r.Header.Set(signals.RequestIDHeader, requestID)
 			w.Header().Set(signals.RequestIDHeader, requestID)
 			r = policy.AttachOutcome(r)
+			// Attached before anything below it runs: the body cap, the policy
+			// enforcer and the transport all fill this in as the request
+			// travels, and it is read once after the chain returns.
+			r, upstream := AttachUpstream(r)
 			capture := &bodyCapture{}
 			if writer != nil {
 				r = r.WithContext(context.WithValue(r.Context(), bodyCaptureKey{}, capture))
@@ -96,6 +100,13 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table) func
 			}
 			if writer == nil {
 				return
+			}
+
+			// A policy refusal is already fully described by the decision, so
+			// it is mapped here rather than recorded by the enforcer. The
+			// body-cap refusals are not, which is why those set it themselves.
+			if upstream.GatewayReason == "" {
+				upstream.GatewayReason = gatewayReasonFor(policy.Applied(r))
 			}
 
 			ip := netutil.ClientIP(r)
@@ -132,7 +143,19 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table) func
 				Fired:         uniqueFired(snap.Fired),
 				Signals:       snap.Evidence,
 				Snippet:       capture.snippet,
-				BackendMS:     time.Since(started).Milliseconds(),
+
+				ResponseOrigin:    upstream.Origin(),
+				GatewayReason:     upstream.GatewayReason,
+				UpstreamAttempted: upstream.Attempted,
+				UpstreamOutcome:   upstream.Outcome,
+
+				UpstreamStatus:     optionalInt(upstream.Status, upstream.HaveStatus),
+				UpstreamDurationMS: optionalInt64(upstream.DurationMS, upstream.HaveDuration),
+				ResponseBodyBytes:  optionalInt64(upstream.ResponseBytes, upstream.HaveResponseBytes),
+				RequestBodyBytes:   optionalInt64(upstream.BodyBytes, upstream.BodyMeasured),
+
+				BackendMS: upstream.DurationMS,
+				GatewayMS: time.Since(started).Milliseconds(),
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
@@ -152,6 +175,7 @@ func CaptureBody(next http.Handler) http.Handler {
 		if capture, ok := r.Context().Value(bodyCaptureKey{}).(*bodyCapture); ok {
 			body, err := readBody(r)
 			if err != nil {
+				RecordGatewayAnswer(r, ReasonBodyUnreadable)
 				http.Error(w, "cannot read request body", http.StatusBadRequest)
 				return
 			}
