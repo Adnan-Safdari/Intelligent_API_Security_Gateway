@@ -22,6 +22,7 @@ class EvidenceConsumer:
         self._consumer = settings.consumer_name
         self._store.ensure_group(self._stream, self._group)
         self._recovered = False
+        self._read_ids: list[str] = []
 
     def fetch(self) -> list[Evidence]:
         """Return this cycle's evidence, oldest first."""
@@ -44,14 +45,36 @@ class EvidenceConsumer:
             )
         )
 
+        # Every entry read has to be acked, not just the ones that produced
+        # Evidence. The gateway writes one entry per request and most requests
+        # are clean, so from_stream_entry returns [] for the majority of them;
+        # acking only what became Evidence left every clean request pending
+        # forever, growing the PEL without bound and making read_pending replay
+        # the whole backlog on each restart.
+        self._read_ids.extend(eid for eid, _ in entries)
+
         out: list[Evidence] = []
         for eid, fields in entries:
             out.extend(Evidence.from_stream_entry(eid, fields))
         return out
 
-    def ack(self, evidence: list[Evidence]) -> int:
-        """Mark evidence as processed. Called only after a cycle succeeds."""
-        ids = list(dict.fromkeys(e.stream_id for e in evidence if e.stream_id))
+    def ack(self, evidence: list[Evidence] | None = None) -> int:
+        """Mark this cycle's entries as processed. Called only after a cycle succeeds.
+
+        `evidence` is still accepted so a caller can ack records it obtained
+        some other way, but it is no longer the source of truth: what this
+        consumer read is.
+        """
+        ids = list(self._read_ids)
+        if evidence:
+            ids.extend(e.stream_id for e in evidence if e.stream_id)
+
+        ids = list(dict.fromkeys(i for i in ids if i))
         if not ids:
             return 0
-        return self._store.ack(self._stream, self._group, *ids)
+
+        acked = self._store.ack(self._stream, self._group, *ids)
+        # Cleared only on success, so a store that raised is retried rather
+        # than silently forgotten.
+        self._read_ids.clear()
+        return acked

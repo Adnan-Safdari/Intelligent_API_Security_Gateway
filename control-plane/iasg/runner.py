@@ -160,9 +160,11 @@ class Runner:
 
         result.narration_skipped = getattr(self.provider, "skipped", 0)
 
-        # Ack last: everything above succeeded, so this evidence is truly done.
-        if evidence:
-            self.consumer.ack(evidence)
+        # Ack last: everything above succeeded, so this cycle is truly done.
+        # Unconditional, because a cycle that produced no evidence still read
+        # entries -- clean requests are the common case, and skipping the ack
+        # for them is what left them pending forever.
+        self.consumer.ack(evidence)
         return result
 
     def _beat(self, result: CycleResult) -> None:
