@@ -62,6 +62,8 @@ nav:
       - Detection Signals: detection-signals.md
       - Policy Enforcement: policy-enforcement.md
       - Control Plane: control-plane.md
+  - Anomaly Detection:
+      - Feature Specification: anomaly-features.md
   - Modules:
       - Proxy Module: modules/proxy-module.md
       - Signal Test Scripts: modules/signal-tests.md
