@@ -99,10 +99,10 @@ func TestDisabledEnforcerIgnoresPolicy(t *testing.T) {
 	}
 }
 
-func TestThrottleDelaysButForwards(t *testing.T) {
+func TestThrottleNeverSleeps(t *testing.T) {
 	e := NewEnforcer(fakeLookup{
 		"203.0.113.5": {Action: ActionThrottle},
-	}, true, 40*time.Millisecond)
+	}, true, time.Hour)
 
 	start := time.Now()
 	code, reached := run(t, e, "203.0.113.5")
@@ -111,8 +111,8 @@ func TestThrottleDelaysButForwards(t *testing.T) {
 	if code != http.StatusOK || !reached {
 		t.Fatalf("throttle must still forward, got %d reached=%v", code, reached)
 	}
-	if elapsed < 40*time.Millisecond {
-		t.Fatalf("throttle did not delay: %v", elapsed)
+	if elapsed > time.Second {
+		t.Fatalf("throttle delayed a request: %v", elapsed)
 	}
 }
 
@@ -180,16 +180,16 @@ func TestDecisionParsesControlPlaneJSON(t *testing.T) {
 	}
 }
 
-func TestLogLimiterAllowsOncePerInterval(t *testing.T) {
-	l := newLogLimiter(time.Minute)
-
-	if !l.allow("203.0.113.5") {
-		t.Fatal("first call should be allowed")
+func TestRetryAfterRoundsUpAndUsesRemainingLifetime(t *testing.T) {
+	e := NewEnforcer(nil, true, 0)
+	w := httptest.NewRecorder()
+	e.rateLimited(w, 1100*time.Millisecond)
+	if w.Header().Get("Retry-After") != "2" {
+		t.Fatal("fractional refill time was rounded down")
 	}
-	if l.allow("203.0.113.5") {
-		t.Fatal("second call within the interval should be suppressed")
-	}
-	if !l.allow("203.0.113.9") {
-		t.Fatal("a different IP should be allowed")
+	w = httptest.NewRecorder()
+	e.deny(w, Decision{ExpiresIn: 600, ExpiresAt: time.Now().Add(1500 * time.Millisecond)})
+	if w.Header().Get("Retry-After") != "2" {
+		t.Fatal("block advertised its original rather than remaining lifetime")
 	}
 }

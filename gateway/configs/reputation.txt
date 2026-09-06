@@ -1,0 +1,36 @@
+# Known-bad addresses.
+#
+# Format: one CIDR or bare address per line. Blank lines and anything after a
+# "#" are ignored. "address,reason" and "address<TAB>reason" are accepted too,
+# because that is how several public feeds ship. A line that will not parse
+# fails the whole file rather than being skipped -- a security list that is
+# quietly shorter than you think is worse than one that refuses to load.
+#
+# WHY THIS FILE SHIPS ALMOST EMPTY
+#
+# It would be easy to paste a few hundred real addresses here. It would also be
+# wrong. Address reputation goes stale in days: cloud and broadband ranges are
+# reassigned constantly, so a list checked in today accuses an innocent host
+# next month, and nothing in the repository would ever tell you. A stale
+# blocklist is not a weaker control, it is a wrong one.
+#
+# So this file carries only what is stable and safe to assert. For real data,
+# point `enforcement.ip_reputation.feed_url` at a feed that maintains itself:
+#
+#   Tor exit nodes   https://check.torproject.org/torbulkexitlist
+#   FireHOL level 1  https://raw.githubusercontent.com/firehol/blocklists/master/firehol_level1.netset
+#
+# Both are plain lists this parser reads as-is. Whatever is fetched is ADDED to
+# this file, never replaces it, so turning a feed on cannot drop these entries.
+
+# --- Demo -------------------------------------------------------------------
+#
+# One address from RFC 5737's documentation range, which can never belong to a
+# real host. It is here so the feature can be shown end to end:
+#
+#   curl -H "X-Forwarded-For: 203.0.113.66" http://localhost:8082/products
+#
+# A single /32, deliberately not the whole 203.0.113.0/24 -- the demos and test
+# scripts drive traffic from that range, and listing all of it would flag every
+# one of them as a known attacker.
+203.0.113.66            # demo: the address the walkthrough sends from

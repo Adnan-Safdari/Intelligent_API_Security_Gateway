@@ -8,6 +8,7 @@ const (
 	SignalSQLi       = "sql_injection"
 	SignalTraversal  = "enumeration_path_traversal"
 	SignalBruteForce = "brute_force"
+	SignalReputation = "ip_reputation"
 )
 
 // Evidence is the standardized output every detector exposes via Metrics(ip).
@@ -49,11 +50,17 @@ var (
 	_ Detector = (*SQLiDetector)(nil)
 	_ Detector = (*TraversalEnumDetector)(nil)
 	_ Detector = (*BruteForceDetector)(nil)
+	_ Detector = (*ReputationDetector)(nil)
 
 	// Windowed detectors (flood, brute force) are deliberately absent: their
 	// counts stay true whether or not this request reached them.
 	_ RequestScoped = (*SQLiDetector)(nil)
 	_ RequestScoped = (*TraversalEnumDetector)(nil)
+
+	// Reputation is request-scoped for a different reason than the other two:
+	// its verdict is the same on every request, but it only *fires* once per
+	// cooldown, and only the request that fired should report a cross.
+	_ RequestScoped = (*ReputationDetector)(nil)
 )
 
 const lastEvidenceTTL = 5 * time.Minute

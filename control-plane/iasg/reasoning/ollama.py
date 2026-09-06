@@ -12,15 +12,21 @@ import json
 import urllib.error
 import urllib.request
 
-TIMEOUT_SECONDS = 30
+DEFAULT_TIMEOUT_SECONDS = 15
 
 
 class OllamaProvider:
     name = "ollama"
 
-    def __init__(self, url: str, model: str) -> None:
+    def __init__(
+        self, url: str, model: str, timeout: int = DEFAULT_TIMEOUT_SECONDS
+    ) -> None:
         self._url = url.rstrip("/")
         self._model = model
+        # Narration runs inside the agent cycle. A model that stops answering
+        # must give up long before the cycle is due, or a hung request delays
+        # every policy the next cycle would have written.
+        self._timeout = timeout
 
     def generate(self, system: str, prompt: str) -> str:
         payload = json.dumps(
@@ -41,7 +47,7 @@ class OllamaProvider:
         )
 
         try:
-            with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+            with urllib.request.urlopen(request, timeout=self._timeout) as response:
                 body = json.loads(response.read())
             return str(body.get("response", "")).strip()
         except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as err:

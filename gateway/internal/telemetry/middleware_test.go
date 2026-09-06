@@ -1,8 +1,11 @@
 package telemetry
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -10,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
 
@@ -243,5 +247,106 @@ func TestWindowedDetectorsStillReportOnBlockedRequests(t *testing.T) {
 	}
 	if after[0].Int("requestRate") == 0 {
 		t.Fatalf("windowed counts should survive a block, got %+v", after[0].Details)
+	}
+}
+
+func TestPolicyTelemetryKeepsActionAndOutcomeSeparate(t *testing.T) {
+	for _, tc := range []struct {
+		name, action, outcome, decision string
+		status                          int
+	}{
+		{"within_quota", "throttle", "allowed", "throttle", http.StatusOK},
+		{"quota_exhausted", "throttle", "throttled", "rate_limited", http.StatusTooManyRequests},
+		{"blocked", "temp_block", "blocked", "temp_block", http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			writer := &captureWriter{}
+			match := policy.Match{
+				Action: tc.action, Source: "agent", ClientIP: "203.0.113.60",
+				Route: "/api/login", Method: http.MethodPost, RequestsPerMinute: 12,
+				Reason: "campaign exceeded login quota", Outcome: tc.outcome,
+			}
+			handler := Middleware(writer, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				policy.RecordMatch(r, match)
+				policy.Record(r, tc.decision)
+				w.WriteHeader(tc.status)
+			}))
+			send(t, handler, http.MethodPost, "/api/login", match.ClientIP, "")
+			ev := writer.last()
+			if ev.Policy == nil || *ev.Policy != match {
+				t.Fatalf("policy context lost: %+v", ev.Policy)
+			}
+			if ev.Decision != tc.decision || ev.Status != tc.status {
+				t.Fatalf("existing outcome fields changed: %+v", ev)
+			}
+			payload, err := json.Marshal(ev)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var document map[string]any
+			if err := json.Unmarshal(payload, &document); err != nil {
+				t.Fatal(err)
+			}
+			stored, ok := document["policy"].(map[string]any)
+			if !ok || stored["requests_per_minute"] != float64(12) || stored["source"] != "agent" {
+				t.Fatalf("stored policy schema lost limit/source: %s", payload)
+			}
+		})
+	}
+}
+
+func TestBodyCapturePreservesPayloadAndRedactsOnlyTheEvent(t *testing.T) {
+	const payload = `{"password":"never-store-this","user":"jay"}`
+	writer := &captureWriter{}
+	var backendBody string
+	handler := Middleware(writer, nil)(CaptureBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		backendBody = string(body)
+	})))
+	send(t, handler, http.MethodPost, "/api/login", "203.0.113.60", payload)
+	if backendBody != payload {
+		t.Fatalf("backend body changed to %q", backendBody)
+	}
+	if got := writer.last().Snippet; got != `{"password":"[redacted]","user":"jay"}` {
+		t.Fatalf("stored snippet = %q", got)
+	}
+}
+
+func TestNoRedisWriterStillAssignsRequestIDsAndLogsPolicyContext(t *testing.T) {
+	var output bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
+	defer slog.SetDefault(previous)
+	var requestIDs []string
+	handler := Middleware(nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestIDs = append(requestIDs, r.Header.Get(signals.RequestIDHeader))
+		policy.RecordMatch(r, policy.Match{
+			Action: "temp_block", Source: "agent", ClientIP: "203.0.113.60",
+			Route: "/api/login", Method: http.MethodPost, Reason: "active campaign", Outcome: "blocked",
+		})
+		policy.Record(r, "temp_block")
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/login", nil)
+		req.Header.Set(signals.RequestIDHeader, "attacker-chosen-id")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if id := rec.Header().Get(signals.RequestIDHeader); id == "" || id == "attacker-chosen-id" || id != requestIDs[i] {
+			t.Fatalf("request ID was absent, trusted client input, or differed: %q", id)
+		}
+	}
+	if requestIDs[0] == requestIDs[1] {
+		t.Fatal("requests share an ID without Redis, which could replay detector evidence")
+	}
+	var entry map[string]any
+	if err := json.NewDecoder(&output).Decode(&entry); err != nil {
+		t.Fatal(err)
+	}
+	if entry["msg"] != "policy_match" || entry["policy_source"] != "agent" || entry["status"] != float64(403) || entry["reason"] != "active campaign" {
+		t.Fatalf("structured policy fallback missing: %+v", entry)
 	}
 }

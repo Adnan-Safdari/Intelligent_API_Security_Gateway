@@ -25,7 +25,7 @@ from iasg.feedback import overrides as human
 from iasg.feedback.memory import FeedbackMemory
 from iasg.feedback.overrides import OverrideChannel
 from iasg.models import ACTION_ESCALATE, ACTION_MONITOR, Campaign
-from iasg.policy.agent import PolicyAgent
+from iasg.policy.agent import PolicyAgent, reputation_bias
 from iasg.policy.simulation import Simulator
 from iasg.policy.writer import PolicyWriter
 from iasg.reasoning import open_provider
@@ -51,6 +51,10 @@ class CycleResult:
     manual: list = None
     # What the agent has learned from past overrides and applied this cycle.
     learned: list[str] = None
+    # Narration calls the cycle refused because its budget was spent. Reported
+    # so a campaign reading as a bare template is explained rather than
+    # looking like the LLM silently broke.
+    narration_skipped: int = 0
 
     def __post_init__(self) -> None:
         if self.campaigns is None:
@@ -99,12 +103,20 @@ class Runner:
                 print(f"[postgres] restored {restored} records into Redis")
 
         self.writer = PolicyWriter(self.store, settings)
+        self.provider = provider
         self.explanation = ExplanationAgent(provider)
         self.assessment = AssessmentAgent(provider)
         self.alerts = AlertSink(self.store)
 
     def cycle(self) -> CycleResult:
         result = CycleResult()
+
+        # Narration is capped per cycle, not per call, so the allowance has to
+        # be restored before any campaign spends it. Providers without a
+        # budget -- NullProvider -- have nothing to reset.
+        begin = getattr(self.provider, "begin_cycle", None)
+        if begin:
+            begin()
 
         # Read before anything is decided, and applied whether or not there was
         # an attack this cycle: an admin blocking an address should not have to
@@ -146,6 +158,8 @@ class Runner:
 
         self._beat(result)
 
+        result.narration_skipped = getattr(self.provider, "skipped", 0)
+
         # Ack last: everything above succeeded, so this evidence is truly done.
         if evidence:
             self.consumer.ack(evidence)
@@ -182,10 +196,23 @@ class Runner:
     def _respond(self, campaign, evidence, pending, result: CycleResult) -> None:
         """Decide, check the decision is safe, let a human overrule it, write."""
         # 4. decide -- rules only, no LLM anywhere near this
-        bias = self.feedback.bias_for(campaign.type)
+        learned_bias = self.feedback.bias_for(campaign.type)
+
+        # Two independent reasons to answer more firmly, added before the
+        # ladder clamps them: what humans keep correcting, and what someone
+        # else already knew about the address. _promote allows one rung in
+        # total, so these cannot compound.
+        known_bias = reputation_bias(campaign, evidence, self.policy)
+        bias = learned_bias + known_bias
+
         decisions = self.policy.decide(campaign, bias=bias)
-        if bias:
+        if learned_bias:
             result.learned.append(self.feedback.explain(campaign.type))
+        if known_bias:
+            result.notes.append(
+                f"[reputation] {campaign.campaign_id} includes an address on a "
+                f"reputation feed -- answering one rung firmer"
+            )
 
         # 4b. a person outranks the agent, and disagreeing with us is the only
         # thing here worth learning from.
@@ -289,6 +316,11 @@ def report(result: CycleResult) -> None:
             print(f"[assess]      {c.assessment}")
 
     print(f"[policy]      wrote {result.policies_written} policy keys")
+    if result.narration_skipped:
+        print(
+            f"[llm]         narration budget spent -- "
+            f"{result.narration_skipped} call(s) fell back to templates"
+        )
     for note in result.notes:
         print(f"              {note}")
 

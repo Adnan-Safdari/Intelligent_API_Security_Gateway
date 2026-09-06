@@ -32,6 +32,13 @@ flowchart TD
 
 Three things about that order are deliberate:
 
+- **IP reputation is worth one rung, and only on a campaign that already
+  earned an action.** `reputation_bias` returns 0 when the evidence alone would
+  only monitor: being on a list makes an attack answerable more firmly, it does
+  not make ordinary traffic into an attack. A feed is the input most likely to
+  be stale, so it is the last thing trusted to originate enforcement. The ladder
+  clamps the total bias to a single rung, so this cannot compound with a learned
+  feedback bias.
 - **Decisions are made by rules, with no LLM anywhere near them.** The
   language model is used for narration only, and it runs *after* the decision
   already exists. A model that is unavailable, slow, or wrong cannot change
@@ -74,12 +81,19 @@ Actions escalate one rung at a time, and each rung carries its own lifetime:
 | Action | TTL | Effect at the gateway |
 | --- | --- | --- |
 | `monitor` | 300s | Never written — it would be a no-op key |
-| `throttle` | 900s | Delay each request |
+| `throttle` | 900s | Enforce the policy's `requests_per_minute` per IP, exact path, and method; return `429` with `Retry-After` when exhausted |
 | `temp_block` | 1800s | Refuse with 403 |
-| `escalate` | 3600s | Refuse with 403 and raise an alert for a human |
+| `escalate` | 3600s | Gateway returns `403`; Python separately records a human-review alert |
 
 Escalation is the one action that asks for a person, so it is raised after the
 explanation step — the alert then carries something readable.
+
+The alert is appended once per campaign to the existing `iasg_alerts` Redis
+stream; the gateway does not send a notification or call Python. Throttle
+policies retain the existing JSON fields, including `source` and
+`requests_per_minute`. Shared Redis token buckets enforce the rate across
+gateway replicas without sleeping, while policy lookup remains a local
+background-refreshed snapshot. Real Redis TTL controls expiry.
 
 Every rung expires by itself. See [Policy Enforcement](policy-enforcement.md)
 for why that is non-negotiable on both sides of the contract.
@@ -117,11 +131,31 @@ All settings come from the environment, via `Settings.from_env()`:
 | `IASG_DRY_RUN` | `false` | Decide everything, write nothing |
 | `IASG_ALLOWLIST` | empty | Comma-separated CIDRs that are never actioned |
 | `IASG_POSTGRES_URL` | unset | Enables durable campaigns |
-| `IASG_LLM_PROVIDER` | `null` | `null` or `ollama` |
-| `IASG_OLLAMA_URL` | `http://localhost:11434` | Narration model endpoint |
+| `IASG_LLM_PROVIDER` | `null` in code, **`ollama` under Compose** | `null` or `ollama` |
+| `IASG_OLLAMA_URL` | `http://localhost:11434` | Narration model endpoint. Compose points this at the *host* |
+| `IASG_OLLAMA_MODEL` | `llama3.2` | Model to generate with |
+| `IASG_OLLAMA_TIMEOUT_SECONDS` | `15` | Bound on one call |
+| `IASG_NARRATION_BUDGET_SECONDS` | `12` | Total wall clock one cycle may spend narrating |
 
-The default LLM provider is `null`, so the agent produces no narration and
-needs no model to run.
+### Narration degrades, it never blocks
+
+A bare `python -m iasg` defaults to `null`. That does **not** mean no output:
+the explanation agent falls back to a template and still produces a readable
+paragraph, while the assessment agent has no template and produces nothing at
+all. Turning a model on is what makes the second one exist.
+
+Compose sets `ollama` and points at the host rather than shipping a second copy
+of a 2GB model. Docker Desktop proxies `host.docker.internal` to the host
+loopback, so a model listening only on `127.0.0.1` is reachable; native Linux
+Docker routes to the bridge instead and needs `OLLAMA_HOST=0.0.0.0`.
+
+Narration is two model calls per campaign, inside the cycle, so its cost scales
+with how bad the hour is -- six campaigns is twelve calls, which at a few
+seconds each is longer than the interval the agent runs on. `BudgetedProvider`
+caps the total wall clock a cycle may spend and returns `""` once spent, which
+both agents already treat as "no model" and answer with their templates. A late
+decision is worse than an unnarrated one, and the cycle report says how many
+calls it skipped.
 
 ## One bad cycle must not end the agent
 

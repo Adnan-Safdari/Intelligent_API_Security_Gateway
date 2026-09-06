@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -26,6 +27,11 @@ type ServerConfig struct {
 	WriteTimeout time.Duration `yaml:"write_timeout"`
 	IdleTimeout  time.Duration `yaml:"idle_timeout"`
 
+	// MaxBodyBytes caps the request body the gateway will read. Unset falls
+	// back to the gateway's own default; it is deliberately not possible to
+	// disable, because everything downstream buffers what it is handed.
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
+
 	// TrustedProxies lists the CIDRs whose X-Forwarded-For header may be
 	// believed. Empty means trust nothing and always use the peer address,
 	// which is the safe default: anyone can set the header, so trusting it
@@ -46,15 +52,17 @@ type StorageConfig struct {
 }
 
 type RedisConfig struct {
-	Enabled      bool          `yaml:"enabled"`
-	Host         string        `yaml:"host"`
-	Port         int           `yaml:"port"`
-	Password     string        `yaml:"password"`
-	DB           int           `yaml:"db"`
-	PoolSize     int           `yaml:"pool_size"`
-	StreamKey    string        `yaml:"stream_key"`
-	StreamMaxLen int64         `yaml:"stream_maxlen"`
-	IPLatestTTL  time.Duration `yaml:"ip_latest_ttl"`
+	Enabled               bool          `yaml:"enabled"`
+	Host                  string        `yaml:"host"`
+	Port                  int           `yaml:"port"`
+	Password              string        `yaml:"password"`
+	DB                    int           `yaml:"db"`
+	PoolSize              int           `yaml:"pool_size"`
+	StreamKey             string        `yaml:"stream_key"`
+	StreamMaxLen          int64         `yaml:"stream_maxlen"`
+	IPLatestTTL           time.Duration `yaml:"ip_latest_ttl"`
+	TelemetryQueueSize    int           `yaml:"telemetry_queue_size"`
+	TelemetryWriteTimeout time.Duration `yaml:"telemetry_write_timeout"`
 }
 
 func (c RedisConfig) Addr() string {
@@ -81,13 +89,52 @@ type PostgresConfig struct {
 }
 
 type EnforcementConfig struct {
-	RateLimit       RateLimitConfig       `yaml:"rate_limit"`
-	AttackDetection AttackDetectionConfig `yaml:"attack_detection"`
-	BruteForce      BruteForceConfig      `yaml:"brute_force"`
-	Enumeration     EnumerationConfig     `yaml:"enumeration_path_traversal"`
-	Throttle        ThrottleConfig        `yaml:"throttle"`
-	Block           BlockConfig           `yaml:"block"`
-	Policy          PolicyConfig          `yaml:"policy"`
+	AdaptiveRateLimit AdaptiveRateLimitConfig `yaml:"adaptive_rate_limit"`
+	RateLimit         RateLimitConfig         `yaml:"rate_limit"`
+	AttackDetection   AttackDetectionConfig   `yaml:"attack_detection"`
+	BruteForce        BruteForceConfig        `yaml:"brute_force"`
+	Enumeration       EnumerationConfig       `yaml:"enumeration_path_traversal"`
+	IPReputation      IPReputationConfig      `yaml:"ip_reputation"`
+	Throttle          ThrottleConfig          `yaml:"throttle"`
+	Block             BlockConfig             `yaml:"block"`
+	Policy            PolicyConfig            `yaml:"policy"`
+}
+
+// AdaptiveRateLimitConfig is fixed at boot so replicas use the same quota
+// contract. Policy rates still change dynamically with the control plane.
+type AdaptiveRateLimitConfig struct {
+	FallbackRequestsPerMinute int           `yaml:"fallback_requests_per_minute"`
+	Burst                     int           `yaml:"burst"`
+	RedisTimeout              time.Duration `yaml:"redis_timeout"`
+	PolicyRefreshTimeout      time.Duration `yaml:"policy_refresh_timeout"`
+	FailureBackoff            time.Duration `yaml:"failure_backoff"`
+	CacheMaxAge               time.Duration `yaml:"cache_max_age"`
+	BucketKeyPrefix           string        `yaml:"bucket_key_prefix"`
+}
+
+func (c AdaptiveRateLimitConfig) WithDefaults() AdaptiveRateLimitConfig {
+	if c.FallbackRequestsPerMinute == 0 {
+		c.FallbackRequestsPerMinute = 60
+	}
+	if c.Burst == 0 {
+		c.Burst = 20
+	}
+	if c.RedisTimeout == 0 {
+		c.RedisTimeout = 25 * time.Millisecond
+	}
+	if c.PolicyRefreshTimeout == 0 {
+		c.PolicyRefreshTimeout = 2 * time.Second
+	}
+	if c.FailureBackoff == 0 {
+		c.FailureBackoff = time.Second
+	}
+	if c.CacheMaxAge == 0 {
+		c.CacheMaxAge = 10 * time.Second
+	}
+	if c.BucketKeyPrefix == "" {
+		c.BucketKeyPrefix = "iasg:rate:"
+	}
+	return c
 }
 
 // PolicyConfig controls whether the gateway acts on decisions written by the
@@ -115,6 +162,30 @@ type EnumerationConfig struct {
 	Enabled             bool     `yaml:"enabled"`
 	TraversalPatterns   []string `yaml:"traversal_patterns"`
 	EnumerationPatterns []string `yaml:"enumeration_patterns"`
+}
+
+// IPReputationConfig controls the one detector that knows something before the
+// attacker does anything. It lives under `enforcement` rather than the
+// top-level `signals` block for two reasons: that block is parsed and never
+// read by anything, and only `enforcement` travels through the settings
+// watcher, which is what makes this changeable from the console.
+type IPReputationConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	// Where the list comes from. Structural, like a listen address: read once
+	// at startup, not carried by a live settings change.
+	FeedPath        string        `yaml:"feed_path"`
+	FeedURL         string        `yaml:"feed_url"`
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
+	FetchTimeout    time.Duration `yaml:"fetch_timeout"`
+
+	// Score a listed address contributes. Defaults to the reflex's own
+	// min_score floor, so naming this in `block.signals` actually lets it act.
+	Score int `yaml:"score"`
+
+	// How long an address stays quiet after firing. A listed address is listed
+	// on every request; without this it would raise a signal on each one.
+	Cooldown time.Duration `yaml:"cooldown"`
 }
 
 type RateLimitConfig struct {
@@ -161,15 +232,11 @@ type BlockConfig struct {
 }
 
 type SignalsConfig struct {
-	IPReputation    IPReputationSignalConfig    `yaml:"ip_reputation"`
+	// ip_reputation used to be declared here and read by nothing. It now lives
+	// in EnforcementConfig, where it is implemented and live-tunable.
 	GeoLocation     GeoLocationSignalConfig     `yaml:"geo_location"`
 	PayloadAnalysis PayloadAnalysisSignalConfig `yaml:"payload_analysis"`
 	Behavioral      BehavioralSignalConfig      `yaml:"behavioral"`
-}
-
-type IPReputationSignalConfig struct {
-	Enabled       bool          `yaml:"enabled"`
-	CheckInterval time.Duration `yaml:"check_interval"`
 }
 
 type GeoLocationSignalConfig struct {
@@ -225,12 +292,35 @@ func Load(path string) (*Config, error) {
 	if cfg.Storage.Redis.PoolSize <= 0 {
 		cfg.Storage.Redis.PoolSize = 10
 	}
+	if cfg.Storage.Redis.TelemetryQueueSize == 0 {
+		cfg.Storage.Redis.TelemetryQueueSize = 1024
+	}
+	if cfg.Storage.Redis.TelemetryWriteTimeout == 0 {
+		cfg.Storage.Redis.TelemetryWriteTimeout = 100 * time.Millisecond
+	}
+	if cfg.Storage.Redis.TelemetryQueueSize < 0 || cfg.Storage.Redis.TelemetryWriteTimeout < 0 {
+		return nil, fmt.Errorf("Redis telemetry queue size and write timeout must be positive")
+	}
 	if cfg.Enforcement.Policy.KeyPrefix == "" {
 		cfg.Enforcement.Policy.KeyPrefix = "policy:"
 	}
 	if cfg.Enforcement.Policy.RefreshInterval <= 0 {
 		cfg.Enforcement.Policy.RefreshInterval = 5 * time.Second
 	}
+	a := cfg.Enforcement.AdaptiveRateLimit.WithDefaults()
+	if cfg.Enforcement.AdaptiveRateLimit.CacheMaxAge == 0 && a.CacheMaxAge < 2*cfg.Enforcement.Policy.RefreshInterval {
+		a.CacheMaxAge = 2 * cfg.Enforcement.Policy.RefreshInterval
+	}
+	if a.FallbackRequestsPerMinute < 1 || a.Burst < 1 || a.RedisTimeout < time.Millisecond || a.RedisTimeout > time.Second || a.FailureBackoff < time.Millisecond || a.CacheMaxAge < cfg.Enforcement.Policy.RefreshInterval {
+		return nil, fmt.Errorf("adaptive_rate_limit requires positive rates/backoff, redis_timeout between 1ms and 1s, and cache_max_age >= policy.refresh_interval")
+	}
+	if a.PolicyRefreshTimeout < a.RedisTimeout || a.PolicyRefreshTimeout > 30*time.Second {
+		return nil, fmt.Errorf("adaptive_rate_limit.policy_refresh_timeout must be >= redis_timeout and <= 30s")
+	}
+	if strings.HasPrefix(a.BucketKeyPrefix, cfg.Enforcement.Policy.KeyPrefix) || strings.HasPrefix(cfg.Enforcement.Policy.KeyPrefix, a.BucketKeyPrefix) {
+		return nil, fmt.Errorf("adaptive_rate_limit.bucket_key_prefix must not overlap policy.key_prefix")
+	}
+	cfg.Enforcement.AdaptiveRateLimit = a
 
 	return cfg, nil
 }

@@ -12,17 +12,20 @@ composed here.
 `proxy.NewServer` takes the loaded configuration. `Server.Start` then builds
 the runtime in this order:
 
-1. The four detectors, from `enforcement:` config
+1. The five detectors, from `enforcement:` config
 2. A `signals.Collector` over them
-3. The Redis telemetry writer, if `storage.redis.enabled` — a failure here is
-   logged and telemetry is disabled, not fatal
+3. The bounded background Redis telemetry publisher, if `storage.redis.enabled`;
+   Redis failure is non-fatal and publication reconnects after recovery
 4. The client-IP resolver, from `server.trusted_proxies`
-5. The policy enforcer, via `newEnforcer`
+5. The gateway reflex and policy enforcer, via `newEnforcer`
 6. The chain, via `ChainMiddleware`, wrapped around the reverse proxy
 
-`newEnforcer` is worth noting: when `enforcement.policy.enabled` is false it
-returns a pass-through and **no Redis client is created at all**. That is what
-keeps the gateway able to run with the control plane switched off.
+`enforcement.policy.enabled` controls whether control-plane policies are
+consulted; the gateway reflex and opt-in baseline are independent. Policy
+lookup uses a local snapshot. An applicable rate uses one bounded atomic Redis
+quota check per request and fails open on Redis errors. See
+[Policy enforcement](../policy-enforcement.md) for the action mapping and
+adaptive rate configuration.
 
 ## ChainMiddleware
 
@@ -32,11 +35,15 @@ handler := ChainMiddleware(
     telemetry.Middleware(eventWriter, s.collector),
     LoggingMiddleware,
     enforcer.Middleware,
-    RequestInspectionMiddleware,
-    floodDetector.Middleware,
-    sqliDetector.Middleware,
-    traversalEnumDetector.Middleware,
-    bruteForceDetector.Middleware,
+    BodyLimitMiddleware(maxBody),
+    telemetry.CaptureBody,
+    observedDetectors(reflex, s.collector,
+        reputationDetector.Middleware,
+        floodDetector.Middleware,
+        sqliDetector.Middleware,
+        traversalEnumDetector.Middleware,
+        bruteForceDetector.Middleware,
+    ),
 )(proxy)
 ```
 
@@ -51,14 +58,13 @@ The reasoning behind the ordering is in
 | Middleware | Behaviour |
 | --- | --- |
 | `LoggingMiddleware` | Prints method, path, resolved IP, and user agent to stdout |
-| `RequestInspectionMiddleware` | Prints all headers, and reads the body then restores it with `io.NopCloser` so the proxy can still forward it |
+| `BodyLimitMiddleware` | Caps request bodies before downstream buffering; runs after policy enforcement so refused bodies are not read |
+| `RequestInspectionMiddleware` | Legacy debug helper that prints headers and body; not installed in the live chain |
 
-!!! warning "Inspection prints request bodies"
-    `RequestInspectionMiddleware` writes the raw body to stdout, which means
-    credentials posted to a login endpoint appear in the gateway's logs in
-    plaintext. It is useful while demonstrating the system and should not be
-    left enabled anywhere real. Telemetry, by contrast, redacts what it stores
-    — see `internal/telemetry/redact.go`.
+The active chain uses `telemetry.CaptureBody` after the body cap. It restores
+the body for upstream forwarding and redacts the stored snippet through
+`internal/telemetry/redact.go`. Policy refusals are recorded by the outer
+telemetry middleware without buffering their bodies.
 
 ## Forwarding
 
@@ -78,7 +84,7 @@ that nothing called — it has been deleted. New detection work belongs in
 
 ```mermaid
 flowchart LR
-    Req[Request] --> Chain[ChainMiddleware<br/>nine middlewares]
+    Req[Request] --> Chain[ChainMiddleware]
     Chain --> RP[NewReverseProxy]
     RP -->|X-Gateway: IASG| Backend[proxy.backend_url]
     Backend --> Resp[Response unwinds back<br/>through the chain]

@@ -23,6 +23,48 @@ proxy:
   backend_url: "http://localhost:5002"
 `
 
+func TestAdaptiveSettingsAreBoundedAndPreserveOldConfigurations(t *testing.T) {
+	cfg, err := Load(write(t, minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := cfg.Enforcement.AdaptiveRateLimit
+	if a.FallbackRequestsPerMinute <= 0 || a.Burst <= 0 || a.RedisTimeout <= 0 || a.RedisTimeout > time.Second || a.CacheMaxAge < cfg.Enforcement.Policy.RefreshInterval {
+		t.Fatalf("unsafe defaults for old configuration: %+v", a)
+	}
+	cfg, err = Load(write(t, minimal+`
+enforcement:
+  policy:
+    refresh_interval: 20s
+  adaptive_rate_limit:
+    fallback_requests_per_minute: 17
+    burst: 3
+    redis_timeout: 40ms
+    policy_refresh_timeout: 3s
+    failure_backoff: 2s
+    bucket_key_prefix: "custom-rate:"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a = cfg.Enforcement.AdaptiveRateLimit
+	if a.FallbackRequestsPerMinute != 17 || a.Burst != 3 || a.RedisTimeout != 40*time.Millisecond || a.PolicyRefreshTimeout != 3*time.Second || a.FailureBackoff != 2*time.Second || a.CacheMaxAge < 20*time.Second || a.BucketKeyPrefix != "custom-rate:" {
+		t.Fatalf("custom settings lost: %+v", a)
+	}
+	for _, setting := range []string{
+		"fallback_requests_per_minute: -1", "burst: -1", "redis_timeout: 2s",
+		"redis_timeout: 1ns", "failure_backoff: -1s", "cache_max_age: 1s",
+		"policy_refresh_timeout: 10ms", "policy_refresh_timeout: 1m",
+		`bucket_key_prefix: "policy:rate:"`,
+	} {
+		t.Run(setting, func(t *testing.T) {
+			if _, err := Load(write(t, minimal+"\nenforcement:\n  adaptive_rate_limit:\n    "+setting+"\n")); err == nil {
+				t.Fatalf("unsafe adaptive configuration accepted: %s", setting)
+			}
+		})
+	}
+}
+
 func TestLoadMinimalConfig(t *testing.T) {
 	cfg, err := Load(write(t, minimal))
 	if err != nil {

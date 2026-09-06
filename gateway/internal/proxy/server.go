@@ -12,6 +12,7 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/enforcement"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/reputation"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 	redisstore "github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/storage/redis"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/telemetry"
@@ -49,8 +50,14 @@ type Config struct {
 	// MaxConnsPerHost limits total connections per upstream host.
 	MaxConnsPerHost int
 
+	// MaxBodyBytes is the largest request body the gateway will read. Zero
+	// falls back to DefaultMaxBodyBytes; the cap cannot be turned off from
+	// config, because every stage below it buffers whatever it is handed.
+	MaxBodyBytes int64
+
 	// RateLimit holds the configuration for API flooding detection.
-	RateLimit config.RateLimitConfig
+	RateLimit         config.RateLimitConfig
+	AdaptiveRateLimit config.AdaptiveRateLimitConfig
 
 	// AttackDetection holds SQL injection detection settings.
 	AttackDetection config.AttackDetectionConfig
@@ -61,6 +68,9 @@ type Config struct {
 	// Enumeration holds path-traversal and forced-browsing detection settings.
 	Enumeration config.EnumerationConfig
 
+	// IPReputation holds the known-bad address list and how loudly it answers.
+	IPReputation config.IPReputationConfig
+
 	// Policy controls enforcement of control-plane decisions.
 	Policy config.PolicyConfig
 
@@ -68,7 +78,7 @@ type Config struct {
 	// the decisions the control plane writes as policy keys.
 	Block config.BlockConfig
 
-	// Throttle sets the delay applied to throttled clients.
+	// Throttle carries legacy console settings; quota enforcement never sleeps.
 	Throttle config.ThrottleConfig
 
 	// Redis holds hot telemetry and the policy snapshot the control plane writes.
@@ -85,7 +95,8 @@ type Server struct {
 	config Config
 
 	// collector gathers Metrics() from every detector for a future decision engine.
-	collector *signals.Collector
+	collector   *signals.Collector
+	closePolicy func()
 }
 
 // NewServer creates and initializes a new proxy server instance with the provided configuration.
@@ -107,11 +118,11 @@ func NewServer(cfg Config) *Server {
 // and starts the HTTP server with configured timeouts.
 //
 // The middleware chain is applied in the following order (outermost first):
-//  1. Telemetry — records one Redis event after the rest of the chain returns
-//  2. Client-IP resolver — trusted-proxy X-Forwarded-For, then context IP
+//  1. Client-IP resolver — trusted-proxy X-Forwarded-For, then context IP
+//  2. Telemetry — records one Redis event after the rest of the chain returns
 //  3. Logging
 //  4. Policy enforcer — optional; blocked IPs never reach detectors
-//  5. Request inspection
+//  5. Body-size cap, then redacted telemetry body capture
 //  6. Reflex observer — optional; records gateway-side blocks after the
 //     flood / SQLi / traversal / brute force detectors and observes after
 //     they unwind, applying from the caller's next request
@@ -131,7 +142,27 @@ func (s *Server) Start() error {
 	bruteForceDetector := signals.NewBruteForceDetector(s.config.BruteForce)
 	traversalEnumDetector := signals.NewTraversalEnumDetector(s.config.Enumeration)
 
-	s.collector = signals.NewCollector(floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector)
+	// The reputation feed is loaded before the chain is built. A list that will
+	// not parse is a configuration error and stops the gateway, exactly as a
+	// bad exempt CIDR does -- a security control that silently loaded nothing
+	// looks identical to one where no attacker is listed.
+	reputationFeed, reputationSource := reputation.New(), reputationSourceFrom(s.config.IPReputation)
+	reputationLoader := reputation.NewLoader(reputationFeed)
+	if s.config.IPReputation.Enabled {
+		if err := reputationLoader.Load(reputationSource); err != nil {
+			return err
+		}
+		log.Printf("[reputation] %s", reputationFeed.Describe())
+
+		stopFeed := make(chan struct{})
+		defer close(stopFeed)
+		reputationLoader.Start(reputationSource, stopFeed)
+	}
+	reputationDetector := signals.NewReputationDetector(reputationFeed, s.config.IPReputation)
+
+	s.collector = signals.NewCollector(
+		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, reputationDetector,
+	)
 
 	var eventWriter telemetry.Writer
 	if s.config.Redis.Enabled {
@@ -139,7 +170,10 @@ func (s *Server) Start() error {
 		if err != nil {
 			log.Printf("Redis telemetry disabled: %v", err)
 		} else {
-			eventWriter = store
+			defer store.Close()
+			asyncWriter := telemetry.NewAsyncWriter(store, s.config.Redis.TelemetryQueueSize, s.config.Redis.TelemetryWriteTimeout)
+			defer asyncWriter.Close()
+			eventWriter = asyncWriter
 		}
 	}
 
@@ -162,19 +196,21 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
+	defer s.closePolicy()
 
 	// Live settings. The file is what the gateway boots with; the console can
 	// put an override on top of it, and deleting that override comes straight
 	// back here. Only the enforcement block travels this way -- see the
 	// settings package for why the structural settings do not.
 	watcher := s.startSettingsWatcher(live{
-		flood:     floodDetector,
-		sqli:      sqliDetector,
-		brute:     bruteForceDetector,
-		traversal: traversalEnumDetector,
-		reflex:    reflex,
-		enforcer:  enforcer,
-		gate:      gate,
+		flood:      floodDetector,
+		sqli:       sqliDetector,
+		brute:      bruteForceDetector,
+		traversal:  traversalEnumDetector,
+		reputation: reputationDetector,
+		reflex:     reflex,
+		enforcer:   enforcer,
+		gate:       gate,
 	})
 	if watcher != nil {
 		defer watcher.Close()
@@ -189,13 +225,29 @@ func (s *Server) Start() error {
 	// logged the peer address, then looked up detector state under that wrong
 	// IP -- so every event behind a proxy recorded fired:[] and the control
 	// plane never saw an attack.
+	// Zero means unset rather than unlimited. A gateway that reads whatever it
+	// is sent is the failure this guards, so the config may raise or lower the
+	// cap but may not remove it.
+	maxBody := s.config.MaxBodyBytes
+	if maxBody <= 0 {
+		maxBody = DefaultMaxBodyBytes
+	}
+
+	// Refusals are recorded without reading a body. Accepted traffic is capped
+	// before the telemetry snippet or any detector buffers client input.
 	handler := ChainMiddleware(
 		resolver.Middleware,
 		telemetry.Middleware(eventWriter, s.collector),
 		LoggingMiddleware,
 		enforcer.Middleware,
-		RequestInspectionMiddleware,
+		BodyLimitMiddleware(maxBody),
+		telemetry.CaptureBody,
 		observedDetectors(reflex, s.collector,
+			// First among the detectors because it is the cheapest -- one set
+			// lookup, no body, no window. Its position does not affect when a
+			// block lands: the reflex observes after the handler by design, so
+			// every gateway-side block takes effect on the next request.
+			reputationDetector.Middleware,
 			floodDetector.Middleware,
 			sqliDetector.Middleware,
 			traversalEnumDetector.Middleware,
@@ -228,11 +280,6 @@ func observedDetectors(reflex *enforcement.Reflex, collector enforcement.Observe
 	return ChainMiddleware(middlewares...)
 }
 
-// newEnforcer builds the policy enforcement middleware.
-//
-// When enforcement is disabled, no Redis client is created at all and the
-// middleware becomes a pass-through. That is the default, and it is what keeps
-// the gateway able to run with the control plane switched off entirely.
 // newEnforcer builds the enforcement middleware and the gate that switches the
 // control plane's decisions on and off.
 //
@@ -246,34 +293,42 @@ func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *pol
 	// documents why that order and not the other one.
 	var sources policy.Chain
 	var gate *policy.Gate
+	a := s.config.AdaptiveRateLimit.WithDefaults()
+	var quota policy.QuotaLimiter
+	s.closePolicy = func() {}
 
 	if s.config.Redis.Enabled {
-		store := policy.NewStore(policy.Config{
+		cfg := policy.Config{
 			Addr:            s.config.Redis.Addr(),
 			Password:        s.config.Redis.Password,
 			DB:              s.config.Redis.DB,
 			PoolSize:        s.config.Redis.PoolSize,
 			KeyPrefix:       s.config.Policy.KeyPrefix,
 			RefreshInterval: s.config.Policy.RefreshInterval,
-		})
+			RedisTimeout:    a.RedisTimeout,
+			RefreshTimeout:  a.PolicyRefreshTimeout,
+			FailureBackoff:  a.FailureBackoff,
+			CacheMaxAge:     a.CacheMaxAge,
+			BucketPrefix:    a.BucketKeyPrefix,
+		}
+		store := policy.NewStore(cfg)
 		store.Start()
+		limiter := policy.NewRedisLimiter(cfg)
+		quota = limiter
+		s.closePolicy = func() { _ = store.Close(); _ = limiter.Close() }
 		gate = policy.NewGate(store, s.config.Policy.Enabled)
 		sources = append(sources, gate)
 	}
 
 	sources = append(sources, reflex)
 
-	// Holds throttled addresses to the rate their policy names. Swept in the
-	// background so addresses whose policy has expired do not stay in memory.
-	limiter := policy.NewLimiter()
-	limiter.Start()
-
 	enforcer := policy.NewEnforcer(
 		sources, s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle),
-	).WithLimiter(limiter)
+	).WithQuotaLimiter(quota, a.FallbackRequestsPerMinute, a.Burst)
 
 	baseline, err := baselineFrom(s.config.RateLimit, s.config.Block)
 	if err != nil {
+		s.closePolicy()
 		return nil, nil, err
 	}
 	enforcer.ApplyAll(s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle), baseline)
@@ -308,8 +363,8 @@ func baselineFrom(rl config.RateLimitConfig, block config.BlockConfig) (policy.B
 	return policy.Baseline{RequestsPerMinute: rl.RequestsPerMinute, Exempt: exempt}, nil
 }
 
-// throttleDelay is the pause applied to a throttled caller, or zero when
-// throttling is off.
+// Preserve the settings wire's legacy duration argument for API compatibility.
+// The enforcer ignores it; adaptive quota admission is always immediate.
 func throttleDelay(cfg config.ThrottleConfig) time.Duration {
 	if !cfg.Enabled {
 		return 0
@@ -333,4 +388,40 @@ func (s *Server) newReflex() (*enforcement.Reflex, error) {
 		MinScore:    s.config.Block.MinScore,
 		ExemptCIDRs: s.config.Block.ExemptCIDRs,
 	})
+}
+
+// reputationSourceFrom turns config into a feed source, applying the defaults
+// for anything left unset.
+func reputationSourceFrom(cfg config.IPReputationConfig) reputation.Source {
+	timeout := cfg.FetchTimeout
+	if timeout <= 0 {
+		timeout = 10 * time.Second
+	}
+	return reputation.Source{
+		Path:            cfg.FeedPath,
+		URL:             cfg.FeedURL,
+		RefreshInterval: cfg.RefreshInterval,
+		Timeout:         timeout,
+	}
+}
+
+// Enforcement reassembles the enforcement block from the flat fields the
+// server was built with.
+//
+// It exists so there is exactly one place that knows which sections make up
+// that block. Adding a section used to mean remembering three separate
+// literals -- main.go, this, and the settings wire -- and forgetting one left
+// the feature silently switched off with nothing to say so.
+func (c Config) Enforcement() config.EnforcementConfig {
+	return config.EnforcementConfig{
+		AdaptiveRateLimit: c.AdaptiveRateLimit,
+		RateLimit:         c.RateLimit,
+		AttackDetection:   c.AttackDetection,
+		BruteForce:        c.BruteForce,
+		Enumeration:       c.Enumeration,
+		IPReputation:      c.IPReputation,
+		Throttle:          c.Throttle,
+		Block:             c.Block,
+		Policy:            c.Policy,
+	}
 }

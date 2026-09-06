@@ -89,24 +89,6 @@ func TestChainStopsAtShortCircuit(t *testing.T) {
 	}
 }
 
-func TestRequestInspectionRestoresBody(t *testing.T) {
-	const payload = `{"user":"pranav"}`
-
-	var seen string
-	handler := RequestInspectionMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		buf := make([]byte, len(payload))
-		n, _ := r.Body.Read(buf)
-		seen = string(buf[:n])
-	}))
-
-	req := httptest.NewRequest(http.MethodPost, "/api/x", strings.NewReader(payload))
-	handler.ServeHTTP(httptest.NewRecorder(), req)
-
-	if seen != payload {
-		t.Fatalf("handler saw %q, want the original body %q", seen, payload)
-	}
-}
-
 // Brute force can only be recorded after the backend replies. The observer
 // must therefore wrap the detector: on the return path the detector records
 // the 401 before the observer takes its snapshot and arms the reflex.

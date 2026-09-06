@@ -2,7 +2,7 @@
 
 ## Overview
 
-A request crosses nine middlewares on the way in and unwinds back through them
+A request crosses the middleware chain on the way in and unwinds back through it
 on the way out. The order is not incidental — three of the positions were
 chosen to fix specific bugs, and moving them would reintroduce those bugs.
 
@@ -15,7 +15,8 @@ sequenceDiagram
     participant T as Telemetry
     participant L as Logging
     participant P as Policy enforcer
-    participant I as Inspection
+    participant Q as Redis quota
+    participant I as Body cap and snippet capture
     participant D as Detectors
     participant RP as Reverse proxy
     participant B as Backend
@@ -25,18 +26,25 @@ sequenceDiagram
     R->>T: Pass down with the IP on the context
     T->>L: (records on the way out, not here)
     L->>P: Log method, path, IP
-    alt An active policy refuses this IP
-        P-->>C: 429 or 403
-    else Allowed
+    P->>P: Read local policy/reflex snapshot and expiry
+    opt A throttle policy or baseline rate applies
+        P->>Q: Bounded atomic token-bucket check
+        Q-->>P: Admit, deny with retry interval, or fail open on error
+    end
+    alt Policy refuses this request
+        P-->>T: 429 or 403, without reading the body
+    else Admitted
         P->>I: Continue
-        I->>D: Print headers and body
-        D->>D: Flood, SQLi, traversal, brute force
+        I->>D: Cap body size, capture redacted snippet
+        D->>D: Reputation, flood, SQLi, traversal, brute force
         D->>RP: Evidence recorded per detector
         RP->>B: Forward with X-Gateway: IASG
         B-->>RP: Response
+        RP-->>D: Response-aware detectors update evidence
+        D->>D: Reflex observes after detector completion
+        D-->>T: Unwind through middleware
     end
-    RP-->>T: Unwinding
-    T->>T: Write the event to iasg:events
+    T->>T: Enqueue event for background Redis publication
     T-->>C: Response
 ```
 
@@ -56,15 +64,21 @@ context, so everything downstream reads the same value.
 Telemetry has to be outermost-but-one for two different reasons pulling in
 opposite directions:
 
-- **Outside the detectors and the enforcer**, so that by the time it records,
-  the detectors have run and the enforcer's decision is known. A refused
-  request is still written to `iasg:events` — a 403 is a fact worth recording.
+- **Outside the detectors and the enforcer**, so the enforcer's decision and
+  any detector evidence are available when it records. A refused request is
+  still enqueued for `iasg:events` with its policy outcome.
 - **Inside the resolver**, so it reads the resolved IP.
 
 That second point was a real defect. When telemetry wrapped the resolver
 instead, it held the pre-resolution request, recorded the peer address, and
 then looked up detector state under that wrong IP. Behind a proxy, every event
 recorded `fired: []` and the control plane never saw an attack at all.
+
+This outer telemetry stage does not read the body. After policy admission,
+`BodyLimitMiddleware` caps it and `telemetry.CaptureBody` captures a redacted
+snippet. A block or exhausted quota therefore returns before expensive body
+buffering and inspection. The bounded publisher queue never waits for Redis
+on the request path; it drops events when full and reconnects after outages.
 
 ### Detectors sit inside the enforcer
 
@@ -84,8 +98,8 @@ gateway manufacture fresh-looking evidence for it.
 
 ## What gets recorded
 
-`telemetry.Middleware` writes one JSON event per request to the `iasg:events`
-Redis stream:
+`telemetry.Middleware` builds one JSON event per request and enqueues it for
+background publication to the `iasg:events` Redis stream:
 
 | Field | Meaning |
 | --- | --- |
@@ -95,7 +109,8 @@ Redis stream:
 | `method`, `path`, `query` | What was asked for |
 | `status` | Final response status |
 | `userAgent` | As sent |
-| `decision` | `allow`, `throttle`, `temp_block`, or `escalate` |
+| `decision` | Applied decision, including `allow`, `monitor`, `throttle`, `rate_limited`, `block`, `temp_block`, or `escalate` |
+| `policy` | Optional structured match: action, source, client IP, route, method, RPM, reason, and outcome |
 | `riskScore` | Summarised from the evidence |
 | `fired` | Names of the detectors that fired |
 | `signals` | The evidence itself |
@@ -104,6 +119,15 @@ Redis stream:
 
 `internal/telemetry/redact.go` scrubs the snippet before it is stored, so
 credentials seen in a request body do not end up in the stream.
+
+Policy lookup is local, with absolute expiry derived from Redis `PTTL`. Only
+an applicable quota calls Redis synchronously: Lua shares token-bucket state
+per client IP, exact URL path, and HTTP method across replicas, with a short
+timeout and fail-open errors. Exhaustion returns `429` and `Retry-After`
+without sleeping. Blocks return `403`. The gateway never calls Python,
+PostgreSQL, or a model on this path. See
+[Policy enforcement](policy-enforcement.md) for the schema, action mapping,
+configuration, and verification commands.
 
 ## Code references
 

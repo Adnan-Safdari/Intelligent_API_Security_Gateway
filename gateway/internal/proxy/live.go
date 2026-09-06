@@ -14,13 +14,14 @@ import (
 // without rebuilding it. Each of these holds its tunables behind an atomic, so
 // applying new settings is a pointer swap and never interrupts a request.
 type live struct {
-	flood     *signals.FloodDetector
-	sqli      *signals.SQLiDetector
-	brute     *signals.BruteForceDetector
-	traversal *signals.TraversalEnumDetector
-	reflex    *enforcement.Reflex
-	enforcer  *policy.Enforcer
-	gate      *policy.Gate
+	flood      *signals.FloodDetector
+	sqli       *signals.SQLiDetector
+	brute      *signals.BruteForceDetector
+	traversal  *signals.TraversalEnumDetector
+	reputation *signals.ReputationDetector
+	reflex     *enforcement.Reflex
+	enforcer   *policy.Enforcer
+	gate       *policy.Gate
 }
 
 // apply moves the whole chain to a new enforcement config.
@@ -49,6 +50,10 @@ func (l live) apply(cfg config.EnforcementConfig) error {
 	l.sqli.Apply(cfg.AttackDetection)
 	l.brute.Apply(cfg.BruteForce)
 	l.traversal.Apply(cfg.Enumeration)
+	// Only the tunables move here. Where the list comes from is structural, so
+	// a pushed settings change can turn reputation on, adjust what it scores
+	// and how often it fires -- but never repoint it at another feed.
+	l.reputation.Apply(cfg.IPReputation)
 
 	l.gate.Set(cfg.Policy.Enabled)
 
@@ -69,23 +74,13 @@ func (s *Server) startSettingsWatcher(l live) *settings.Watcher {
 		return nil
 	}
 
-	boot := config.EnforcementConfig{
-		RateLimit:       s.config.RateLimit,
-		AttackDetection: s.config.AttackDetection,
-		BruteForce:      s.config.BruteForce,
-		Enumeration:     s.config.Enumeration,
-		Throttle:        s.config.Throttle,
-		Block:           s.config.Block,
-		Policy:          s.config.Policy,
-	}
-
 	w := settings.NewWatcher(settings.Config{
 		Addr:     s.config.Redis.Addr(),
 		Password: s.config.Redis.Password,
 		DB:       s.config.Redis.DB,
 		PoolSize: s.config.Redis.PoolSize,
 		Interval: s.config.Policy.RefreshInterval,
-	}, boot, l.apply)
+	}, s.config.Enforcement(), l.apply)
 
 	w.Start()
 	return w

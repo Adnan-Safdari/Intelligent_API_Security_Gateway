@@ -68,6 +68,6 @@ GATEWAY_URL=http://localhost:8082 bash testing/signals/run_all.sh
 
 ## What these scripts cannot check
 
-`Metrics(ip)` is an in-process Go method used by the future decision engine. HTTP scripts cannot read `Evidence` structs. They only prove the live middleware still **forwards** attack traffic.
+`Metrics(ip)` is an in-process Go method, read by the collector and the reflex. HTTP scripts cannot read `Evidence` structs. They only prove the live middleware still **forwards** attack traffic.
 
 JMeter plans stay in `testing/jmeter/` for heavier demo runs.

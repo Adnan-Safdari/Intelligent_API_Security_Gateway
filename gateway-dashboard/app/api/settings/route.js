@@ -34,6 +34,7 @@ const SECTIONS = [
   "attack_detection",
   "brute_force",
   "enumeration_path_traversal",
+  "ip_reputation",
   "throttle",
   "block",
   "policy",
@@ -47,6 +48,7 @@ const KNOWN_SIGNALS = [
   "sql_injection",
   "path_traversal",
   "enumeration_path_traversal",
+  "ip_reputation",
 ];
 
 export async function GET() {
@@ -188,6 +190,19 @@ function validate(s) {
   const minScore = s.block?.min_score;
   if (minScore !== undefined && (!Number.isInteger(minScore) || minScore < 0 || minScore > 100)) {
     return "block.min_score must be a whole number between 0 and 100";
+  }
+
+  const reputationScore = s.ip_reputation?.score;
+  if (
+    reputationScore !== undefined &&
+    (!Number.isInteger(reputationScore) || reputationScore < 0 || reputationScore > 100)
+  ) {
+    return "ip_reputation.score must be a whole number between 0 and 100";
+  }
+
+  const cooldown = s.ip_reputation?.cooldown;
+  if (cooldown !== undefined && !isDuration(cooldown)) {
+    return `ip_reputation.cooldown: ${JSON.stringify(cooldown)} is not a duration like "5m"`;
   }
 
   const delay = s.throttle?.delay_ms;

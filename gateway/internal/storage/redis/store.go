@@ -19,8 +19,8 @@ const (
 	keyIPLatest  = "iasg:ip:%s:latest"
 )
 
-// Store writes hot security telemetry to Redis.
-// It is safe to call from request middleware: failures are logged, not returned to clients.
+// Store writes hot security telemetry to Redis. The proxy wraps it in a bounded
+// asynchronous writer so a Redis outage cannot hold client responses open.
 type Store struct {
 	client      *redis.Client
 	streamKey   string
@@ -33,29 +33,32 @@ func New(cfg config.RedisConfig) (*Store, error) {
 		return nil, nil
 	}
 
-	client := redis.NewClient(&redis.Options{
-		Addr:         cfg.Addr(),
-		Password:     cfg.Password,
-		DB:           cfg.DB,
-		PoolSize:     cfg.PoolSize,
-		DialTimeout:  2 * time.Second,
-		ReadTimeout:  1 * time.Second,
-		WriteTimeout: 1 * time.Second,
-	})
-
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := client.Ping(ctx).Err(); err != nil {
-		_ = client.Close()
-		return nil, fmt.Errorf("redis ping %s: %w", cfg.Addr(), err)
+	timeout := cfg.TelemetryWriteTimeout
+	if timeout <= 0 {
+		timeout = 100 * time.Millisecond
 	}
+	client := redis.NewClient(&redis.Options{
+		Addr:                  cfg.Addr(),
+		Password:              cfg.Password,
+		DB:                    cfg.DB,
+		PoolSize:              cfg.PoolSize,
+		DialTimeout:           timeout,
+		ReadTimeout:           timeout,
+		WriteTimeout:          timeout,
+		PoolTimeout:           timeout,
+		ContextTimeoutEnabled: true,
+		MaxRetries:            -1,
+	})
 
 	streamKey := cfg.StreamKey
 	if streamKey == "" {
 		streamKey = KeyEvents
 	}
 
-	log.Printf("Redis telemetry connected at %s (stream=%s maxlen=%d)", cfg.Addr(), streamKey, cfg.StreamMaxLen)
+	// A startup outage must not permanently disable the control plane's
+	// evidence feed. Keep the client so later queued writes can reconnect;
+	// each individual attempt still has the configured timeout.
+	log.Printf("Redis telemetry configured at %s (stream=%s maxlen=%d)", cfg.Addr(), streamKey, cfg.StreamMaxLen)
 	return &Store{
 		client:      client,
 		streamKey:   streamKey,

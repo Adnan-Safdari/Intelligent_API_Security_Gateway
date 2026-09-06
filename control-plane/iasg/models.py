@@ -8,6 +8,7 @@ DETECTOR_FLOOD = "flood"
 DETECTOR_SQLI = "sqli"
 DETECTOR_TRAVERSAL = "traversal"
 DETECTOR_ENUMERATION = "enumeration"
+DETECTOR_REPUTATION = "reputation"
 
 # The phase of an intrusion each detector belongs to. Several detectors can
 # describe the same phase -- guessing filenames and climbing out of a directory
@@ -18,6 +19,11 @@ STAGE_CREDENTIAL = "credential attack"
 STAGE_INJECTION = "injection"
 STAGE_ABUSE = "abuse"
 
+# Reputation is deliberately absent from STAGE_OF below. It is an attribute of
+# an address, not a phase of an intrusion -- being on a list is not something
+# the attacker *did*. _stages() skips detectors it cannot map, so leaving it out
+# keeps len(campaign.stages) honest; including it would hand every listed
+# address a free promotion rung in _promote().
 STAGE_OF = {
     DETECTOR_ENUMERATION: STAGE_RECON,
     DETECTOR_TRAVERSAL: STAGE_RECON,
@@ -34,6 +40,7 @@ SIGNAL_TO_DETECTOR = {
     "password_spraying": DETECTOR_BRUTE_FORCE,
     "path_traversal": DETECTOR_TRAVERSAL,
     "enumeration": DETECTOR_ENUMERATION,
+    "ip_reputation": DETECTOR_REPUTATION,
 }
 
 DETECTOR_TO_SIGNAL = {
@@ -42,6 +49,7 @@ DETECTOR_TO_SIGNAL = {
     DETECTOR_SQLI: "sql_injection",
     DETECTOR_TRAVERSAL: "enumeration_path_traversal",
     DETECTOR_ENUMERATION: "enumeration_path_traversal",
+    DETECTOR_REPUTATION: "ip_reputation",
 }
 
 # What a campaign is called once it spans more than one phase.

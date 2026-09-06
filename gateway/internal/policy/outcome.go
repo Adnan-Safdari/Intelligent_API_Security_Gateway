@@ -12,6 +12,20 @@ type outcomeKey struct{}
 // temp_block / throttle / allow instead of always "allow".
 type Outcome struct {
 	Action string
+	Match  *Match
+}
+
+// Match keeps the policy that applied separate from the eventual HTTP outcome:
+// an allowed request under a throttle policy still matched that policy.
+type Match struct {
+	Action            string `json:"action"`
+	Source            string `json:"source"`
+	ClientIP          string `json:"client_ip"`
+	Route             string `json:"route"`
+	Method            string `json:"method"`
+	RequestsPerMinute int    `json:"requests_per_minute"`
+	Reason            string `json:"reason"`
+	Outcome           string `json:"outcome"`
 }
 
 // AttachOutcome puts a mutable outcome on the request. Call once, outermost.
@@ -35,4 +49,17 @@ func Applied(r *http.Request) string {
 		return v.Action
 	}
 	return "allow"
+}
+
+func RecordMatch(r *http.Request, match Match) {
+	if v, ok := r.Context().Value(outcomeKey{}).(*Outcome); ok {
+		v.Match = &match
+	}
+}
+
+func Matched(r *http.Request) *Match {
+	if v, ok := r.Context().Value(outcomeKey{}).(*Outcome); ok {
+		return v.Match
+	}
+	return nil
 }

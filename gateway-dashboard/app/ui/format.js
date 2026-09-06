@@ -9,6 +9,7 @@ const SIGNAL_META = {
   enumeration_path_traversal: { label: "Enum/trav", color: "#2a8f7c" },
   path_traversal: { label: "Traversal", color: "#2f7d9a" },
   enumeration: { label: "Enum", color: "#3d8a55" },
+  ip_reputation: { label: "Known bad", color: "#b04a86" },
 };
 
 export function signalMeta(name) {

@@ -88,17 +88,16 @@ func TestBlockedAddressIsNotRateLimited(t *testing.T) {
 	}
 }
 
-// Monitoring restrains nothing, so a monitored address gets the baseline like
-// anyone else rather than being waved through.
-func TestMonitoredAddressStillGetsTheBaseline(t *testing.T) {
+// An explicit permissive policy wins over the configured baseline.
+func TestMonitoredAddressIsAllowedNormally(t *testing.T) {
 	e := NewEnforcer(
 		fixed{"203.0.113.14": {Action: ActionMonitor}}, true, 0,
 	).WithLimiter(NewLimiter())
 	e.ApplyAll(true, 0, baseline(t, 3))
 
 	codes := serve(e, "203.0.113.14", 6)
-	if codes[http.StatusOK] != 3 {
-		t.Errorf("allowed %d, want 3: monitor does not exempt an address", codes[http.StatusOK])
+	if codes[http.StatusOK] != 6 {
+		t.Errorf("allowed %d, want 6: monitor must forward normally", codes[http.StatusOK])
 	}
 }
 

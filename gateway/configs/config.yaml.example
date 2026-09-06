@@ -13,6 +13,11 @@ server:
   write_timeout: 30s
   idle_timeout: 120s
 
+  # Largest request body the gateway will read, in bytes. Every stage below the
+  # cap buffers the body, so this bounds what one request can make the gateway
+  # allocate. Omit for 1 MiB; it cannot be disabled.
+  max_body_bytes: 1048576
+
   # CIDRs whose X-Forwarded-For header is believed. Leave empty unless the
   # gateway sits behind a proxy you control.
   trusted_proxies: []
@@ -35,6 +40,9 @@ storage:
     stream_key: iasg:events
     stream_maxlen: 2000
     ip_latest_ttl: 24h
+    # A full telemetry queue drops events instead of delaying API traffic.
+    telemetry_queue_size: 1024
+    telemetry_write_timeout: 100ms
   
   postgres:
     host: localhost
@@ -47,6 +55,17 @@ storage:
     max_idle_conns: 5
 
 enforcement:
+  # Shared token buckets for policy throttles and the opt-in baseline.
+  # Structural settings: restart all replicas after changing this block.
+  adaptive_rate_limit:
+    fallback_requests_per_minute: 60 # legacy throttle policies without a rate
+    burst: 20                       # capacity = min(burst, policy rate)
+    redis_timeout: 25ms              # total quota-call budget; no retries
+    policy_refresh_timeout: 2s       # total background scan budget, separate from quota
+    failure_backoff: 1s              # fail open while Redis recovers
+    cache_max_age: 10s               # >= policy.refresh_interval; TTL may be shorter
+    bucket_key_prefix: "iasg:rate:"
+
   # Rate limiting
   rate_limit:
     enabled: true              # count requests per address and signal a flood
@@ -101,7 +120,44 @@ enforcement:
       - "/.bash_history"
       - "/.ssh"
 
-  # Throttling
+
+  # Addresses already known to be malicious.
+  #
+  # Every other detector here is behavioural: it counts requests, failures or
+  # pattern matches, and needs the attacker to repeat themselves before it
+  # knows anything. This one answers on the first request, because being
+  # listed is a fact about the address rather than something it just did.
+  #
+  # It does NOT block on its own. Like every detector it emits evidence; to let
+  # it act, name `ip_reputation` in `block.signals` below.
+  ip_reputation:
+    enabled: true
+
+    # The bundled list. Ships almost empty on purpose -- see the file. Whatever
+    # `feed_url` returns is ADDED to this, never replaces it.
+    feed_path: configs/reputation.txt
+
+    # Optional live feed: a plain list of addresses or CIDRs, one per line.
+    # Left empty, the gateway makes no outbound requests at all.
+    #   Tor exits    https://check.torproject.org/torbulkexitlist
+    #   FireHOL L1   https://raw.githubusercontent.com/firehol/blocklists/master/firehol_level1.netset
+    feed_url: ""
+    refresh_interval: 1h
+    fetch_timeout: 10s
+
+    # What a listed address contributes. Defaults to the same value as
+    # `block.min_score`, so naming this in `block.signals` actually lets it
+    # act -- a lower score would make that entry look armed and do nothing.
+    score: 80
+
+    # A listed address is listed on every request it makes. Without a cooldown
+    # it would raise a fresh signal each time, which floods the event stream
+    # and makes every campaign it touches look like a "reputation" campaign.
+    # Inside the cooldown the address still scores; it just does not re-fire.
+    cooldown: 5m
+
+  # Legacy settings retained for console compatibility. Throttles consume
+  # adaptive_rate_limit quota; delay_ms no longer sleeps on the request path.
   throttle:
     enabled: true
     delay_ms: 500
@@ -156,10 +212,6 @@ enforcement:
     refresh_interval: 5s
 
 signals:
-  ip_reputation:
-    enabled: true
-    check_interval: 1h
-  
   geo_location:
     enabled: true
   

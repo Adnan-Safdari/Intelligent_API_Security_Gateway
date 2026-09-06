@@ -10,10 +10,12 @@ from __future__ import annotations
 
 from iasg.models import (
     ACTION_ESCALATE,
+    DETECTOR_REPUTATION,
     ACTION_LADDER,
     ACTION_MONITOR,
     ACTION_TEMP_BLOCK,
     ACTION_THROTTLE,
+    Evidence,
     SEVERITY_HIGH,
     SEVERITY_LOW,
     SEVERITY_MEDIUM,
@@ -156,3 +158,33 @@ def throttle_rpm(action: str, severity: str) -> int:
     if action != ACTION_THROTTLE:
         return 0
     return THROTTLE_RPM.get(severity, THROTTLE_RPM[SEVERITY_LOW])
+
+
+def reputation_bias(
+    campaign: Campaign, evidence: list[Evidence], agent: "PolicyAgent | None" = None
+) -> int:
+    """
+    One rung firmer for an address that was already known to be malicious.
+
+    The rest of the ladder reasons from what this gateway watched happen. This
+    is the one input that comes from outside it: somebody else met this address
+    first and wrote it down. That is worth answering more firmly than the same
+    behaviour from an address with no history -- but only by one rung, and only
+    ever as an addition to evidence, never as a substitute for it.
+
+    _promote clamps the total bias to a single rung, so this cannot stack with
+    a learned feedback bias into something larger than either.
+    """
+    listed = {ev.ip for ev in evidence if ev.detector == DETECTOR_REPUTATION}
+    if not listed & set(campaign.ips):
+        return 0
+
+    # Firms up an answer; never invents one. A campaign the evidence itself
+    # would only monitor stays monitored, however well known the address is.
+    # Being on a list is a reason to take an attack more seriously, not a
+    # reason to treat ordinary traffic as one -- and a reputation feed is the
+    # input here most likely to be stale, so it is the last one that should be
+    # trusted to originate enforcement by itself.
+    if (agent or PolicyAgent())._from_evidence(campaign) == ACTION_MONITOR:
+        return 0
+    return 1

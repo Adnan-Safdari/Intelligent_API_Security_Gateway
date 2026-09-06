@@ -43,6 +43,33 @@ func TestRoundTripKeepsValues(t *testing.T) {
 	}
 }
 
+func TestDashboardCannotResetStructuralQuotaSettings(t *testing.T) {
+	in := base()
+	in.AdaptiveRateLimit = config.AdaptiveRateLimitConfig{
+		FallbackRequestsPerMinute: 17, Burst: 3, RedisTimeout: 40 * time.Millisecond, PolicyRefreshTimeout: 3 * time.Second,
+		FailureBackoff: 2 * time.Second, CacheMaxAge: 20 * time.Second, BucketKeyPrefix: "custom-rate:",
+	}
+	wire := FromConfig(in)
+	if wire.AdaptiveRateLimit.Burst != 3 || wire.AdaptiveRateLimit.RedisTimeout != "40ms" {
+		t.Fatalf("dashboard cannot display quota settings: %+v", wire.AdaptiveRateLimit)
+	}
+	wire.AdaptiveRateLimit.Burst = 999
+	out, err := wire.ToConfig(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.AdaptiveRateLimit != in.AdaptiveRateLimit {
+		t.Fatal("live settings changed boot-only quota contract")
+	}
+	out, err = (Wire{}).ToConfig(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.AdaptiveRateLimit != in.AdaptiveRateLimit {
+		t.Fatal("older dashboard silently cleared quota settings")
+	}
+}
+
 // The fields that do not travel must survive a round trip, or a live apply
 // would silently blank the key prefix the policy store reads.
 func TestFieldsThatDoNotTravelAreKept(t *testing.T) {

@@ -3,7 +3,7 @@
 ## Overview
 
 The gateway is a Go HTTP server wrapped around `httputil.ReverseProxy`, with a
-chain of nine middlewares in front of it. Alongside it run a Python control
+middleware chain in front of it. Alongside it run a Python control
 plane, a Next.js dashboard, Redis, and Postgres.
 
 ## Startup
@@ -18,9 +18,9 @@ config work locally and under Compose:
 | `IASG_BACKEND_URL` | `proxy.backend_url` |
 | `IASG_REDIS_HOST` | `storage.redis.host` |
 
-`Server.Start` in `internal/proxy/server.go` then constructs, in order: the four
+`Server.Start` in `internal/proxy/server.go` then constructs the five
 detectors, a `signals.Collector` over them, the Redis telemetry writer, the
-client-IP resolver, and the policy enforcer. It assembles them with
+client-IP resolver, reflex, and policy enforcer. It assembles them with
 `ChainMiddleware` and serves.
 
 ## The middleware chain
@@ -31,28 +31,31 @@ first to see a request and the last to see the response.
 | # | Middleware | Package | Role |
 | --- | --- | --- | --- |
 | 1 | `resolver.Middleware` | `netutil` | Decides which IP the request is attributed to |
-| 2 | `telemetry.Middleware` | `telemetry` | Records the finished request to Redis |
+| 2 | `telemetry.Middleware` | `telemetry` | Assigns request context; enqueues the completed event without reading the body |
 | 3 | `LoggingMiddleware` | `proxy` | Prints request metadata to stdout |
-| 4 | `enforcer.Middleware` | `policy` | Applies an active decision: throttle, block, escalate |
-| 5 | `RequestInspectionMiddleware` | `proxy` | Prints headers and body |
-| 6 | `floodDetector.Middleware` | `signals` | Request-rate flooding |
-| 7 | `sqliDetector.Middleware` | `signals` | SQL injection patterns |
-| 8 | `traversalEnumDetector.Middleware` | `signals` | Path traversal and forced browsing |
-| 9 | `bruteForceDetector.Middleware` | `signals` | Repeated failed logins |
+| 4 | `enforcer.Middleware` | `policy` | Applies cached policy/reflex decisions; checks shared Redis quota only when a rate applies |
+| 5 | `BodyLimitMiddleware` | `proxy` | Caps admitted request bodies |
+| 6 | `telemetry.CaptureBody` | `telemetry` | Captures a body snippet after admission and the size cap |
+| 7 | `enforcement.Middleware` | `enforcement` | Observes detector evidence after the response; records reflex blocks for subsequent requests |
+| 8 | `reputationDetector.Middleware` | `signals` | Known-bad address lookup |
+| 9 | `floodDetector.Middleware` | `signals` | Request-rate flooding |
+| 10 | `sqliDetector.Middleware` | `signals` | SQL injection patterns |
+| 11 | `traversalEnumDetector.Middleware` | `signals` | Path traversal and forced browsing |
+| 12 | `bruteForceDetector.Middleware` | `signals` | Repeated failed logins |
 
 Then `NewReverseProxy` sets `X-Gateway: IASG` and forwards upstream.
 
 Two orderings in that list carry real weight, and both are explained in
 [Request Lifecycle](request-lifecycle.md): the resolver must precede telemetry,
-and the detectors sit *inside* enforcement, so a refused request never reaches
-them.
+and body reads and detectors sit *inside* enforcement, so a refused request
+never reaches them.
 
 ## Runtime structure
 
 ```mermaid
 flowchart TD
     subgraph DataPlane["Data plane -- per request"]
-        Listener[HTTP listener] --> Chain[Nine middlewares]
+        Listener[HTTP listener] --> Chain[Middleware chain]
         Chain --> RP[Reverse proxy]
         RP --> Backend[Backend API]
     end
@@ -66,8 +69,9 @@ flowchart TD
         Runner[Runner cycle]
     end
 
-    Chain -->|events| Redis
-    Redis -->|policy snapshot| Chain
+    Chain -->|background event publication| Redis
+    Redis -->|background policy snapshot| Chain
+    Chain -->|bounded atomic quota check when a rate applies| Redis
     Redis --> Runner
     Runner --> Redis
     Runner --> PG
@@ -75,18 +79,27 @@ flowchart TD
     Redis --> Dashboard
 ```
 
-## Why the gateway never blocks on Redis
+## Bounded Redis work and local policy lookup
 
-The enforcer does not read Redis per request. `policy.Store` copies every
-`policy:<ip>` key into a map on a background ticker, and requests read that map
-through an `atomic.Pointer`, so a lookup is a few nanoseconds and never touches
-the network.
+`policy.Store` copies `policy:<ip>` values and their actual remaining TTLs into
+a background snapshot. Requests read it through an `atomic.Pointer` and check
+local absolute expiry, so a policy lookup never touches the network. New
+policies can take `enforcement.policy.refresh_interval` (5s by default) to
+appear. A failed refresh clears the snapshot; `cache_max_age` (10s by default)
+also bounds its lifetime if refresh stalls.
 
-That choice buys three things: request latency stays independent of Redis
-latency, the gateway keeps working when Redis is unreachable, and a Redis
-outage can never cause traffic to start being refused. It costs staleness of up
-to `enforcement.policy.refresh_interval` (5s by default) — far shorter than the
-30s cadence at which new decisions are produced.
+When a throttle policy or opt-in baseline applies, a Redis Lua script checks
+and consumes a shared token for the client IP, exact path, and HTTP method.
+This synchronous quota operation has a configurable 25ms timeout by default,
+fails open on error, and backs off after failure. It returns `429` with
+`Retry-After` on exhaustion; requests never wait for token refill. Background
+snapshot refresh has its own `policy_refresh_timeout` (2s by default).
+
+Telemetry publication runs in a bounded background queue and reconnects after
+an outage, including one present at startup. Queue overflow drops telemetry
+rather than holding a request. Python, PostgreSQL, and models remain entirely
+off the request path. See [Policy enforcement](policy-enforcement.md) for
+action mapping, policy schema, expiry details, and configuration.
 
 ## Components outside the gateway
 
@@ -109,4 +122,4 @@ to `enforcement.policy.refresh_interval` (5s by default) — far shorter than th
 | `internal/netutil/ip.go` | Client IP resolution |
 | `internal/telemetry/` | Event shape, redaction, recording middleware |
 | `internal/policy/` | Policy snapshot store and the enforcing middleware |
-| `internal/signals/` | The four detectors, evidence, and the collector |
+| `internal/signals/` | The five detectors, evidence, and the collector |
