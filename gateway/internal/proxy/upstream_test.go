@@ -25,7 +25,7 @@ func chain(t *testing.T, backendURL string, detectorDelay time.Duration) (http.H
 	}
 
 	handler := ChainMiddleware(
-		telemetry.Middleware(writer, nil, nil),
+		telemetry.Middleware(writer, nil, nil, nil),
 		slowDetector,
 	)(NewReverseProxy(Config{BackendURL: backendURL, ProxyTimeout: 5 * time.Second}))
 
@@ -148,7 +148,7 @@ func TestUnreachableBackendInventsNoMeasurement(t *testing.T) {
 func TestBodyCapRefusalIsMarkedAsTheGatewaysOwn(t *testing.T) {
 	writer := &captureWriter{}
 	handler := ChainMiddleware(
-		telemetry.Middleware(writer, nil, nil),
+		telemetry.Middleware(writer, nil, nil, nil),
 		BodyLimitMiddleware(16),
 	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		t.Error("an oversized body reached the backend")
@@ -185,7 +185,7 @@ func TestBodyCapRefusalIsMarkedAsTheGatewaysOwn(t *testing.T) {
 func TestConfirmedEmptyBodyIsAMeasuredZero(t *testing.T) {
 	writer := &captureWriter{}
 	handler := ChainMiddleware(
-		telemetry.Middleware(writer, nil, nil),
+		telemetry.Middleware(writer, nil, nil, nil),
 		BodyLimitMiddleware(1024),
 	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -207,7 +207,7 @@ func TestConfirmedEmptyBodyIsAMeasuredZero(t *testing.T) {
 func TestMeasuredBodySizeIsRecorded(t *testing.T) {
 	writer := &captureWriter{}
 	handler := ChainMiddleware(
-		telemetry.Middleware(writer, nil, nil),
+		telemetry.Middleware(writer, nil, nil, nil),
 		BodyLimitMiddleware(1024),
 	)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -221,5 +221,85 @@ func TestMeasuredBodySizeIsRecorded(t *testing.T) {
 	ev := writer.last()
 	if ev.RequestBodyBytes == nil || *ev.RequestBodyBytes != int64(len(body)) {
 		t.Errorf("requestBodyBytes = %v, want %d", ev.RequestBodyBytes, len(body))
+	}
+}
+
+func loginAuth() *telemetry.AuthOutcomes {
+	return telemetry.NewAuthOutcomes([]telemetry.AuthRule{{
+		Method:             "POST",
+		Template:           "/api/login",
+		Success:            []int{200},
+		InvalidCredentials: []int{401},
+	}})
+}
+
+func loginRoutes(t *testing.T) *telemetry.Table {
+	t.Helper()
+	table, err := telemetry.NewTable([]string{"POST /api/login"})
+	if err != nil {
+		t.Fatalf("NewTable: %v", err)
+	}
+	return table
+}
+
+// The backend's 401 is a rejected password, and it has to survive to the event.
+func TestBackendRejectionIsRecordedAsInvalidCredentials(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer backend.Close()
+
+	writer := &captureWriter{}
+	handler := ChainMiddleware(
+		telemetry.Middleware(writer, nil, loginRoutes(t), loginAuth()),
+	)(NewReverseProxy(Config{BackendURL: backend.URL, ProxyTimeout: 5 * time.Second}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"email":"a"}`))
+	req.RemoteAddr = "203.0.113.5:54321"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	ev := writer.last()
+	if !ev.LoginAttempt {
+		t.Error("loginAttempt = false on a POST to the configured login endpoint")
+	}
+	if ev.AuthOutcome != telemetry.AuthInvalidCredentials {
+		t.Errorf("authOutcome = %q, want %q", ev.AuthOutcome, telemetry.AuthInvalidCredentials)
+	}
+}
+
+// A login the gateway refused never reached the backend, so nothing is known
+// about the password. Recording it as a rejection would mean blocking an
+// attacker improved their failure ratio -- enforcement changing the features of
+// the address it enforced against.
+func TestGatewayRefusedLoginHasAnUnknownOutcome(t *testing.T) {
+	writer := &captureWriter{}
+	refuse := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			telemetry.RecordGatewayAnswer(r, telemetry.ReasonPolicyBlock)
+			w.WriteHeader(http.StatusForbidden)
+		})
+	}
+
+	handler := ChainMiddleware(
+		telemetry.Middleware(writer, nil, loginRoutes(t), loginAuth()),
+		refuse,
+	)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Error("a refused login reached the backend")
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/login", strings.NewReader(`{"email":"a"}`))
+	req.RemoteAddr = "203.0.113.5:54321"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+
+	ev := writer.last()
+	if !ev.LoginAttempt {
+		t.Error("loginAttempt = false; a refused login is still an attempt")
+	}
+	if ev.AuthOutcome != telemetry.AuthUnknown {
+		t.Errorf("authOutcome = %q, want %q -- the backend never saw the password",
+			ev.AuthOutcome, telemetry.AuthUnknown)
+	}
+	if ev.ResponseOrigin != telemetry.OriginGateway {
+		t.Errorf("responseOrigin = %q, want %q", ev.ResponseOrigin, telemetry.OriginGateway)
 	}
 }

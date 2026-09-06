@@ -67,7 +67,7 @@ type bodyCapture struct {
 // routes may be nil, in which case every request records UnmatchedRoute. That
 // is a usable answer rather than an empty one, so a gateway configured without
 // a route table still produces a consistent column.
-func Middleware(writer Writer, collector *signals.Collector, routes *Table) func(http.Handler) http.Handler {
+func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth *AuthOutcomes) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started := time.Now()
@@ -109,6 +109,8 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table) func
 				upstream.GatewayReason = gatewayReasonFor(policy.Applied(r))
 			}
 
+			routeTemplate := routes.Match(r.Method, r.URL.Path)
+
 			ip := netutil.ClientIP(r)
 			// Scoped to this request, not to the address. A blocked IP is
 			// answered by the enforcer before the detectors run, so an
@@ -133,7 +135,7 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table) func
 				// detector exists to catch, and the anomaly features measure
 				// path diversity on this value.
 				Path:          r.URL.Path,
-				RouteTemplate: routes.Match(r.Method, r.URL.Path),
+				RouteTemplate: routeTemplate,
 				Query:         RedactQuery(r.URL.RawQuery),
 				Status:        status,
 				UserAgent:     truncate(r.UserAgent(), 256),
@@ -153,6 +155,13 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table) func
 				UpstreamDurationMS: optionalInt64(upstream.DurationMS, upstream.HaveDuration),
 				ResponseBodyBytes:  optionalInt64(upstream.ResponseBytes, upstream.HaveResponseBytes),
 				RequestBodyBytes:   optionalInt64(upstream.BodyBytes, upstream.BodyMeasured),
+
+				// Read from the backend's status, never the one the client
+				// saw: a login the enforcer answered with a 403 says nothing
+				// about the password.
+				LoginAttempt: auth.IsLogin(r.Method, routeTemplate),
+				AuthOutcome: auth.Outcome(
+					r.Method, routeTemplate, upstream.Status, upstream.HaveStatus),
 
 				BackendMS: upstream.DurationMS,
 				GatewayMS: time.Since(started).Milliseconds(),

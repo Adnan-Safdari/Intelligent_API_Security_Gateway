@@ -185,3 +185,75 @@ func shape(segments []segment) string {
 	}
 	return b.String()
 }
+
+// Authentication outcomes. Unknown is a real answer and not a failure: a login
+// the gateway refused never reached the backend, and counting it as a
+// non-failure would let blocking an attacker improve their failure ratio.
+const (
+	AuthSuccess            = "success"
+	AuthInvalidCredentials = "invalid_credentials"
+	AuthUnknown            = "unknown"
+)
+
+// AuthRule maps backend statuses to an authentication outcome for one endpoint.
+type AuthRule struct {
+	Method             string
+	Template           string
+	Success            []int
+	InvalidCredentials []int
+}
+
+// AuthOutcomes answers what an endpoint's backend status means, if that
+// endpoint is one where a status means anything about credentials at all.
+type AuthOutcomes struct {
+	rules map[string]AuthRule
+}
+
+func NewAuthOutcomes(rules []AuthRule) *AuthOutcomes {
+	a := &AuthOutcomes{rules: make(map[string]AuthRule, len(rules))}
+	for _, rule := range rules {
+		a.rules[strings.ToUpper(rule.Method)+" "+rule.Template] = rule
+	}
+	return a
+}
+
+// IsLogin reports whether this endpoint is one where authentication happens.
+func (a *AuthOutcomes) IsLogin(method, template string) bool {
+	if a == nil {
+		return false
+	}
+	_, ok := a.rules[strings.ToUpper(method)+" "+template]
+	return ok
+}
+
+// Outcome reads the result off the backend status.
+//
+// status is the backend's, never the one the client saw: a login the enforcer
+// answered with a 403 tells us nothing about the password, and must come back
+// unknown rather than being read as a rejection.
+func (a *AuthOutcomes) Outcome(method, template string, status int, haveStatus bool) string {
+	if !a.IsLogin(method, template) {
+		return ""
+	}
+	if !haveStatus {
+		return AuthUnknown
+	}
+
+	rule := a.rules[strings.ToUpper(method)+" "+template]
+	if contains(rule.Success, status) {
+		return AuthSuccess
+	}
+	if contains(rule.InvalidCredentials, status) {
+		return AuthInvalidCredentials
+	}
+	return AuthUnknown
+}
+
+func contains(values []int, want int) bool {
+	for _, v := range values {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}

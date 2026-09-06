@@ -33,6 +33,24 @@ type RoutesConfig struct {
 	// of them records as unmatched, which is a real category: it is what a
 	// client walking paths the application does not serve looks like.
 	Templates []string `yaml:"templates"`
+
+	// AuthOutcomes says how to read an authentication result off a backend
+	// status, per endpoint. It is configuration rather than an inference
+	// because 401 does not mean "wrong password" in general -- it means that
+	// on an endpoint documented to answer that way, and nowhere else.
+	AuthOutcomes []AuthOutcomeConfig `yaml:"auth_outcomes"`
+}
+
+type AuthOutcomeConfig struct {
+	Method   string `yaml:"method"`
+	Template string `yaml:"template"`
+
+	// Backend statuses that mean the credentials were accepted, and those
+	// that mean they were rejected. A status in neither list is unknown,
+	// which is not the same as a success: a 500 says the database failed,
+	// not that the password was right.
+	Success            []int `yaml:"success"`
+	InvalidCredentials []int `yaml:"invalid_credentials"`
 }
 
 type ServerConfig struct {

@@ -196,6 +196,7 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
+	auth := telemetry.NewAuthOutcomes(authRulesFrom(s.config.Routes.AuthOutcomes))
 
 	// The gateway's own reflex, and the enforcer that acts on both it and the
 	// control plane's decisions.
@@ -252,7 +253,7 @@ func (s *Server) Start() error {
 	// before the telemetry snippet or any detector buffers client input.
 	handler := ChainMiddleware(
 		resolver.Middleware,
-		telemetry.Middleware(eventWriter, s.collector, routes),
+		telemetry.Middleware(eventWriter, s.collector, routes, auth),
 		LoggingMiddleware,
 		enforcer.Middleware,
 		BodyLimitMiddleware(maxBody),
@@ -439,4 +440,21 @@ func (c Config) Enforcement() config.EnforcementConfig {
 		Block:             c.Block,
 		Policy:            c.Policy,
 	}
+}
+
+// authRulesFrom turns the configured endpoints into the rules telemetry reads
+// an authentication outcome with. Configuration rather than inference: 401 does
+// not mean "wrong password" in general, only on an endpoint documented to
+// answer that way.
+func authRulesFrom(entries []config.AuthOutcomeConfig) []telemetry.AuthRule {
+	rules := make([]telemetry.AuthRule, 0, len(entries))
+	for _, e := range entries {
+		rules = append(rules, telemetry.AuthRule{
+			Method:             e.Method,
+			Template:           e.Template,
+			Success:            e.Success,
+			InvalidCredentials: e.InvalidCredentials,
+		})
+	}
+	return rules
 }

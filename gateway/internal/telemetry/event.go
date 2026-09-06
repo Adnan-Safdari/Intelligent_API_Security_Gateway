@@ -56,6 +56,13 @@ type Event struct {
 	// that was refused or unreadable (null).
 	RequestBodyBytes *int64 `json:"requestBodyBytes"`
 
+	// LoginAttempt marks a request to an endpoint where authentication
+	// happens; AuthOutcome says what the backend made of the credentials. A
+	// login the gateway refused is an attempt with an unknown outcome, which
+	// is what keeps a refusal out of the failure ratio's denominator.
+	LoginAttempt bool   `json:"loginAttempt,omitempty"`
+	AuthOutcome  string `json:"authOutcome,omitempty"`
+
 	// BackendMS is the backend call, which is what its name always claimed and
 	// what the console displays. It reads 0 when there was no completed call,
 	// so it conflates zero with unknown -- acceptable for a display column,

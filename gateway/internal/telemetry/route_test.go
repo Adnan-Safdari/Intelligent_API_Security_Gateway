@@ -144,3 +144,73 @@ func TestOverlongTemplateIsRefusedAtBoot(t *testing.T) {
 		t.Error("NewTable accepted a template longer than the segment bound")
 	}
 }
+
+func loginOutcomes(t *testing.T) *AuthOutcomes {
+	t.Helper()
+	return NewAuthOutcomes([]AuthRule{{
+		Method:             "POST",
+		Template:           "/api/login",
+		Success:            []int{200},
+		InvalidCredentials: []int{401},
+	}})
+}
+
+func TestAuthOutcomeReadsTheConfiguredStatuses(t *testing.T) {
+	auth := loginOutcomes(t)
+
+	cases := []struct {
+		status int
+		want   string
+	}{
+		{200, AuthSuccess},
+		{401, AuthInvalidCredentials},
+		// A database error says nothing about the password.
+		{500, AuthUnknown},
+		{403, AuthUnknown},
+	}
+
+	for _, tc := range cases {
+		if got := auth.Outcome("POST", "/api/login", tc.status, true); got != tc.want {
+			t.Errorf("Outcome(%d) = %q, want %q", tc.status, got, tc.want)
+		}
+	}
+}
+
+// A login the gateway refused never reached the backend, so its outcome is
+// unknown. Reading it as a non-failure would let blocking an attacker improve
+// their failure ratio -- enforcement must not change the features of the
+// address it enforced against.
+func TestRefusedLoginIsAnAttemptWithAnUnknownOutcome(t *testing.T) {
+	auth := loginOutcomes(t)
+
+	if !auth.IsLogin("POST", "/api/login") {
+		t.Fatal("a refused login is still a login attempt")
+	}
+	if got := auth.Outcome("POST", "/api/login", 0, false); got != AuthUnknown {
+		t.Errorf("Outcome with no backend status = %q, want %q", got, AuthUnknown)
+	}
+}
+
+// 401 means invalid credentials on an endpoint documented to answer that way,
+// and nowhere else.
+func TestNonLoginEndpointsHaveNoAuthOutcome(t *testing.T) {
+	auth := loginOutcomes(t)
+
+	if auth.IsLogin("GET", "/api/products") {
+		t.Error("a product read was treated as a login attempt")
+	}
+	if got := auth.Outcome("GET", "/api/products", 401, true); got != "" {
+		t.Errorf("Outcome on a non-login endpoint = %q, want empty", got)
+	}
+}
+
+func TestNilAuthOutcomesIsHarmless(t *testing.T) {
+	var auth *AuthOutcomes
+
+	if auth.IsLogin("POST", "/api/login") {
+		t.Error("a nil AuthOutcomes claimed an endpoint was a login")
+	}
+	if got := auth.Outcome("POST", "/api/login", 401, true); got != "" {
+		t.Errorf("nil AuthOutcomes returned %q, want empty", got)
+	}
+}
