@@ -3,10 +3,6 @@ site_description: Engineering documentation for the Go-based API security gatewa
 repo_name: Intelligent_API_Security_Gateway
 docs_dir: gateway/docs
 
-# A prompt written for handing the project to an assistant, not documentation
-# for a reader. It stays in the repository and out of the published site.
-exclude_docs: |
-  chatgpt-handoff-prompt.md
 theme:
   name: material
   # A 1x1 transparent PNG. Material always emits a <link rel="icon">, so the

@@ -22,11 +22,12 @@ node_modules/
 # Go workspace file
 go.work
 
-# Environment files
-# .env
-# .env.local
-# .env.*.local
-# *.env
+# Environment files (keep examples)
+.env
+.env.local
+.env.*.local
+*.env
+!*.env.example
 
 # Config files (keep examples)
 configs/config.yaml

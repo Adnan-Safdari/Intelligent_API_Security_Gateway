@@ -412,7 +412,6 @@ rather than annotated.
 | Doc | Accuracy notes |
 | --- | --- |
 | All pages in the nav | Current. Detector count, middleware order, enforcement behaviour and the console's lack of auth all match the code |
-| `chatgpt-handoff-prompt.md` | **Badly stale, and deliberately unpublished** -- `exclude_docs` keeps it off this site. It describes a three-detector detect-and-log gateway with a planned decision engine, which is two rewrites out of date. It is a prompt, not documentation |
 
 The entrypoint is `cmd/server`. Any doc that says `cmd/gateway/main.go` is
 wrong; that path has not existed for a long time.
