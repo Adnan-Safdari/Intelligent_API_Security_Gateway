@@ -54,6 +54,13 @@ Breaking any of these breaks the architecture, not just a test.
    without a TTL, per-cycle cap, dry-run). Add new guards there, not scattered.
 5. **Enforcement expires on its own.** Every policy key carries a TTL and
    nothing renews it. Don't add renewal.
+6. **Nothing reads the request body without a cap above it.** `BodyLimitMiddleware`
+   runs first in the chain, ahead of even the resolver, because it's the only
+   stage that doesn't need to know who the client is, and everything below it
+   buffers the whole body. Config (`MaxBodyBytes`) may raise or lower the cap,
+   never remove it — a blocked address still gets its body read in full before
+   a later stage's 403 lands, which is what let a block do nothing to stop the
+   one resource enforcement can't get back.
 
 ## House style
 
@@ -132,8 +139,6 @@ Then check the consumer groups survived.
 
 ## Known gaps — do not "discover" these as new
 
-- No request body cap: `io.ReadAll` in both `internal/telemetry` and
-  `internal/signals`, and the telemetry read happens *before* the enforcer.
 - The console has no authentication (`gateway-dashboard/lib/auth.js` is a stub
   that always authorises). Deliberate, but it now fronts settings and reset.
 - No graceful shutdown, no health endpoint, no metrics. `go run` does not
