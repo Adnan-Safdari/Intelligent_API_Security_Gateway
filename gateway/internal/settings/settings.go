@@ -37,14 +37,26 @@ const EffectiveKey = "iasg:settings:effective"
 // YAML rather than the Go struct, so a value reads the same in both places,
 // and durations are strings ("60s") for the same reason.
 type Wire struct {
-	RateLimit       RateLimit       `json:"rate_limit"`
-	AttackDetection AttackDetection `json:"attack_detection"`
-	BruteForce      BruteForce      `json:"brute_force"`
-	Enumeration     Enumeration     `json:"enumeration_path_traversal"`
-	IPReputation    IPReputation    `json:"ip_reputation"`
-	Throttle        Throttle        `json:"throttle"`
-	Block           Block           `json:"block"`
-	Policy          Policy          `json:"policy"`
+	// Reported for operator visibility; ToConfig preserves the boot values.
+	AdaptiveRateLimit AdaptiveRateLimit `json:"adaptive_rate_limit"`
+	RateLimit         RateLimit         `json:"rate_limit"`
+	AttackDetection   AttackDetection   `json:"attack_detection"`
+	BruteForce        BruteForce        `json:"brute_force"`
+	Enumeration       Enumeration       `json:"enumeration_path_traversal"`
+	IPReputation      IPReputation      `json:"ip_reputation"`
+	Throttle          Throttle          `json:"throttle"`
+	Block             Block             `json:"block"`
+	Policy            Policy            `json:"policy"`
+}
+
+type AdaptiveRateLimit struct {
+	FallbackRequestsPerMinute int    `json:"fallback_requests_per_minute"`
+	Burst                     int    `json:"burst"`
+	RedisTimeout              string `json:"redis_timeout"`
+	PolicyRefreshTimeout      string `json:"policy_refresh_timeout"`
+	FailureBackoff            string `json:"failure_backoff"`
+	CacheMaxAge               string `json:"cache_max_age"`
+	BucketKeyPrefix           string `json:"bucket_key_prefix"`
 }
 
 type RateLimit struct {
@@ -104,6 +116,15 @@ type Policy struct {
 // FromConfig renders a config block as the wire shape.
 func FromConfig(c config.EnforcementConfig) Wire {
 	return Wire{
+		AdaptiveRateLimit: AdaptiveRateLimit{
+			FallbackRequestsPerMinute: c.AdaptiveRateLimit.FallbackRequestsPerMinute,
+			Burst:                     c.AdaptiveRateLimit.Burst,
+			RedisTimeout:              durationString(c.AdaptiveRateLimit.RedisTimeout),
+			PolicyRefreshTimeout:      durationString(c.AdaptiveRateLimit.PolicyRefreshTimeout),
+			FailureBackoff:            durationString(c.AdaptiveRateLimit.FailureBackoff),
+			CacheMaxAge:               durationString(c.AdaptiveRateLimit.CacheMaxAge),
+			BucketKeyPrefix:           c.AdaptiveRateLimit.BucketKeyPrefix,
+		},
 		RateLimit: RateLimit{
 			Enabled:           c.RateLimit.Enabled,
 			Enforce:           c.RateLimit.Enforce,

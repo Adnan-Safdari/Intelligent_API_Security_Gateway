@@ -18,13 +18,9 @@ const DefaultMaxBodyBytes int64 = 1 << 20
 // buffers anything smaller so no later stage can be made to allocate without
 // bound.
 //
-// This has to run first. Every stage below it reads the whole body into memory
-// -- telemetry snapshots it for the event record, the signal detectors scan it
-// -- and telemetry sits *above* the enforcer in the chain, so an address the
-// control plane had already blocked still had its body read in full before the
-// 403 was written. Blocking an attacker therefore did nothing to stop them
-// exhausting the process, which is the single thing enforcement exists to
-// prevent. A cap is what stops it, and it only works above the first reader.
+// This must run before any body reader, but after policy enforcement. A request
+// already refused by policy needs no body read at all; accepted requests still
+// need a cap before telemetry or detectors can allocate a full body buffer.
 //
 // The body is read once here and passed on as an in-memory buffer. The readers
 // below already replaced r.Body with a buffer of their own, so in the ordinary

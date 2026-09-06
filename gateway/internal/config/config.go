@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -51,15 +52,17 @@ type StorageConfig struct {
 }
 
 type RedisConfig struct {
-	Enabled      bool          `yaml:"enabled"`
-	Host         string        `yaml:"host"`
-	Port         int           `yaml:"port"`
-	Password     string        `yaml:"password"`
-	DB           int           `yaml:"db"`
-	PoolSize     int           `yaml:"pool_size"`
-	StreamKey    string        `yaml:"stream_key"`
-	StreamMaxLen int64         `yaml:"stream_maxlen"`
-	IPLatestTTL  time.Duration `yaml:"ip_latest_ttl"`
+	Enabled               bool          `yaml:"enabled"`
+	Host                  string        `yaml:"host"`
+	Port                  int           `yaml:"port"`
+	Password              string        `yaml:"password"`
+	DB                    int           `yaml:"db"`
+	PoolSize              int           `yaml:"pool_size"`
+	StreamKey             string        `yaml:"stream_key"`
+	StreamMaxLen          int64         `yaml:"stream_maxlen"`
+	IPLatestTTL           time.Duration `yaml:"ip_latest_ttl"`
+	TelemetryQueueSize    int           `yaml:"telemetry_queue_size"`
+	TelemetryWriteTimeout time.Duration `yaml:"telemetry_write_timeout"`
 }
 
 func (c RedisConfig) Addr() string {
@@ -86,14 +89,52 @@ type PostgresConfig struct {
 }
 
 type EnforcementConfig struct {
-	RateLimit       RateLimitConfig       `yaml:"rate_limit"`
-	AttackDetection AttackDetectionConfig `yaml:"attack_detection"`
-	BruteForce      BruteForceConfig      `yaml:"brute_force"`
-	Enumeration     EnumerationConfig     `yaml:"enumeration_path_traversal"`
-	IPReputation    IPReputationConfig    `yaml:"ip_reputation"`
-	Throttle        ThrottleConfig        `yaml:"throttle"`
-	Block           BlockConfig           `yaml:"block"`
-	Policy          PolicyConfig          `yaml:"policy"`
+	AdaptiveRateLimit AdaptiveRateLimitConfig `yaml:"adaptive_rate_limit"`
+	RateLimit         RateLimitConfig         `yaml:"rate_limit"`
+	AttackDetection   AttackDetectionConfig   `yaml:"attack_detection"`
+	BruteForce        BruteForceConfig        `yaml:"brute_force"`
+	Enumeration       EnumerationConfig       `yaml:"enumeration_path_traversal"`
+	IPReputation      IPReputationConfig      `yaml:"ip_reputation"`
+	Throttle          ThrottleConfig          `yaml:"throttle"`
+	Block             BlockConfig             `yaml:"block"`
+	Policy            PolicyConfig            `yaml:"policy"`
+}
+
+// AdaptiveRateLimitConfig is fixed at boot so replicas use the same quota
+// contract. Policy rates still change dynamically with the control plane.
+type AdaptiveRateLimitConfig struct {
+	FallbackRequestsPerMinute int           `yaml:"fallback_requests_per_minute"`
+	Burst                     int           `yaml:"burst"`
+	RedisTimeout              time.Duration `yaml:"redis_timeout"`
+	PolicyRefreshTimeout      time.Duration `yaml:"policy_refresh_timeout"`
+	FailureBackoff            time.Duration `yaml:"failure_backoff"`
+	CacheMaxAge               time.Duration `yaml:"cache_max_age"`
+	BucketKeyPrefix           string        `yaml:"bucket_key_prefix"`
+}
+
+func (c AdaptiveRateLimitConfig) WithDefaults() AdaptiveRateLimitConfig {
+	if c.FallbackRequestsPerMinute == 0 {
+		c.FallbackRequestsPerMinute = 60
+	}
+	if c.Burst == 0 {
+		c.Burst = 20
+	}
+	if c.RedisTimeout == 0 {
+		c.RedisTimeout = 25 * time.Millisecond
+	}
+	if c.PolicyRefreshTimeout == 0 {
+		c.PolicyRefreshTimeout = 2 * time.Second
+	}
+	if c.FailureBackoff == 0 {
+		c.FailureBackoff = time.Second
+	}
+	if c.CacheMaxAge == 0 {
+		c.CacheMaxAge = 10 * time.Second
+	}
+	if c.BucketKeyPrefix == "" {
+		c.BucketKeyPrefix = "iasg:rate:"
+	}
+	return c
 }
 
 // PolicyConfig controls whether the gateway acts on decisions written by the
@@ -251,12 +292,35 @@ func Load(path string) (*Config, error) {
 	if cfg.Storage.Redis.PoolSize <= 0 {
 		cfg.Storage.Redis.PoolSize = 10
 	}
+	if cfg.Storage.Redis.TelemetryQueueSize == 0 {
+		cfg.Storage.Redis.TelemetryQueueSize = 1024
+	}
+	if cfg.Storage.Redis.TelemetryWriteTimeout == 0 {
+		cfg.Storage.Redis.TelemetryWriteTimeout = 100 * time.Millisecond
+	}
+	if cfg.Storage.Redis.TelemetryQueueSize < 0 || cfg.Storage.Redis.TelemetryWriteTimeout < 0 {
+		return nil, fmt.Errorf("Redis telemetry queue size and write timeout must be positive")
+	}
 	if cfg.Enforcement.Policy.KeyPrefix == "" {
 		cfg.Enforcement.Policy.KeyPrefix = "policy:"
 	}
 	if cfg.Enforcement.Policy.RefreshInterval <= 0 {
 		cfg.Enforcement.Policy.RefreshInterval = 5 * time.Second
 	}
+	a := cfg.Enforcement.AdaptiveRateLimit.WithDefaults()
+	if cfg.Enforcement.AdaptiveRateLimit.CacheMaxAge == 0 && a.CacheMaxAge < 2*cfg.Enforcement.Policy.RefreshInterval {
+		a.CacheMaxAge = 2 * cfg.Enforcement.Policy.RefreshInterval
+	}
+	if a.FallbackRequestsPerMinute < 1 || a.Burst < 1 || a.RedisTimeout < time.Millisecond || a.RedisTimeout > time.Second || a.FailureBackoff < time.Millisecond || a.CacheMaxAge < cfg.Enforcement.Policy.RefreshInterval {
+		return nil, fmt.Errorf("adaptive_rate_limit requires positive rates/backoff, redis_timeout between 1ms and 1s, and cache_max_age >= policy.refresh_interval")
+	}
+	if a.PolicyRefreshTimeout < a.RedisTimeout || a.PolicyRefreshTimeout > 30*time.Second {
+		return nil, fmt.Errorf("adaptive_rate_limit.policy_refresh_timeout must be >= redis_timeout and <= 30s")
+	}
+	if strings.HasPrefix(a.BucketKeyPrefix, cfg.Enforcement.Policy.KeyPrefix) || strings.HasPrefix(cfg.Enforcement.Policy.KeyPrefix, a.BucketKeyPrefix) {
+		return nil, fmt.Errorf("adaptive_rate_limit.bucket_key_prefix must not overlap policy.key_prefix")
+	}
+	cfg.Enforcement.AdaptiveRateLimit = a
 
 	return cfg, nil
 }

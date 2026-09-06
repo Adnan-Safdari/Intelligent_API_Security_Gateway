@@ -1,5 +1,7 @@
 package policy
 
+import "time"
+
 // Chain looks decisions up in several sources, in order, and returns the first
 // one found.
 //
@@ -30,4 +32,24 @@ func (c Chain) Lookup(ip string) (Decision, bool) {
 		}
 	}
 	return Decision{}, false
+}
+
+// A route-scoped policy must not hide another source's decision on a different
+// endpoint. Resolve the scope while choosing the winning source.
+func (c Chain) LookupRequest(ip, route, method string) (Decision, bool) {
+	for _, source := range c {
+		if source == nil {
+			continue
+		}
+		if d, ok := source.Lookup(ip); ok && matches(d, route, method) {
+			return d, true
+		}
+	}
+	return Decision{}, false
+}
+
+func matches(d Decision, route, method string) bool {
+	return (d.Route == "" || d.Route == route) &&
+		(d.Method == "" || d.Method == method) &&
+		(d.ExpiresAt.IsZero() || time.Now().Before(d.ExpiresAt))
 }

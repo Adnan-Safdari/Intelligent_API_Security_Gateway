@@ -1,11 +1,10 @@
 package policy
 
 import (
-	"log"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,7 +17,6 @@ import (
 type enforcerTunables struct {
 	// policyOn decides whether the lookup sources are consulted at all.
 	policyOn bool
-	throttle time.Duration
 
 	// baseline is the requests per minute every address is held to when no
 	// policy names a rate for it. Zero means no baseline, which is the default:
@@ -41,17 +39,25 @@ func (t *enforcerTunables) active() bool {
 type Enforcer struct {
 	lookup Lookuper
 	tun    atomic.Pointer[enforcerTunables]
-	logged *logLimiter
 
-	// Counts requests from addresses whose policy names a rate. Nil is a
-	// working limiter that allows everything, so a caller that does not want
-	// rate limiting simply does not set one.
-	limiter *Limiter
+	// Retained for existing embedders; the server only uses the Redis quota
+	// limiter so replicas cannot invent independent allowances.
+	limiter     *Limiter
+	quota       QuotaLimiter
+	fallbackRPM int
+	burst       int
 }
 
 func NewEnforcer(l Lookuper, enabled bool, throttleDelay time.Duration) *Enforcer {
-	e := &Enforcer{lookup: l, logged: newLogLimiter(time.Minute)}
+	e := &Enforcer{lookup: l}
 	e.Apply(enabled, throttleDelay)
+	return e
+}
+
+// Quota settings are fixed at boot; the policy's rate remains live. No token
+// grants are cached locally, so replicas cannot each spend the same allowance.
+func (e *Enforcer) WithQuotaLimiter(l QuotaLimiter, fallbackRPM, burst int) *Enforcer {
+	e.quota, e.fallbackRPM, e.burst = l, fallbackRPM, burst
 	return e
 }
 
@@ -69,25 +75,23 @@ func (e *Enforcer) WithLimiter(l *Limiter) *Enforcer {
 	return e
 }
 
-// Apply turns enforcement on or off and sets the throttle delay. The lookup
-// sources themselves are fixed at boot -- this only decides whether their
-// verdicts are acted on. The baseline is left as it was.
-func (e *Enforcer) Apply(enabled bool, throttleDelay time.Duration) {
+// The delay argument is retained for callers compiled against the old API;
+// throttling now consumes quota and never sleeps on a request goroutine.
+func (e *Enforcer) Apply(enabled bool, _ time.Duration) {
 	current := e.tun.Load()
-	next := &enforcerTunables{policyOn: enabled, throttle: throttleDelay}
+	next := &enforcerTunables{policyOn: enabled}
 	if current != nil {
 		next.baseline, next.exempt = current.baseline, current.exempt
 	}
 	e.tun.Store(next)
 }
 
-// ApplyAll sets the policy switch, the throttle delay and the baseline in one
-// swap, so a request is never judged against a new baseline and an old
+// ApplyAll sets the policy switch and baseline in one swap,
+// so a request is never judged against a new baseline and an old
 // exemption list.
-func (e *Enforcer) ApplyAll(enabled bool, throttleDelay time.Duration, b Baseline) {
+func (e *Enforcer) ApplyAll(enabled bool, _ time.Duration, b Baseline) {
 	e.tun.Store(&enforcerTunables{
 		policyOn: enabled,
-		throttle: throttleDelay,
 		baseline: b.RequestsPerMinute,
 		exempt:   b.Exempt,
 	})
@@ -108,48 +112,45 @@ func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 		var decision Decision
 		var found bool
 		if tun.policyOn && e.lookup != nil {
-			decision, found = e.lookup.Lookup(ip)
+			if scoped, ok := e.lookup.(interface {
+				LookupRequest(string, string, string) (Decision, bool)
+			}); ok {
+				decision, found = scoped.LookupRequest(ip, r.URL.Path, r.Method)
+			} else {
+				decision, found = e.lookup.Lookup(ip)
+				found = found && matches(decision, r.URL.Path, r.Method)
+			}
 		}
 
 		if found {
+			e.match(r, ip, decision, decision.RequestsPerMinute, "matched", "")
 			switch decision.Action {
-			case ActionTempBlock, ActionEscalate:
+			case ActionBlock, ActionTempBlock, ActionEscalate:
 				Record(r, decision.Action)
-				e.deny(w, r, ip, decision)
+				e.match(r, ip, decision, 0, "blocked", "")
+				e.deny(w, decision)
 				return
 
 			case ActionThrottle:
-				// A policy that names a rate is a real limit, and it replaces
-				// the baseline: the number came from how bad the campaign was,
-				// which is a better answer than the figure everyone else gets.
-				if decision.RequestsPerMinute > 0 {
-					e.limited(w, r, next, tun, ip, decision, decision.RequestsPerMinute, ActionThrottle)
-					return
+				limit := decision.RequestsPerMinute
+				if limit <= 0 {
+					limit = e.fallbackRPM
 				}
-
-				Record(r, ActionThrottle)
-				// No rate named -- an older control plane, or one that chose
-				// not to. Fall back to slowing the caller down. Waiting on the
-				// request context too means a client that disconnects does not
-				// pin a goroutine for the full delay.
-				select {
-				case <-time.After(tun.throttle):
-				case <-r.Context().Done():
-					return
-				}
-				next.ServeHTTP(w, r)
+				e.limited(w, r, next, ip, decision, limit, ActionThrottle)
 				return
+			case ActionAllow, ActionMonitor:
+				e.match(r, ip, decision, 0, "allowed", "")
 			}
-			// monitor, or an action this build does not recognise. Neither
-			// restrains traffic, so the caller falls through to the baseline
-			// like anyone else. Allowing is the safe default: a typo in the
-			// control plane should never take the API offline.
+			// An explicit permissive decision wins over the baseline too.
+			// Unknown labels cannot acquire enforcement through a fallback.
+			next.ServeHTTP(w, r)
+			return
 		}
 
 		// No policy rate applies. Hold the address to the baseline, if there is
 		// one and it is not exempt.
 		if tun.baseline > 0 && !netutil.NetworksContain(tun.exempt, ip) {
-			e.limited(w, r, next, tun, ip, decision, tun.baseline, "")
+			e.limited(w, r, next, ip, Decision{Action: ActionThrottle, Source: "baseline", Reason: "configured baseline"}, tun.baseline, "")
 			return
 		}
 
@@ -162,71 +163,73 @@ func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 // through -- empty for the baseline, where nothing was done to the request.
 func (e *Enforcer) limited(
 	w http.ResponseWriter, r *http.Request, next http.Handler,
-	tun *enforcerTunables, ip string, d Decision, limit int, applied string,
+	ip string, d Decision, limit int, applied string,
 ) {
-	allowed, count, retryAfter := e.limiter.Allow(ip, limit)
-	if !allowed {
+	result := QuotaResult{Allowed: true}
+	if limit > 0 && e.quota != nil {
+		var err error
+		result, err = e.quota.Take(r.Context(), QuotaRequest{
+			IP: ip, Route: r.URL.Path, Method: r.Method, Decision: d,
+			RequestsPerMinute: limit, Burst: e.burst,
+		})
+		if err != nil {
+			result = QuotaResult{Allowed: true, Reason: "redis_unavailable"}
+		}
+	} else if limit > 0 && e.limiter != nil {
+		// Compatibility for in-process embedders. Production uses Redis.
+		result.Allowed, _, result.RetryAfter = e.limiter.Allow(ip+"\x00"+r.URL.Path+"\x00"+r.Method, limit)
+	} else {
+		result.Reason = "quota_unavailable"
+	}
+	if !result.Allowed {
 		Record(r, OutcomeRateLimited)
-		e.rateLimited(w, r, ip, d, count, limit, retryAfter)
+		e.match(r, ip, d, limit, "throttled", "quota_exhausted")
+		e.rateLimited(w, result.RetryAfter)
 		return
 	}
-	if applied != "" {
+	enforced := result.Reason == "" || result.Reason == "within_quota"
+	if !enforced {
+		e.match(r, ip, d, limit, "fail_open", result.Reason)
+	} else {
+		e.match(r, ip, d, limit, "allowed", "")
+	}
+	if applied != "" && enforced {
 		Record(r, applied)
 	}
 	next.ServeHTTP(w, r)
 }
 
-func (e *Enforcer) deny(w http.ResponseWriter, r *http.Request, ip string, d Decision) {
+func (e *Enforcer) match(r *http.Request, ip string, d Decision, limit int, outcome, reason string) {
+	source := d.Source
+	if source == "" {
+		source = "agent"
+		if d.CampaignID == "gateway" {
+			source = "gateway_reflex"
+		}
+	}
+	if reason == "" {
+		reason = d.Reason
+	} else if d.Reason != "" {
+		reason = d.Reason + "; " + reason
+	}
+	RecordMatch(r, Match{Action: d.Action, Source: source, ClientIP: ip,
+		Route: r.URL.Path, Method: r.Method, RequestsPerMinute: limit, Reason: reason, Outcome: outcome})
+}
+
+func (e *Enforcer) deny(w http.ResponseWriter, d Decision) {
 	// Deliberately generic. The campaign id, confidence and reason go to the
 	// log, not to the response -- telling an attacker which campaign they
 	// tripped and how sure we are just helps them tune around it.
-	if d.ExpiresIn > 0 {
-		w.Header().Set("Retry-After", strconv.Itoa(d.ExpiresIn))
+	seconds := d.ExpiresIn
+	if !d.ExpiresAt.IsZero() {
+		seconds = int(math.Ceil(time.Until(d.ExpiresAt).Seconds()))
+	}
+	if seconds > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(seconds))
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusForbidden)
 	_, _ = w.Write([]byte(`{"error":"forbidden"}`))
-
-	// A block fires hardest exactly when an IP is flooding, so logging every
-	// rejected request would turn one attack into a disk-filling problem.
-	if e.logged.allow(ip) {
-		log.Printf(
-			"[policy] BLOCK %s -> %s %s (action=%s campaign=%s confidence=%.2f)",
-			ip, r.Method, r.URL.Path, d.Action, d.CampaignID, d.Confidence,
-		)
-	}
-}
-
-// logLimiter lets each IP produce at most one log line per interval.
-type logLimiter struct {
-	mu       sync.Mutex
-	seen     map[string]time.Time
-	interval time.Duration
-}
-
-func newLogLimiter(interval time.Duration) *logLimiter {
-	return &logLimiter{seen: make(map[string]time.Time), interval: interval}
-}
-
-func (l *logLimiter) allow(ip string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	now := time.Now()
-	if last, ok := l.seen[ip]; ok && now.Sub(last) < l.interval {
-		return false
-	}
-
-	// Drop entries that have aged out, so a long run against many IPs does
-	// not grow this map without bound.
-	for k, t := range l.seen {
-		if now.Sub(t) > l.interval {
-			delete(l.seen, k)
-		}
-	}
-
-	l.seen[ip] = now
-	return true
 }
 
 // rateLimited turns away a throttled caller who has exceeded their allowance.
@@ -234,10 +237,8 @@ func (l *logLimiter) allow(ip string) bool {
 // 429 rather than the 403 a block gets: the difference is real and worth
 // keeping. A block says "not you"; this says "not this fast", and Retry-After
 // tells a well-behaved client exactly when it is worth trying again.
-func (e *Enforcer) rateLimited(
-	w http.ResponseWriter, r *http.Request, ip string, d Decision, count, limit int, retryAfter time.Duration,
-) {
-	seconds := int(retryAfter.Seconds())
+func (e *Enforcer) rateLimited(w http.ResponseWriter, retryAfter time.Duration) {
+	seconds := int(math.Ceil(retryAfter.Seconds()))
 	if seconds < 1 {
 		seconds = 1
 	}
@@ -247,13 +248,4 @@ func (e *Enforcer) rateLimited(
 	// the log, not to the caller. Telling an attacker which rate they tripped
 	// is telling them what to stay under.
 	http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-
-	if e.logged.allow(ip) {
-		source := "the baseline limit"
-		if d.CampaignID != "" {
-			source = "campaign " + d.CampaignID
-		}
-		log.Printf("[policy] rate limited %s: %d requests in the last minute, allowed %d (%s)",
-			ip, count, limit, source)
-	}
 }

@@ -3,6 +3,7 @@ package telemetry
 import (
 	"time"
 
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
 
@@ -19,6 +20,7 @@ type Event struct {
 	Status    int                `json:"status"`
 	UserAgent string             `json:"userAgent,omitempty"`
 	Decision  string             `json:"decision"` // allow, throttle, temp_block, or escalate
+	Policy    *policy.Match      `json:"policy,omitempty"`
 	RiskScore int                `json:"riskScore"`
 	Fired     []string           `json:"fired"`
 	Signals   []signals.Evidence `json:"signals"`

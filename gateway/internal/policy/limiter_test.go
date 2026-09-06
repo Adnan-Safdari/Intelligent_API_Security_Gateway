@@ -153,10 +153,10 @@ func TestThrottlePolicyEnforcesItsRate(t *testing.T) {
 
 // A throttle with no rate is an older control plane's policy. It must still
 // enforce something rather than becoming a pass-through.
-func TestThrottleWithoutARateStillDelays(t *testing.T) {
+func TestThrottleWithoutARateUsesConfiguredFallback(t *testing.T) {
 	decision := Decision{Action: ActionThrottle}
-	e := NewEnforcer(fixed{"203.0.113.6": decision}, true, 40*time.Millisecond).
-		WithLimiter(NewLimiter())
+	e := NewEnforcer(fixed{"203.0.113.6": decision}, true, time.Hour).
+		WithLimiter(NewLimiter()).WithQuotaLimiter(nil, 1, 1)
 
 	handler := e.Middleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -169,8 +169,13 @@ func TestThrottleWithoutARateStillDelays(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Errorf("code = %d, want 200: a rateless throttle should still serve", rec.Code)
 	}
-	if time.Since(start) < 40*time.Millisecond {
-		t.Error("the configured throttle delay was not applied")
+	if time.Since(start) > time.Second {
+		t.Error("legacy delay pinned the request")
+	}
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, requestFrom("203.0.113.6"))
+	if rec.Code != http.StatusTooManyRequests {
+		t.Errorf("legacy policy did not enforce fallback: %d", rec.Code)
 	}
 }
 

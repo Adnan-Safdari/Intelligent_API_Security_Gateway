@@ -2,8 +2,12 @@ package policy
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"testing"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 // The JSON the Python control plane actually writes.
@@ -167,17 +171,16 @@ func TestRefreshAgainstUnreachableRedisFailsOpen(t *testing.T) {
 	}
 }
 
-// Exercises the real SCAN/MGET path. Skipped when no Redis is running, so the
-// suite still passes on a machine with nothing installed.
+// Integration tests use an explicitly selected disposable Redis database.
 func TestRefreshAgainstRealRedis(t *testing.T) {
-	s := NewStore(Config{Addr: "127.0.0.1:6379", KeyPrefix: "policytest:"})
+	s := NewStore(Config{Addr: integrationRedisAddr(t), KeyPrefix: "policytest:", RedisTimeout: time.Second})
 	defer s.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	if err := s.client.Ping(ctx).Err(); err != nil {
-		t.Skipf("no Redis on 127.0.0.1:6379: %v", err)
+		t.Fatalf("Redis unavailable: %v", err)
 	}
 
 	keys := []string{"policytest:203.0.113.5", "policytest:203.0.113.9"}
@@ -277,9 +280,8 @@ func TestCollectIgnoresExpiresInWhenTheKeyHasNoTTL(t *testing.T) {
 	}
 }
 
-// A TTL we could not read is not evidence of anything, so the key is kept.
-// Failing closed here would drop live enforcement on a transient Redis hiccup.
-func TestCollectKeepsKeysWhenTTLsAreMissing(t *testing.T) {
+// Missing lifetime evidence cannot authorise an unbounded restriction.
+func TestCollectRefusesKeysWhenTTLsAreMissing(t *testing.T) {
 	snapshot := map[string]Decision{}
 	unexpiring := collect(snapshot,
 		[]string{"policy:203.0.113.5"},
@@ -287,25 +289,25 @@ func TestCollectKeepsKeysWhenTTLsAreMissing(t *testing.T) {
 		nil, // no TTLs fetched at all
 		"policy:")
 
-	if unexpiring != 0 {
-		t.Errorf("reported %d unexpiring, want 0", unexpiring)
+	if unexpiring != 1 {
+		t.Errorf("reported %d unexpiring, want 1", unexpiring)
 	}
-	if _, ok := snapshot["203.0.113.5"]; !ok {
-		t.Error("enforcement was dropped because a TTL could not be read")
+	if _, ok := snapshot["203.0.113.5"]; ok {
+		t.Error("enforcement was invented without a bounded lifetime")
 	}
 }
 
 // End to end against Redis: a key written with no expiry must never reach the
 // snapshot, while an ordinary one does.
 func TestRefreshRefusesUnexpiringKeyInRedis(t *testing.T) {
-	s := NewStore(Config{Addr: "127.0.0.1:6379", KeyPrefix: "ttltest:"})
+	s := NewStore(Config{Addr: integrationRedisAddr(t), KeyPrefix: "ttltest:", RedisTimeout: time.Second})
 	defer s.Close()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	if err := s.client.Ping(ctx).Err(); err != nil {
-		t.Skipf("no Redis on 127.0.0.1:6379: %v", err)
+		t.Fatalf("Redis unavailable: %v", err)
 	}
 
 	forever := "ttltest:203.0.113.5"
@@ -331,5 +333,167 @@ func TestRefreshRefusesUnexpiringKeyInRedis(t *testing.T) {
 	}
 	if n := s.unexpiring.Load(); n != 1 {
 		t.Errorf("unexpiring count = %d, want 1", n)
+	}
+}
+
+func integrationRedisAddr(t *testing.T) string {
+	t.Helper()
+	addr := os.Getenv("IASG_TEST_REDIS_ADDR")
+	if addr == "" {
+		t.Skip("set IASG_TEST_REDIS_ADDR to run against a disposable Redis instance")
+	}
+	return addr
+}
+
+func TestSnapshotExpiresWithoutAnotherRefresh(t *testing.T) {
+	s := NewStore(Config{Addr: "127.0.0.1:1"})
+	defer s.Close()
+	now := time.Now()
+	for _, tc := range []struct {
+		name                string
+		expires, cacheUntil time.Time
+	}{
+		{"policy TTL", now.Add(-time.Millisecond), now.Add(time.Hour)},
+		{"cache max age", now.Add(time.Hour), now.Add(-time.Millisecond)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			snapshot := map[string]Decision{"203.0.113.5": {
+				Action: ActionTempBlock, ExpiresAt: tc.expires, cacheUntil: tc.cacheUntil,
+			}}
+			s.snapshot.Store(&snapshot)
+			if _, found := s.Lookup("203.0.113.5"); found {
+				t.Fatal("a stale snapshot continued restricting traffic")
+			}
+		})
+	}
+}
+
+func TestSnapshotDeadlineDoesNotExtendByNetworkLatency(t *testing.T) {
+	observed := time.Now().Add(-time.Minute)
+	snapshot := map[string]Decision{}
+	collectAt(snapshot, []string{"policy:203.0.113.5"}, []any{realPolicy},
+		[]time.Duration{time.Minute}, "policy:", observed, observed.Add(10*time.Second))
+	d := snapshot["203.0.113.5"]
+	if d.ExpiresAt != observed.Add(time.Minute) || d.cacheUntil != observed.Add(10*time.Second) {
+		t.Fatalf("deadlines extended after the Redis read: %+v", d)
+	}
+	if d.Source != "agent" || d.redisKey != "policy:203.0.113.5" || d.rawPolicy != realPolicy {
+		t.Fatalf("lost policy origin or generation: %+v", d)
+	}
+}
+
+func TestSnapshotPreservesPolicySource(t *testing.T) {
+	snapshot := map[string]Decision{}
+	collect(snapshot, []string{"policy:203.0.113.5"},
+		[]any{`{"action":"throttle","source":"reputation","route":"/api/login","method":"POST","requests_per_minute":5}`},
+		[]time.Duration{time.Minute}, "policy:")
+	d := snapshot["203.0.113.5"]
+	if d.Source != "reputation" || d.Route != "/api/login" || d.Method != "POST" || d.RequestsPerMinute != 5 {
+		t.Fatalf("policy fields lost: %+v", d)
+	}
+}
+
+func TestRefreshFailureDropsPriorRestrictions(t *testing.T) {
+	s := NewStore(Config{Addr: "127.0.0.1:1"})
+	defer s.Close()
+	snapshot := map[string]Decision{"203.0.113.5": {Action: ActionTempBlock, ExpiresAt: time.Now().Add(time.Hour)}}
+	s.snapshot.Store(&snapshot)
+	if err := s.refresh(context.Background()); err == nil {
+		t.Fatal("expected Redis connection failure")
+	}
+	if _, found := s.Lookup("203.0.113.5"); found {
+		t.Fatal("an unavailable source retained enforcement")
+	}
+}
+
+func TestSnapshotRefreshBudgetIsIndependentOfSocketBudget(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		cfg         Config
+		wantRefresh time.Duration
+	}{
+		{"defaults", Config{Addr: "127.0.0.1:1", RedisTimeout: 25 * time.Millisecond}, 2 * time.Second},
+		{"configured", Config{Addr: "127.0.0.1:1", RedisTimeout: 25 * time.Millisecond, RefreshTimeout: 750 * time.Millisecond}, 750 * time.Millisecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := NewStore(tc.cfg)
+			defer s.Close()
+			if s.refreshTimeout != tc.wantRefresh {
+				t.Fatalf("refresh budget = %v, want %v", s.refreshTimeout, tc.wantRefresh)
+			}
+			opts := s.client.Options()
+			if opts.ReadTimeout != tc.cfg.RedisTimeout || opts.WriteTimeout != tc.cfg.RedisTimeout ||
+				opts.DialTimeout != tc.cfg.RedisTimeout || opts.PoolTimeout != tc.cfg.RedisTimeout {
+				t.Fatal("background refresh budget relaxed the individual Redis operation bounds")
+			}
+		})
+	}
+}
+
+// Time between SCAN pages consumes the background budget without making any
+// individual Redis call slow, as scheduling and decoding do in production.
+type delayedScanHook struct {
+	delay time.Duration
+	calls int
+}
+
+func (h *delayedScanHook) DialHook(next redis.DialHook) redis.DialHook { return next }
+func (h *delayedScanHook) ProcessPipelineHook(next redis.ProcessPipelineHook) redis.ProcessPipelineHook {
+	return next
+}
+func (h *delayedScanHook) ProcessHook(next redis.ProcessHook) redis.ProcessHook {
+	return func(ctx context.Context, cmd redis.Cmder) error {
+		if cmd.Name() == "scan" {
+			h.calls++
+			timer := time.NewTimer(h.delay)
+			defer timer.Stop()
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-timer.C:
+			}
+		}
+		return next(ctx, cmd)
+	}
+}
+
+func TestRedisSnapshotCanSpanManyFastCallsButRetainsTotalDeadline(t *testing.T) {
+	addr := integrationRedisAddr(t)
+	prefix := fmt.Sprintf("iasg-test:refresh-budget:%d:", time.Now().UnixNano())
+	seed := newRedisClient(defaults(Config{Addr: addr, RedisTimeout: time.Second}))
+	defer seed.Close()
+	ctx := context.Background()
+	keys := make([]string, 1024)
+	pipe := seed.Pipeline()
+	for i := range keys {
+		keys[i] = fmt.Sprintf("%s%d", prefix, i)
+		pipe.Set(ctx, keys[i], realPolicy, time.Minute)
+	}
+	if _, err := pipe.Exec(ctx); err != nil {
+		t.Fatalf("seed policies: %v", err)
+	}
+	defer seed.Del(ctx, keys...)
+
+	s := NewStore(Config{Addr: addr, KeyPrefix: prefix, RedisTimeout: 25 * time.Millisecond, RefreshTimeout: 2 * time.Second})
+	defer s.Close()
+	hook := &delayedScanHook{delay: 15 * time.Millisecond}
+	s.client.AddHook(hook)
+	started := time.Now()
+	if err := s.refresh(ctx); err != nil {
+		t.Fatalf("healthy multipage snapshot failed: %v", err)
+	}
+	if hook.calls < 2 || time.Since(started) <= s.client.Options().ReadTimeout {
+		t.Fatalf("test did not exceed a single-call budget: scan pages=%d, elapsed=%v", hook.calls, time.Since(started))
+	}
+	if s.size() != len(keys) {
+		t.Fatalf("loaded %d policies, want %d", s.size(), len(keys))
+	}
+
+	s.refreshTimeout = 20 * time.Millisecond
+	if err := s.refresh(ctx); err == nil {
+		t.Fatal("multipage scan ignored its configured total deadline")
+	}
+	if s.size() != 0 {
+		t.Fatal("timed-out snapshot retained restrictions")
 	}
 }

@@ -28,8 +28,10 @@ import (
 // Actions the control plane can write. Anything else is treated as unknown
 // and allowed through -- an unrecognised action must never block traffic.
 const (
+	ActionAllow     = "allow"
 	ActionMonitor   = "monitor"
 	ActionThrottle  = "throttle"
+	ActionBlock     = "block"
 	ActionTempBlock = "temp_block"
 	ActionEscalate  = "escalate"
 )
@@ -62,7 +64,17 @@ type Decision struct {
 	// Zero means the policy named no rate, which is what a control plane older
 	// than this field writes. The gateway falls back to its configured
 	// throttle behaviour then, so an old policy still enforces something.
-	RequestsPerMinute int `json:"requests_per_minute"`
+	RequestsPerMinute int    `json:"requests_per_minute"`
+	Route             string `json:"route,omitempty"`
+	Method            string `json:"method,omitempty"`
+	Source            string `json:"source,omitempty"`
+
+	// Redis owns the lifetime. Keeping its observed deadline locally prevents
+	// a missed refresh from extending a block after the key has expired.
+	ExpiresAt  time.Time `json:"-"`
+	cacheUntil time.Time
+	redisKey   string
+	rawPolicy  string
 }
 
 // Lookuper is what the middleware actually depends on, so tests can supply a
@@ -79,13 +91,20 @@ type Config struct {
 	PoolSize        int
 	KeyPrefix       string
 	RefreshInterval time.Duration
+	RefreshTimeout  time.Duration
+	RedisTimeout    time.Duration
+	FailureBackoff  time.Duration
+	CacheMaxAge     time.Duration
+	BucketPrefix    string
 }
 
 // Store keeps a local snapshot of every active policy key.
 type Store struct {
-	client   *redis.Client
-	prefix   string
-	interval time.Duration
+	client         *redis.Client
+	prefix         string
+	interval       time.Duration
+	refreshTimeout time.Duration
+	cacheMaxAge    time.Duration
 
 	// Swapped wholesale on each refresh, so readers never see a half-built
 	// map and never take a lock.
@@ -100,23 +119,15 @@ type Store struct {
 }
 
 func NewStore(cfg Config) *Store {
-	if cfg.KeyPrefix == "" {
-		cfg.KeyPrefix = "policy:"
-	}
-	if cfg.RefreshInterval <= 0 {
-		cfg.RefreshInterval = 5 * time.Second
-	}
+	cfg = defaults(cfg)
 
 	return &Store{
-		client: redis.NewClient(&redis.Options{
-			Addr:     cfg.Addr,
-			Password: cfg.Password,
-			DB:       cfg.DB,
-			PoolSize: cfg.PoolSize,
-		}),
-		prefix:   cfg.KeyPrefix,
-		interval: cfg.RefreshInterval,
-		done:     make(chan struct{}),
+		client:         newRedisClient(cfg),
+		prefix:         cfg.KeyPrefix,
+		interval:       cfg.RefreshInterval,
+		refreshTimeout: cfg.RefreshTimeout,
+		cacheMaxAge:    cfg.CacheMaxAge,
+		done:           make(chan struct{}),
 	}
 }
 
@@ -127,6 +138,11 @@ func (s *Store) Lookup(ip string) (Decision, bool) {
 		return Decision{}, false
 	}
 	d, ok := (*m)[ip]
+	now := time.Now()
+	if ok && ((!d.ExpiresAt.IsZero() && !now.Before(d.ExpiresAt)) ||
+		(!d.cacheUntil.IsZero() && !now.Before(d.cacheUntil))) {
+		return Decision{}, false
+	}
 	return d, ok
 }
 
@@ -139,7 +155,7 @@ func (s *Store) Start() {
 	// immediately instead of running open for a whole interval. A failure
 	// here is logged and ignored: the gateway must start even if Redis is
 	// down, which is the whole point of the two lanes being independent.
-	first, done := context.WithTimeout(ctx, 2*time.Second)
+	first, done := context.WithTimeout(ctx, s.refreshTimeout)
 	if err := s.refresh(first); err != nil {
 		log.Printf("[policy] initial load failed, allowing all traffic: %v", err)
 	} else {
@@ -161,12 +177,9 @@ func (s *Store) loop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			c, cancel := context.WithTimeout(ctx, s.interval)
+			c, cancel := context.WithTimeout(ctx, s.refreshTimeout)
 			if err := s.refresh(c); err != nil {
-				// Keep serving the last good snapshot. Redis going down must
-				// never take the gateway with it, and it must never cause
-				// traffic to be blocked that wasn't blocked a second ago.
-				log.Printf("[policy] refresh failed, keeping last snapshot: %v", err)
+				log.Printf("[policy] refresh failed, allowing traffic: %v", err)
 			}
 			cancel()
 		}
@@ -174,7 +187,19 @@ func (s *Store) loop(ctx context.Context) {
 }
 
 // refresh rebuilds the snapshot from Redis.
-func (s *Store) refresh(ctx context.Context) error {
+func (s *Store) refresh(ctx context.Context) (err error) {
+	// A snapshot may span many short Redis calls. Giving their whole scan the
+	// quota call's budget would discard healthy policy as the keyspace grows.
+	ctx, cancel := context.WithTimeout(ctx, s.refreshTimeout)
+	defer cancel()
+	defer func() {
+		if err != nil {
+			// An unavailable policy source cannot authorise continued blocks.
+			// The next successful refresh restores live decisions normally.
+			s.snapshot.Store(nil)
+		}
+	}()
+	started := time.Now()
 	next := make(map[string]Decision)
 	var unexpiring int
 
@@ -189,21 +214,13 @@ func (s *Store) refresh(ctx context.Context) error {
 		}
 
 		if len(keys) > 0 {
-			values, err := s.client.MGet(ctx, keys...).Result()
+			observed := time.Now()
+			values, ttls, err := s.valuesWithTTLs(ctx, keys)
 			if err != nil {
 				return err
 			}
 
-			// What Redis will actually do with the key, which is not the same
-			// as what the key says about itself: expires_in inside the JSON is
-			// the control plane's intent, and a key can claim half an hour
-			// while carrying no expiry at all.
-			ttls, err := s.ttls(ctx, keys)
-			if err != nil {
-				return err
-			}
-
-			unexpiring += collect(next, keys, values, ttls, s.prefix)
+			unexpiring += collectAt(next, keys, values, ttls, s.prefix, observed, started.Add(s.cacheMaxAge))
 		}
 
 		cursor = cur
@@ -227,42 +244,46 @@ func (s *Store) refresh(ctx context.Context) error {
 	return nil
 }
 
-// ttls fetches the remaining life of every key in one round trip.
-//
-// Redis reports -1 for a key with no expiry and -2 for one that is already
-// gone; go-redis passes both through as negative durations.
-func (s *Store) ttls(ctx context.Context, keys []string) ([]time.Duration, error) {
+// Reading value and lifetime atomically avoids assigning a replacement key's
+// TTL to the old decision when the writer updates it during a refresh.
+const policySnapshotScript = `return {redis.call('GET', KEYS[1]), redis.call('PTTL', KEYS[1])}`
+
+func (s *Store) valuesWithTTLs(ctx context.Context, keys []string) ([]any, []time.Duration, error) {
 	pipe := s.client.Pipeline()
-	cmds := make([]*redis.DurationCmd, len(keys))
+	cmds := make([]*redis.Cmd, len(keys))
 	for i, key := range keys {
-		cmds[i] = pipe.TTL(ctx, key)
+		cmds[i] = pipe.Eval(ctx, policySnapshotScript, []string{key})
 	}
 	if _, err := pipe.Exec(ctx); err != nil && err != redis.Nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	out := make([]time.Duration, len(keys))
+	values := make([]any, len(keys))
+	ttls := make([]time.Duration, len(keys))
 	for i, cmd := range cmds {
-		ttl, err := cmd.Result()
-		if err != nil {
-			// An unreadable lifetime is treated as no lifetime. The safe
-			// answer is to decline to enforce, never to enforce forever on
-			// the strength of a failed lookup.
-			ttl = -1
+		ttls[i] = -1
+		parts, err := cmd.Slice()
+		if err != nil || len(parts) != 2 {
+			continue
 		}
-		out[i] = ttl
+		ttl, ok := parts[1].(int64)
+		if !ok {
+			continue
+		}
+		values[i] = parts[0]
+		ttls[i] = time.Duration(ttl) * time.Millisecond
 	}
-	return out, nil
+	return values, ttls, nil
 }
 
 // collect decodes one SCAN batch into the snapshot being built and reports how
 // many keys were refused for having no expiry. Split out from refresh so the
 // decoding rules can be tested without a Redis server.
-//
-// ttls may be shorter than keys, in which case the missing entries are treated
-// as unknown and the key is kept: a lifetime we failed to read is not evidence
-// that the key is unexpiring.
 func collect(into map[string]Decision, keys []string, values []any, ttls []time.Duration, prefix string) int {
+	return collectAt(into, keys, values, ttls, prefix, time.Now(), time.Time{})
+}
+
+func collectAt(into map[string]Decision, keys []string, values []any, ttls []time.Duration, prefix string, observed, cacheUntil time.Time) int {
 	unexpiring := 0
 
 	for i, v := range values {
@@ -280,7 +301,7 @@ func collect(into map[string]Decision, keys []string, values []any, ttls []time.
 		// itself. A key with no expiry has no such release: nothing renews it
 		// and nothing clears it, so one mistyped key would refuse an address
 		// permanently, with no record of why. Refuse it instead.
-		if i < len(ttls) && ttls[i] < 0 {
+		if i >= len(ttls) || ttls[i] <= 0 {
 			unexpiring++
 			continue
 		}
@@ -291,6 +312,12 @@ func collect(into map[string]Decision, keys []string, values []any, ttls []time.
 			log.Printf("[policy] ignoring unparseable key %s: %v", keys[i], err)
 			continue
 		}
+		if d.Source == "" {
+			d.Source = "agent"
+		}
+		d.ExpiresAt = observed.Add(ttls[i])
+		d.cacheUntil = cacheUntil
+		d.redisKey, d.rawPolicy = keys[i], raw
 
 		into[strings.TrimPrefix(keys[i], prefix)] = d
 	}

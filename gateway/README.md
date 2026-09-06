@@ -1,21 +1,23 @@
 # Gateway — the data plane
 
-A Go reverse proxy that sits in front of the backend API. Every request passes through it,
-so its budget is microseconds: it detects, it enforces a cached decision, and it gets out
-of the way.
+A Go reverse proxy that sits in front of the backend API. It enforces cached decisions,
+records detection evidence, and forwards admitted requests with minimal overhead.
 
-It never waits on Redis, never waits on the control plane, and never waits on a model.
+It never calls the control plane, PostgreSQL, or a model on the request path. Policy
+lookup is local; active rate limits use a short, bounded Redis quota check shared by
+all gateway replicas.
 
 ## What it does, in order
 
 1. Resolve the real client IP — from `X-Forwarded-For`, but only when the immediate peer
    is a configured trusted proxy, so the header cannot be spoofed to frame another address
-2. Run the detectors over the request
-3. Look up `policy:<ip>` in a background-refreshed snapshot and allow, slow or block
-4. Proxy to the backend
-5. Publish what happened to `iasg:events` for the control plane to correlate
+2. Start telemetry and look up active policy/reflex decisions before reading the body;
+   forward, return `403`, or check the applicable quota and return `429` when exhausted
+3. Cap the admitted request body, capture a redacted telemetry snippet, and run detectors
+4. Proxy to the backend; let the reflex observe the completed detector evidence
+5. Enqueue what happened for background publication to `iasg:events`
 
-Steps 3 and 5 are the two halves of the split: the gateway *reads* a decision it did not
+Steps 2 and 5 are the two halves of the split: the gateway *reads* a decision it did not
 make, and *writes* evidence it does not interpret.
 
 ## Layout
@@ -79,21 +81,25 @@ Environment overrides, used by Compose:
 
 ## Enforcement
 
-The control plane writes `policy:<ip>` keys with a TTL. This side reads them from a
-snapshot refreshed in the background, so:
+The control plane writes `policy:<ip>` keys with a TTL. Background snapshots preserve
+the actual Redis expiry and expire locally on every lookup. Rate limits use atomic
+Redis token buckets per client IP, exact URL path, and HTTP method. A quota check fails
+open on Redis errors, with a configurable timeout and failure backoff.
 
-- The request path does no Redis I/O
-- A dead Redis means "no policy", never added latency
-- An action the gateway does not recognise fails open
-
-Actions are `monitor`, `throttle`, `temp_block` and `escalate`. See
-[`internal/policy/store.go`](internal/policy/store.go) for the JSON contract, which is
-written by `PolicyDecision.to_json` on the Python side.
+`allow` and `monitor` forward normally. `throttle` uses the policy's
+`requests_per_minute` and returns `429` with `Retry-After` when exhausted, without
+sleeping. `block`, `temp_block`, and `escalate` return `403`. Independent reflex blocks
+still apply. See [Policy enforcement and adaptive rate limiting](docs/policy-enforcement.md)
+for the compatible Python JSON contract, configuration, Redis keys, tests, and Compose
+verification commands.
 
 ## Testing
 
 ```bash
+go build ./...
+go vet ./...
 go test ./...
+go test ./internal/signals/ -race
 ```
 
 For traffic that exercises the detectors end to end, the shell scripts in

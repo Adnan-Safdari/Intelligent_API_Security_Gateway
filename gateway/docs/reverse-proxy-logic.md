@@ -21,12 +21,13 @@ The runtime flow starts in `gateway/cmd/server/main.go`:
 
 Inside `gateway/internal/proxy/server.go`, the server builds the request pipeline like this:
 
-1. `LoggingMiddleware`
-2. `RequestInspectionMiddleware`
-3. API flooding detector middleware
-4. SQL injection detector middleware
-5. Brute force detector middleware (closest to proxy; needs response status)
-6. Reverse proxy handler
+1. Trusted client-IP resolver
+2. Telemetry recorder (assigns context and records on return; does not read the body)
+3. `LoggingMiddleware`
+4. Policy/reflex enforcer, including an atomic Redis quota check when a rate applies
+5. `BodyLimitMiddleware`, then `telemetry.CaptureBody`
+6. Reflex observer wrapping reputation, flooding, SQLi, traversal, and brute-force detectors
+7. Reverse proxy handler
 
 The middleware order matters. The outer middleware sees the request first, and the inner proxy runs last.
 
@@ -43,7 +44,9 @@ The main reverse proxy implementation lives in `gateway/internal/proxy/reverse_p
 
 ### Why it matters
 
-This is the part that actually forwards traffic to your backend API. The middleware only inspects and logs. The reverse proxy is the component that sends the request onward.
+This is the part that forwards admitted traffic to the backend API. Earlier
+middleware enforces existing policies and records detection evidence; refused
+requests never reach the reverse proxy.
 
 ## Middleware Layer
 
@@ -60,12 +63,11 @@ This logs:
 
 ### RequestInspectionMiddleware
 
-This prints:
-
-- all request headers
-- the request body, if present
-
-It also restores the request body afterward so the reverse proxy can still forward it.
+This legacy debug helper prints headers and bodies, but is not installed in
+the live chain. Admitted requests pass through the body-size cap and
+`telemetry.CaptureBody`, which captures a redacted snippet and restores the
+body for forwarding. Requests refused by policy are recorded without reading
+their bodies.
 
 ## Attack Detection Layer
 
@@ -206,7 +208,9 @@ It contained:
 - `BuildRequestContext`
 - `NewRequestContext`
 
-But nothing in the live proxy flow imported or called it. The actual runtime middleware path uses request logging, request inspection, flooding detection, SQLi detection, and reverse proxying.
+But nothing in the live proxy flow imported or called it. The current runtime
+uses the trusted IP resolver, telemetry, policy enforcement, bounded body
+capture, detectors, and reverse proxying described above.
 
 Because it was unused, the package has been removed.
 
@@ -218,26 +222,29 @@ The gateway now does exactly this at runtime:
 2. Resolve the real client IP, believing `X-Forwarded-For` only from a
    configured trusted proxy.
 3. Assign a request ID and start the telemetry record.
-4. Consult policy: a `temp_block` or `escalate` decision answers `403` here,
-   and a throttled address over its rate answers `429`. Nothing below runs.
-5. Print headers and body.
+4. Log request metadata and consult the local policy/reflex snapshot:
+   `block`, `temp_block`, and `escalate` return `403`; `allow` and `monitor`
+   forward normally. An applicable rate uses a shared Redis token bucket per
+   IP, path, and method, returning `429` with `Retry-After` when exhausted.
+5. Cap the admitted body and capture its redacted telemetry snippet.
 6. Run the five detectors, each filling in `Evidence`.
-7. Let the reflex observe what they found, after the response, and record a
+7. Forward the request to the backend API on `5002`.
+8. Let the reflex observe what they found, after the response, and record a
    block if a trusted detector crossed its threshold.
-8. Forward the request to the backend API on `5002`.
-9. Publish the telemetry record to `iasg:events`.
+9. Enqueue the telemetry record for background publication to `iasg:events`.
 
 So it detects *and* enforces, but only ever on a decision made earlier — by the
 control plane, or by the reflex on a previous request. Nothing in the request
-path waits on Redis, on the control plane, or on a model.
+path calls the control plane, PostgreSQL, or a model. Only applicable quotas
+perform synchronous Redis I/O, with a short configurable timeout and fail-open
+behaviour. Throttling never sleeps or queues requests. See
+[Policy enforcement](policy-enforcement.md) for the JSON contract, configuration,
+and Docker verification commands.
 
 ## If You Want To Extend It Later
 
 Genuinely open, in rough order of value:
 
-- cap the request body: `internal/telemetry` and `internal/signals` both read it
-  with `io.ReadAll` and no limit, and the telemetry read happens *before* the
-  enforcer, so a blocked address's body is still buffered whole
 - add a gateway health endpoint — there is no mux, so every path proxies and
   liveness cannot be checked without reaching the backend
 - convert alert logging into structured JSON logs

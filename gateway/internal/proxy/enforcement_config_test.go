@@ -30,6 +30,10 @@ func TestEnforcementCarriesEverySection(t *testing.T) {
 			t.Fatalf("Config has no %s field, so main.go cannot supply it", name)
 		}
 		enabled := target.FieldByName("Enabled")
+		if name == "AdaptiveRateLimit" {
+			target.FieldByName("Burst").SetInt(7)
+			continue
+		}
 		if !enabled.IsValid() || enabled.Kind() != reflect.Bool {
 			t.Fatalf("%s has no Enabled flag; this test needs updating for it", name)
 		}
@@ -40,6 +44,12 @@ func TestEnforcementCarriesEverySection(t *testing.T) {
 
 	for i := 0; i < sections.NumField(); i++ {
 		name := sections.Field(i).Name
+		if name == "AdaptiveRateLimit" {
+			if got.AdaptiveRateLimit.Burst != 7 {
+				t.Error("Config.Enforcement() drops adaptive quota settings")
+			}
+			continue
+		}
 		if !reflect.ValueOf(got).FieldByName(name).FieldByName("Enabled").Bool() {
 			t.Errorf("Config.Enforcement() drops %s -- it would boot switched off", name)
 		}

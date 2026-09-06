@@ -81,12 +81,19 @@ Actions escalate one rung at a time, and each rung carries its own lifetime:
 | Action | TTL | Effect at the gateway |
 | --- | --- | --- |
 | `monitor` | 300s | Never written — it would be a no-op key |
-| `throttle` | 900s | Delay each request |
+| `throttle` | 900s | Enforce the policy's `requests_per_minute` per IP, exact path, and method; return `429` with `Retry-After` when exhausted |
 | `temp_block` | 1800s | Refuse with 403 |
-| `escalate` | 3600s | Refuse with 403 and raise an alert for a human |
+| `escalate` | 3600s | Gateway returns `403`; Python separately records a human-review alert |
 
 Escalation is the one action that asks for a person, so it is raised after the
 explanation step — the alert then carries something readable.
+
+The alert is appended once per campaign to the existing `iasg_alerts` Redis
+stream; the gateway does not send a notification or call Python. Throttle
+policies retain the existing JSON fields, including `source` and
+`requests_per_minute`. Shared Redis token buckets enforce the rate across
+gateway replicas without sleeping, while policy lookup remains a local
+background-refreshed snapshot. Real Redis TTL controls expiry.
 
 Every rung expires by itself. See [Policy Enforcement](policy-enforcement.md)
 for why that is non-negotiable on both sides of the contract.

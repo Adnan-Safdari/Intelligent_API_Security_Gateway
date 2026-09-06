@@ -5,8 +5,10 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -15,7 +17,8 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
 
-// Writer persists a security event. Redis implements this; Postgres can later.
+// Writer accepts a security event for storage. Production uses AsyncWriter so
+// persistence never holds the client connection open.
 type Writer interface {
 	WriteEvent(ctx context.Context, ev Event) error
 }
@@ -42,9 +45,20 @@ func (sr *statusRecorder) Write(b []byte) (int, error) {
 }
 
 func (sr *statusRecorder) Flush() {
+	if !sr.wrote {
+		sr.WriteHeader(http.StatusOK)
+	}
 	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+func (sr *statusRecorder) Unwrap() http.ResponseWriter { return sr.ResponseWriter }
+
+type bodyCaptureKey struct{}
+
+type bodyCapture struct {
+	snippet string
 }
 
 // Middleware records one Event after detectors and the backend have run.
@@ -52,11 +66,6 @@ func (sr *statusRecorder) Flush() {
 func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if writer == nil {
-				next.ServeHTTP(w, r)
-				return
-			}
-
 			started := time.Now()
 			requestID := newRequestID()
 			// Set before the chain runs: request-scoped detectors label the
@@ -65,12 +74,25 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 			r.Header.Set(signals.RequestIDHeader, requestID)
 			w.Header().Set(signals.RequestIDHeader, requestID)
 			r = policy.AttachOutcome(r)
-
-			body, _ := readBody(r)
-			snippet := RedactSnippet(body)
+			capture := &bodyCapture{}
+			if writer != nil {
+				r = r.WithContext(context.WithValue(r.Context(), bodyCaptureKey{}, capture))
+			}
 
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 			next.ServeHTTP(rec, r)
+			match := policy.Matched(r)
+			if match != nil {
+				slog.InfoContext(r.Context(), "policy_match",
+					"request_id", requestID, "action", match.Action, "policy_source", match.Source,
+					"client_ip", match.ClientIP, "route", match.Route, "method", match.Method,
+					"requests_per_minute", match.RequestsPerMinute, "reason", match.Reason,
+					"outcome", match.Outcome, "status", rec.status,
+				)
+			}
+			if writer == nil {
+				return
+			}
 
 			ip := netutil.ClientIP(r)
 			// Scoped to this request, not to the address. A blocked IP is
@@ -95,20 +117,38 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 				Status:    status,
 				UserAgent: truncate(r.UserAgent(), 256),
 				Decision:  policy.Applied(r),
+				Policy:    match,
 				RiskScore: snap.TotalScore,
 				Fired:     uniqueFired(snap.Fired),
 				Signals:   snap.Evidence,
-				Snippet:   snippet,
+				Snippet:   capture.snippet,
 				BackendMS: time.Since(started).Milliseconds(),
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 			defer cancel()
-			if err := writer.WriteEvent(ctx, ev); err != nil {
+			if err := writer.WriteEvent(ctx, ev); err != nil && !errors.Is(err, ErrQueueFull) {
 				log.Printf("redis telemetry write failed: %v", err)
 			}
 		})
 	}
+}
+
+// CaptureBody belongs after policy enforcement and the body-size guard. Keeping
+// it separate from the outer event recorder lets refusals produce telemetry
+// without first consuming an attacker-controlled request body.
+func CaptureBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if capture, ok := r.Context().Value(bodyCaptureKey{}).(*bodyCapture); ok {
+			body, err := readBody(r)
+			if err != nil {
+				http.Error(w, "cannot read request body", http.StatusBadRequest)
+				return
+			}
+			capture.snippet = RedactSnippet(body)
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func uniqueFired(values []string) []string {
@@ -135,10 +175,8 @@ func newRequestID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// Unbounded on its own, and this runs above the enforcer -- so before
-// proxy.BodyLimitMiddleware existed, an address the control plane had already
-// blocked still had its whole body read here before the 403 was written. The
-// cap is what makes this safe; it must stay ahead of this middleware.
+// The body-size guard must precede CaptureBody so telemetry only buffers data
+// that has already passed the configured cap.
 func readBody(r *http.Request) ([]byte, error) {
 	if r.Body == nil {
 		return nil, nil
