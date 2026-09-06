@@ -55,6 +55,12 @@ type Config struct {
 	// config, because every stage below it buffers whatever it is handed.
 	MaxBodyBytes int64
 
+	// Routes describes the backend's own endpoints, so telemetry can record
+	// which template a path matched. Structural and boot-only: changing a
+	// template changes what previously recorded telemetry means, which is why
+	// it is not part of the block the settings watcher carries.
+	Routes config.RoutesConfig
+
 	// RateLimit holds the configuration for API flooding detection.
 	RateLimit         config.RateLimitConfig
 	AdaptiveRateLimit config.AdaptiveRateLimitConfig
@@ -182,6 +188,15 @@ func (s *Server) Start() error {
 		return err
 	}
 
+	// A route table that would not compile stops the gateway, for the same
+	// reason a bad reputation list does: one that silently loaded nothing
+	// records <unmatched> for every real endpoint, and nothing downstream can
+	// tell that from a client walking paths the application does not serve.
+	routes, err := telemetry.NewTable(s.config.Routes.Templates)
+	if err != nil {
+		return err
+	}
+
 	// The gateway's own reflex, and the enforcer that acts on both it and the
 	// control plane's decisions.
 	reflex, err := s.newReflex()
@@ -237,7 +252,7 @@ func (s *Server) Start() error {
 	// before the telemetry snippet or any detector buffers client input.
 	handler := ChainMiddleware(
 		resolver.Middleware,
-		telemetry.Middleware(eventWriter, s.collector),
+		telemetry.Middleware(eventWriter, s.collector, routes),
 		LoggingMiddleware,
 		enforcer.Middleware,
 		BodyLimitMiddleware(maxBody),

@@ -29,6 +29,31 @@ proxy:
   max_idle_conns: 100
   max_conns_per_host: 10
 
+# The backend's own endpoints, so telemetry can record which template a path
+# matched rather than treating every resource id as a different endpoint --
+# /api/products/12 and /api/products/34 are one route, not two.
+#
+# Structural on purpose: changing a template changes what previously recorded
+# telemetry means, so this is read at boot and is not carried by the settings
+# watcher the way detector thresholds are. A path matching nothing here records
+# as unmatched, which is a real category -- it is what a client walking paths
+# the application does not serve looks like.
+#
+# Specificity decides, not the order below: /api/products/search wins over
+# /api/products/{id} however this list is sorted.
+routes:
+  templates:
+    - GET /api/health
+    - POST /api/login
+    - GET /api/products
+    - GET /api/products/search
+    - GET /api/products/search-secure
+    - GET /api/products/{id}
+    - GET /api/demo-files
+    - GET /backup-demo
+    - GET /config-demo
+    - GET /.env-demo
+
 storage:
   redis:
     enabled: true

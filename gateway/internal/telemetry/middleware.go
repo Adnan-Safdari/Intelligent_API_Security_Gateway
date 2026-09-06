@@ -63,7 +63,11 @@ type bodyCapture struct {
 
 // Middleware records one Event after detectors and the backend have run.
 // Redis failures never change the client response.
-func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) http.Handler {
+//
+// routes may be nil, in which case every request records UnmatchedRoute. That
+// is a usable answer rather than an empty one, so a gateway configured without
+// a route table still produces a consistent column.
+func Middleware(writer Writer, collector *signals.Collector, routes *Table) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started := time.Now()
@@ -112,17 +116,23 @@ func Middleware(writer Writer, collector *signals.Collector) func(http.Handler) 
 				Timestamp: time.Now().UTC(),
 				IP:        ip,
 				Method:    r.Method,
-				Path:      r.URL.Path,
-				Query:     RedactQuery(r.URL.RawQuery),
-				Status:    status,
-				UserAgent: truncate(r.UserAgent(), 256),
-				Decision:  policy.Applied(r),
-				Policy:    match,
-				RiskScore: snap.TotalScore,
-				Fired:     uniqueFired(snap.Fired),
-				Signals:   snap.Evidence,
-				Snippet:   capture.snippet,
-				BackendMS: time.Since(started).Milliseconds(),
+				// Recorded exactly as Go produced it: not lexically cleaned, so
+				// a traversal probe's ../ segments survive into the record.
+				// Collapsing them here would erase the behaviour the traversal
+				// detector exists to catch, and the anomaly features measure
+				// path diversity on this value.
+				Path:          r.URL.Path,
+				RouteTemplate: routes.Match(r.Method, r.URL.Path),
+				Query:         RedactQuery(r.URL.RawQuery),
+				Status:        status,
+				UserAgent:     truncate(r.UserAgent(), 256),
+				Decision:      policy.Applied(r),
+				Policy:        match,
+				RiskScore:     snap.TotalScore,
+				Fired:         uniqueFired(snap.Fired),
+				Signals:       snap.Evidence,
+				Snippet:       capture.snippet,
+				BackendMS:     time.Since(started).Milliseconds(),
 			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)

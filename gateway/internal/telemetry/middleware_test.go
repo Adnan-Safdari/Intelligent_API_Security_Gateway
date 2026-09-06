@@ -93,11 +93,11 @@ func TestBlockedRequestReportsNoSignalsOfItsOwn(t *testing.T) {
 	})
 
 	// The chain as it runs when a request is inspected.
-	inspected := Middleware(writer, collector)(sqli.Middleware(backend))
+	inspected := Middleware(writer, collector, nil)(sqli.Middleware(backend))
 
 	// The chain as it runs once the address is under a block: the enforcer
 	// answers before the detectors get a turn.
-	enforced := Middleware(writer, collector)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	enforced := Middleware(writer, collector, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 
@@ -137,7 +137,7 @@ func TestInspectedRequestsReportTheirOwnSignals(t *testing.T) {
 	collector := signals.NewCollector(sqli)
 	writer := &captureWriter{}
 
-	handler := Middleware(writer, collector)(sqli.Middleware(http.HandlerFunc(
+	handler := Middleware(writer, collector, nil)(sqli.Middleware(http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) },
 	)))
 
@@ -162,7 +162,7 @@ func TestSQLiProductSearchTelemetryContainsEvidence(t *testing.T) {
 	collector := signals.NewCollector(sqli)
 	writer := &captureWriter{}
 	backendCalls := 0
-	handler := Middleware(writer, collector)(sqli.Middleware(http.HandlerFunc(
+	handler := Middleware(writer, collector, nil)(sqli.Middleware(http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) {
 			backendCalls++
 			w.WriteHeader(http.StatusOK)
@@ -193,7 +193,7 @@ func TestSQLiProductSearchTelemetryContainsEvidence(t *testing.T) {
 
 func TestTelemetryRedactsSensitiveQueryValues(t *testing.T) {
 	writer := &captureWriter{}
-	handler := Middleware(writer, signals.NewCollector())(http.HandlerFunc(
+	handler := Middleware(writer, signals.NewCollector(), nil)(http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) },
 	))
 
@@ -221,10 +221,10 @@ func TestWindowedDetectorsStillReportOnBlockedRequests(t *testing.T) {
 	collector := signals.NewCollector(flood)
 	writer := &captureWriter{}
 
-	inspected := Middleware(writer, collector)(flood.Middleware(http.HandlerFunc(
+	inspected := Middleware(writer, collector, nil)(flood.Middleware(http.HandlerFunc(
 		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) },
 	)))
-	enforced := Middleware(writer, collector)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	enforced := Middleware(writer, collector, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 
@@ -266,7 +266,7 @@ func TestPolicyTelemetryKeepsActionAndOutcomeSeparate(t *testing.T) {
 				Route: "/api/login", Method: http.MethodPost, RequestsPerMinute: 12,
 				Reason: "campaign exceeded login quota", Outcome: tc.outcome,
 			}
-			handler := Middleware(writer, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			handler := Middleware(writer, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				policy.RecordMatch(r, match)
 				policy.Record(r, tc.decision)
 				w.WriteHeader(tc.status)
@@ -299,7 +299,7 @@ func TestBodyCapturePreservesPayloadAndRedactsOnlyTheEvent(t *testing.T) {
 	const payload = `{"password":"never-store-this","user":"jay"}`
 	writer := &captureWriter{}
 	var backendBody string
-	handler := Middleware(writer, nil)(CaptureBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Middleware(writer, nil, nil)(CaptureBody(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatal(err)
@@ -321,7 +321,7 @@ func TestNoRedisWriterStillAssignsRequestIDsAndLogsPolicyContext(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&output, nil)))
 	defer slog.SetDefault(previous)
 	var requestIDs []string
-	handler := Middleware(nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := Middleware(nil, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestIDs = append(requestIDs, r.Header.Get(signals.RequestIDHeader))
 		policy.RecordMatch(r, policy.Match{
 			Action: "temp_block", Source: "agent", ClientIP: "203.0.113.60",
@@ -348,5 +348,66 @@ func TestNoRedisWriterStillAssignsRequestIDsAndLogsPolicyContext(t *testing.T) {
 	}
 	if entry["msg"] != "policy_match" || entry["policy_source"] != "agent" || entry["status"] != float64(403) || entry["reason"] != "active campaign" {
 		t.Fatalf("structured policy fallback missing: %+v", entry)
+	}
+}
+
+// The route table has to actually reach the recorded event. Wiring it into the
+// server but not into the middleware would leave every request recording
+// <unmatched> with nothing failing.
+func TestEventRecordsTheMatchedRouteTemplate(t *testing.T) {
+	writer := &captureWriter{}
+	routes, err := NewTable([]string{"GET /api/products/{id}", "GET /api/products/search"})
+	if err != nil {
+		t.Fatalf("NewTable: %v", err)
+	}
+	handler := Middleware(writer, nil, routes)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	cases := []struct {
+		target string
+		want   string
+	}{
+		{"/api/products/12", "/api/products/{id}"},
+		{"/api/products/34", "/api/products/{id}"},
+		{"/api/products/search", "/api/products/search"},
+		{"/wp-admin", UnmatchedRoute},
+	}
+
+	for _, tc := range cases {
+		send(t, handler, http.MethodGet, tc.target, "203.0.113.5", "")
+		if got := writer.last().RouteTemplate; got != tc.want {
+			t.Errorf("%s recorded routeTemplate %q, want %q", tc.target, got, tc.want)
+		}
+	}
+}
+
+// The path is what the anomaly features measure diversity on, and it is what
+// the traversal detector matches against. Cleaning it here would erase both.
+func TestEventKeepsTraversalSegmentsInThePath(t *testing.T) {
+	writer := &captureWriter{}
+	handler := Middleware(writer, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	send(t, handler, http.MethodGet, "/api/../../etc/passwd", "203.0.113.5", "")
+
+	if got := writer.last().Path; !strings.Contains(got, "..") {
+		t.Errorf("recorded path %q lost its traversal segments", got)
+	}
+}
+
+// A gateway with no route table must still produce a consistent column rather
+// than an empty string that reads as missing data.
+func TestNoRouteTableStillRecordsACategory(t *testing.T) {
+	writer := &captureWriter{}
+	handler := Middleware(writer, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	send(t, handler, http.MethodGet, "/api/products", "203.0.113.5", "")
+
+	if got := writer.last().RouteTemplate; got != UnmatchedRoute {
+		t.Errorf("recorded routeTemplate %q, want %q", got, UnmatchedRoute)
 	}
 }

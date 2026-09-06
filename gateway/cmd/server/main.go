@@ -45,6 +45,7 @@ func main() {
 		MaxIdleConns:      cfg.Proxy.MaxIdleConns,
 		MaxConnsPerHost:   cfg.Proxy.MaxConnsPerHost,
 		MaxBodyBytes:      cfg.Server.MaxBodyBytes,
+		Routes:            cfg.Routes,
 		RateLimit:         cfg.Enforcement.RateLimit,
 		AdaptiveRateLimit: cfg.Enforcement.AdaptiveRateLimit,
 		AttackDetection:   cfg.Enforcement.AttackDetection,

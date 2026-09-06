@@ -14,10 +14,25 @@ import (
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
 	Proxy       ProxyConfig       `yaml:"proxy"`
+	Routes      RoutesConfig      `yaml:"routes"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Enforcement EnforcementConfig `yaml:"enforcement"`
 	Signals     SignalsConfig     `yaml:"signals"`
 	Logging     LoggingConfig     `yaml:"logging"`
+}
+
+// RoutesConfig describes the backend, not enforcement, which is why it is a
+// top-level block rather than a section under enforcement:.
+//
+// These settings are structural. Changing a route template changes what
+// previously recorded telemetry means, so they are read at boot and are
+// deliberately not carried by the settings watcher -- unlike detector
+// thresholds, which are safe to retune while running.
+type RoutesConfig struct {
+	// Templates are "METHOD /path/{param}" entries. A path that matches none
+	// of them records as unmatched, which is a real category: it is what a
+	// client walking paths the application does not serve looks like.
+	Templates []string `yaml:"templates"`
 }
 
 type ServerConfig struct {

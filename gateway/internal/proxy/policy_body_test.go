@@ -55,7 +55,7 @@ func TestPolicyRefusalsDoNotReadBodiesAndStillProduceTelemetry(t *testing.T) {
 			backendCalls := 0
 			handler := ChainMiddleware(
 				resolver.Middleware,
-				telemetry.Middleware(writer, nil),
+				telemetry.Middleware(writer, nil, nil),
 				enforcer.Middleware,
 				BodyLimitMiddleware(16),
 				telemetry.CaptureBody,

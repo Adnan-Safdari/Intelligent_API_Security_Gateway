@@ -11,11 +11,18 @@ import (
 // Redis keeps a capped recent window; Postgres will store history later.
 // The isolated agent should read this shape from both stores.
 type Event struct {
-	RequestID string             `json:"requestId"`
-	Timestamp time.Time          `json:"ts"`
-	IP        string             `json:"ip"`
-	Method    string             `json:"method"`
-	Path      string             `json:"path"`
+	RequestID string    `json:"requestId"`
+	Timestamp time.Time `json:"ts"`
+	IP        string    `json:"ip"`
+	Method    string    `json:"method"`
+	Path      string    `json:"path"`
+
+	// RouteTemplate is the configured template Path matched, or
+	// UnmatchedRoute. Without it every resource identifier looks like a
+	// different endpoint, so a client reading twenty products is
+	// indistinguishable from one walking twenty unrelated paths.
+	RouteTemplate string `json:"routeTemplate"`
+
 	Query     string             `json:"query,omitempty"`
 	Status    int                `json:"status"`
 	UserAgent string             `json:"userAgent,omitempty"`
