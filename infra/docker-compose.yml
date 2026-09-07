@@ -144,7 +144,11 @@ services:
     volumes:
       - ../gateway:/app
     environment:
-      IASG_CONFIG: configs/config.yaml
+      # Override for a dataset capture run:
+      #   IASG_CONFIG=configs/config.collect.yaml docker compose up -d gateway
+      # A second gateway service would collide on 8082, so the config is
+      # selected rather than the service duplicated.
+      IASG_CONFIG: ${IASG_CONFIG:-configs/config.yaml}
       IASG_BACKEND_URL: http://vulnerable_api:5002
       IASG_REDIS_HOST: redis
     command: sh -c "go run ./cmd/server"

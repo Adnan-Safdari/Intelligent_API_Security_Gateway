@@ -82,3 +82,9 @@ __pycache__/
 # Generated build intermediates
 build/
 .claude/settings.json
+
+# Raw capture from an anomaly dataset run: hundreds of megabytes of JSONL,
+# reproducible from a rerun, and containing every request path a run drove.
+# datasets/v1/ is deliberately not ignored -- the frozen dataset is the
+# artefact, and its manifest is what makes it checkable.
+datasets/raw/

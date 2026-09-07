@@ -1,0 +1,274 @@
+# Capture configuration for anomaly dataset collection runs.
+#
+# Identical to config.yaml except for telemetry capacity. Detection and
+# enforcement are deliberately unchanged: a dataset gathered under different
+# thresholds from the ones the gateway runs describes a gateway that does not
+# exist.
+#
+# Select it with IASG_CONFIG=configs/config.collect.yaml. It is not the default
+# because the capacities below cost roughly 400 MB of Redis, which is fine for
+# a bounded capture run and wasteful for a demo.
+#
+# IASG Configuration Example
+#
+# This file is what the gateway boots with. The `enforcement` block below can
+# also be changed at runtime from the console's Settings page, which stores an
+# override in Redis and leaves this file untouched -- "Revert to file" there
+# brings the gateway back to exactly what is written here. Everything outside
+# `enforcement` is structural and only takes effect on a restart.
+
+server:
+  port: 8082
+  host: 0.0.0.0
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+
+  # CIDRs whose X-Forwarded-For header is believed. Leave empty unless the
+  # gateway really does sit behind a proxy: anyone can set the header, so
+  # trusting it from arbitrary callers would let an attacker have someone
+  # else's IP detected and blocked. When empty, the TCP peer address is used.
+  trusted_proxies:
+  - 127.0.0.1/32
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+
+proxy:
+  # Backend API to protect
+  backend_url: "http://localhost:5002"
+  timeout: 30s
+  max_idle_conns: 100
+  max_conns_per_host: 10
+
+# The backend's own endpoints, so telemetry can record which template a path
+# matched rather than treating every resource id as a different endpoint --
+# /api/products/12 and /api/products/34 are one route, not two.
+#
+# Structural on purpose: changing a template changes what previously recorded
+# telemetry means, so this is read at boot and is not carried by the settings
+# watcher the way detector thresholds are. A path matching nothing here records
+# as unmatched, which is a real category -- it is what a client walking paths
+# the application does not serve looks like.
+#
+# Specificity decides, not the order below: /api/products/search wins over
+# /api/products/{id} however this list is sorted.
+routes:
+  templates:
+    - GET /api/health
+    - POST /api/login
+    - GET /api/products
+    - GET /api/products/search
+    - GET /api/products/search-secure
+    - GET /api/products/{id}
+    - GET /api/demo-files
+    - GET /backup-demo
+    - GET /config-demo
+    - GET /.env-demo
+
+  # What a backend status means about credentials, per endpoint. Configuration
+  # rather than an inference: 401 means "wrong password" here because
+  # vulnerable-app/backend/routes/auth.js documents it that way, and it means
+  # nothing of the sort on an endpoint that has not been checked. Re-verify
+  # this if the backend changes.
+  #
+  # A status in neither list is unknown, which is not the same as a success --
+  # a 500 says the database failed, not that the password was right. And a
+  # login the gateway itself refused never reached the backend at all, so it
+  # is an attempt with an unknown outcome rather than a failure.
+  auth_outcomes:
+    - method: POST
+      template: /api/login
+      success: [200]
+      invalid_credentials: [401]
+
+storage:
+  redis:
+    enabled: true
+    host: localhost
+    port: 6379
+    password: ""
+    db: 0
+    pool_size: 10
+    # A capture run is drained by iasg.dataset.capture rather than read as a
+    # hot window, so the cap has to cover the whole run instead of the last few
+    # minutes. Trimmed evidence is not silently lost -- capture detects it and
+    # marks the affected windows -- but a window marked unobserved is a window
+    # that taught the model nothing.
+    stream_key: iasg:events
+    stream_maxlen: 200000
+    ip_latest_ttl: 24h
+
+    # Arrivals are one record per request, the same volume as completions, so
+    # they get the same ceiling. Sized separately because a run that only needs
+    # windowing can lower this without touching the console's stream.
+    arrival_stream_key: iasg:arrivals
+    arrival_maxlen: 200000
+
+    # One record a second. A day of heartbeats is far longer than any run.
+    health_stream_key: iasg:telemetry:health
+    health_maxlen: 86400
+
+    # Arrival records double the write rate, so the queue is raised to match.
+    # It still drops rather than delaying traffic -- the drop counter in the
+    # heartbeat is what turns that loss into a recorded quality flag instead of
+    # a silent hole in the dataset.
+    telemetry_queue_size: 16384
+    telemetry_write_timeout: 100ms
+  
+  postgres:
+    host: localhost
+    port: 5434
+    database: iasg
+    username: iasg_user
+    password: changeme
+    ssl_mode: disable
+    max_open_conns: 25
+    max_idle_conns: 5
+
+enforcement:
+  # Shared token buckets for policy throttles and the opt-in baseline.
+  # Structural settings: restart all replicas after changing this block.
+  adaptive_rate_limit:
+    fallback_requests_per_minute: 60 # legacy throttle policies without a rate
+    burst: 20                       # capacity = min(burst, policy rate)
+    redis_timeout: 25ms              # total quota-call budget; no retries
+    policy_refresh_timeout: 2s       # total background scan budget, separate from quota
+    failure_backoff: 1s              # fail open while Redis recovers
+    cache_max_age: 10s               # >= policy.refresh_interval; TTL may be shorter
+    bucket_key_prefix: "iasg:rate:"
+
+  # Rate limiting
+  rate_limit:
+    enabled: true              # count requests per address and signal a flood
+    requests_per_minute: 100
+    burst: 20
+
+    # Turn the threshold above into a limit the gateway acts on: anything over
+    # it is refused with 429 instead of only being reported. Off by default --
+    # noticing a flood and refusing traffic are different decisions, and only
+    # the second can turn a legitimate spike into an outage.
+    #
+    # This is the baseline. An address the control plane has throttled is held
+    # to the rate *its* policy names instead, and the ranges in
+    # `block.exempt_cidrs` below skip the limit entirely.
+    enforce: false
+
+  # Attack detection (SQL injection signatures)
+  attack_detection:
+    enabled: true
+    sql_patterns:
+      - "' OR"
+      - "--"
+      - "UNION SELECT"
+      - " OR 1=1"
+  
+  # Brute force login detection (detect + emit metrics only; no blocking)
+  brute_force:
+    enabled: true
+    max_failures: 5 # failed logins inside the window before the signal fires
+    window: 60s     # sliding window for counting failures
+    login_paths:
+      - "/api/login"
+
+  # Path traversal + forced-browsing enumeration (detect + emit metrics only)
+  enumeration_path_traversal:
+    enabled: true
+    traversal_patterns:
+      - "../"
+      - "..\\"
+      - "%2e%2e%2f"
+      - "%2e%2e/"
+      - "..%2f"
+      - "%2e%2e%5c"
+    enumeration_patterns:
+      - "/.env"
+      - "/.git"
+      - "/.aws"
+      - "/wp-admin"
+      - "/etc/passwd"
+      - "/.bash_history"
+      - "/.ssh"
+
+
+  # Addresses already known to be malicious.
+  #
+  # Every other detector here is behavioural: it counts requests, failures or
+  # pattern matches, and needs the attacker to repeat themselves before it
+  # knows anything. This one answers on the first request, because being
+  # listed is a fact about the address rather than something it just did.
+  #
+  # It does NOT block on its own. Like every detector it emits evidence; to let
+  # it act, name `ip_reputation` in `block.signals` below.
+  ip_reputation:
+    enabled: true
+
+    # The bundled list. Ships almost empty on purpose -- see the file. Whatever
+    # `feed_url` returns is ADDED to this, never replaces it.
+    feed_path: configs/reputation.txt
+
+    # Optional live feed: a plain list of addresses or CIDRs, one per line.
+    # Left empty, the gateway makes no outbound requests at all.
+    #   Tor exits    https://check.torproject.org/torbulkexitlist
+    #   FireHOL L1   https://raw.githubusercontent.com/firehol/blocklists/master/firehol_level1.netset
+    feed_url: ""
+    refresh_interval: 1h
+    fetch_timeout: 10s
+
+    # What a listed address contributes. Defaults to the same value as
+    # `block.min_score`, so naming this in `block.signals` actually lets it
+    # act -- a lower score would make that entry look armed and do nothing.
+    score: 80
+
+    # A listed address is listed on every request it makes. Without a cooldown
+    # it would raise a fresh signal each time, which floods the event stream
+    # and makes every campaign it touches look like a "reputation" campaign.
+    # Inside the cooldown the address still scores; it just does not re-fire.
+    cooldown: 5m
+
+  # Legacy settings retained for console compatibility. Throttles consume
+  # adaptive_rate_limit quota; delay_ms no longer sleeps on the request path.
+  throttle:
+    enabled: true
+    delay_ms: 500
+  
+  # Blocking
+  block:
+    enabled: true
+    duration: 300s # 5 minutes
+
+    signals:
+      - api_flooding
+      - brute_force
+
+    min_score: 80
+
+    exempt_cidrs:
+    - 127.0.0.0/8
+    - ::1/128 
+    - 10.0.0.0/8
+    - 192.168.0.0/16
+
+  # Acting on decisions written by the Python control plane at policy:<ip>.
+  # Off by default: turning this on is what lets the control plane refuse
+  # live traffic, so it should be a deliberate choice.
+  policy:
+    enabled: true
+    key_prefix: "policy:"
+    refresh_interval: 5s # how stale an enforcement decision may be
+
+signals:
+  geo_location:
+    enabled: true
+  
+  payload_analysis:
+    enabled: true
+    max_body_size: 1MB
+  
+  behavioral:
+    enabled: true
+    learning_period: 24h
+
+logging:
+  level: info
+  format: json
+  output: stdout
