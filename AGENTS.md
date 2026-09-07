@@ -54,13 +54,12 @@ Breaking any of these breaks the architecture, not just a test.
    without a TTL, per-cycle cap, dry-run). Add new guards there, not scattered.
 5. **Enforcement expires on its own.** Every policy key carries a TTL and
    nothing renews it. Don't add renewal.
-6. **Nothing reads the request body without a cap above it.** `BodyLimitMiddleware`
-   runs first in the chain, ahead of even the resolver, because it's the only
-   stage that doesn't need to know who the client is, and everything below it
-   buffers the whole body. Config (`MaxBodyBytes`) may raise or lower the cap,
-   never remove it — a blocked address still gets its body read in full before
-   a later stage's 403 lands, which is what let a block do nothing to stop the
-   one resource enforcement can't get back.
+6. **Nothing reads the request body without a cap above it.**
+   `BodyLimitMiddleware` sits above every stage that buffers a body —
+   `telemetry.CaptureBody` and all the detectors — and below the enforcer, so
+   a blocked address is refused before its body is read at all. Config
+   (`MaxBodyBytes`) may raise or lower the cap, never remove it. Adding a new
+   body reader means checking it is below this line, not above it.
 
 ## House style
 
@@ -97,9 +96,19 @@ where you left it.
 
 Each of these was hit for real. They fail silently, which is why they are here.
 
-**`gateway/configs/config.yaml` is both tracked and gitignored.** Local demo
-edits therefore always appear as repo changes. Stage selectively; do not commit
-someone's local tuning.
+**`gateway/configs/config.yaml` is tracked and *not* ignored**, despite
+`.gitignore` carrying a `configs/config.yaml` line. That pattern has a slash in
+the middle, so git anchors it to the repository root and it never reaches the
+`gateway/` directory. Local demo tuning therefore shows up as a real repo
+change and will be committed if you stage it blindly. Stage selectively.
+
+**Telemetry writes to three streams, not one.** `iasg:events` on completion,
+`iasg:arrivals` before the request runs, and `iasg:telemetry:health` once a
+second. Windowing keys on arrival time, so anything that consumes telemetry
+for the anomaly features reads arrivals; the console and the `iasg:stats` /
+`iasg:attackers` counters read only `iasg:events` and must keep doing so. Use
+`configs/config.collect.yaml` (`IASG_CONFIG=...`) for a capture run — the
+default caps are a hot window, not a dataset.
 
 **Adding a section to `enforcement:` config needs three places** — `main.go`
 building the server config, `proxy.Config.Enforcement()` reassembling the block
