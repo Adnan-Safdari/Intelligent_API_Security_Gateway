@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from iasg.anomaly.checks import check_feature_header, check_no_identifying_columns
 from iasg.anomaly.extract import WindowRow, build_as_of, extract
 from iasg.anomaly.impute import Medians
 from iasg.anomaly.quality import WindowHealth
@@ -32,6 +33,18 @@ from iasg.anomaly.windows import assign, window_start
 from iasg.dataset.labels import Attack, label_for, load_attacks, scenario_for
 from iasg.dataset.layout import RawRun
 from iasg.dataset.splits import RESERVED_SCENARIOS, Split, TRAIN, check_reserved
+
+
+class LeakageCheckFailed(RuntimeError):
+    """
+    Raised instead of freezing a dataset whose feature matrix carries an
+    identity.
+
+    checks.py has stated this guarantee since it was written, but only pytest
+    ever asked. A guarantee nothing enforces at the moment it could be broken
+    is a comment: the build would have written the column, printed success and
+    stamped FROZEN.
+    """
 
 
 class DatasetFrozen(RuntimeError):
@@ -173,6 +186,15 @@ def build(
     medians = Medians.fit(training) if training else None
 
     _write_features(out / "features.csv", built)
+    # Checked on the file, not on the code that wrote it. The physical split is
+    # the leakage guard, so it is the file that has to be right.
+    failures = (
+        check_feature_header(out / "features.csv")
+        + check_no_identifying_columns(out / "features.csv")
+    )
+    if failures:
+        raise LeakageCheckFailed("; ".join(str(f) for f in failures))
+
     _write_metadata(out / "metadata.csv", built)
     _write_quality(out / "quality.csv", built)
     _write_rows(out / "rows.jsonl", built)

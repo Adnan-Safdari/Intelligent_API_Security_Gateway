@@ -247,7 +247,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch-size", type=int, default=500)
     args = parser.parse_args(argv)
 
-    settings = Settings()
+    # from_env, not Settings(): the bare constructor takes the dataclass
+    # defaults and ignores IASG_REDIS_URL entirely, so under Compose it looks
+    # for Redis on localhost and finds nothing.
+    settings = Settings.from_env()
     store = open_store(settings)
     # open_store falls back to an in-memory store on an unreachable Redis and
     # only prints a warning. That fallback is right for the agent and wrong
