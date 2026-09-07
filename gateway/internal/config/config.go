@@ -14,10 +14,43 @@ import (
 type Config struct {
 	Server      ServerConfig      `yaml:"server"`
 	Proxy       ProxyConfig       `yaml:"proxy"`
+	Routes      RoutesConfig      `yaml:"routes"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Enforcement EnforcementConfig `yaml:"enforcement"`
 	Signals     SignalsConfig     `yaml:"signals"`
 	Logging     LoggingConfig     `yaml:"logging"`
+}
+
+// RoutesConfig describes the backend, not enforcement, which is why it is a
+// top-level block rather than a section under enforcement:.
+//
+// These settings are structural. Changing a route template changes what
+// previously recorded telemetry means, so they are read at boot and are
+// deliberately not carried by the settings watcher -- unlike detector
+// thresholds, which are safe to retune while running.
+type RoutesConfig struct {
+	// Templates are "METHOD /path/{param}" entries. A path that matches none
+	// of them records as unmatched, which is a real category: it is what a
+	// client walking paths the application does not serve looks like.
+	Templates []string `yaml:"templates"`
+
+	// AuthOutcomes says how to read an authentication result off a backend
+	// status, per endpoint. It is configuration rather than an inference
+	// because 401 does not mean "wrong password" in general -- it means that
+	// on an endpoint documented to answer that way, and nowhere else.
+	AuthOutcomes []AuthOutcomeConfig `yaml:"auth_outcomes"`
+}
+
+type AuthOutcomeConfig struct {
+	Method   string `yaml:"method"`
+	Template string `yaml:"template"`
+
+	// Backend statuses that mean the credentials were accepted, and those
+	// that mean they were rejected. A status in neither list is unknown,
+	// which is not the same as a success: a 500 says the database failed,
+	// not that the password was right.
+	Success            []int `yaml:"success"`
+	InvalidCredentials []int `yaml:"invalid_credentials"`
 }
 
 type ServerConfig struct {
@@ -52,14 +85,24 @@ type StorageConfig struct {
 }
 
 type RedisConfig struct {
-	Enabled               bool          `yaml:"enabled"`
-	Host                  string        `yaml:"host"`
-	Port                  int           `yaml:"port"`
-	Password              string        `yaml:"password"`
-	DB                    int           `yaml:"db"`
-	PoolSize              int           `yaml:"pool_size"`
-	StreamKey             string        `yaml:"stream_key"`
-	StreamMaxLen          int64         `yaml:"stream_maxlen"`
+	Enabled      bool   `yaml:"enabled"`
+	Host         string `yaml:"host"`
+	Port         int    `yaml:"port"`
+	Password     string `yaml:"password"`
+	DB           int    `yaml:"db"`
+	PoolSize     int    `yaml:"pool_size"`
+	StreamKey    string `yaml:"stream_key"`
+	StreamMaxLen int64  `yaml:"stream_maxlen"`
+
+	// Arrival records go to their own stream so every existing consumer of
+	// stream_key keeps seeing exactly what it sees today. They are capped
+	// separately because there is one per request either way, but a capture
+	// run wants far more history than the console does.
+	ArrivalStreamKey string `yaml:"arrival_stream_key"`
+	ArrivalMaxLen    int64  `yaml:"arrival_maxlen"`
+
+	HealthStreamKey       string        `yaml:"health_stream_key"`
+	HealthMaxLen          int64         `yaml:"health_maxlen"`
 	IPLatestTTL           time.Duration `yaml:"ip_latest_ttl"`
 	TelemetryQueueSize    int           `yaml:"telemetry_queue_size"`
 	TelemetryWriteTimeout time.Duration `yaml:"telemetry_write_timeout"`
@@ -285,6 +328,19 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Storage.Redis.StreamMaxLen <= 0 {
 		cfg.Storage.Redis.StreamMaxLen = 2000
+	}
+	if cfg.Storage.Redis.ArrivalStreamKey == "" {
+		cfg.Storage.Redis.ArrivalStreamKey = "iasg:arrivals"
+	}
+	if cfg.Storage.Redis.ArrivalMaxLen <= 0 {
+		cfg.Storage.Redis.ArrivalMaxLen = cfg.Storage.Redis.StreamMaxLen
+	}
+	if cfg.Storage.Redis.HealthStreamKey == "" {
+		cfg.Storage.Redis.HealthStreamKey = "iasg:telemetry:health"
+	}
+	if cfg.Storage.Redis.HealthMaxLen <= 0 {
+		// One record a second, so this is a day of heartbeats.
+		cfg.Storage.Redis.HealthMaxLen = 86400
 	}
 	if cfg.Storage.Redis.IPLatestTTL <= 0 {
 		cfg.Storage.Redis.IPLatestTTL = 24 * time.Hour

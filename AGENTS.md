@@ -31,6 +31,11 @@ cd gateway && go test ./internal/signals/ -race      # detectors hold live state
 # Python — the venv already exists; PYTHONPATH is required
 cd control-plane && PYTHONPATH=. .venv/bin/python -m pytest -q
 cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg --once
+
+# Anomaly dataset. Capture needs Redis and refuses to run without it, because
+# the memory fallback would produce an empty run that looks like quiet traffic.
+cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg.dataset.capture --run-id <id> --out datasets/raw/<id>
+cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg.dataset.build --runs datasets/raw/<id> --out datasets/v1
 ```
 
 Go 1.22 in `go.mod` (containers run 1.23), Python ≥3.11. There are no linters
@@ -54,6 +59,12 @@ Breaking any of these breaks the architecture, not just a test.
    without a TTL, per-cycle cap, dry-run). Add new guards there, not scattered.
 5. **Enforcement expires on its own.** Every policy key carries a TTL and
    nothing renews it. Don't add renewal.
+6. **Nothing reads the request body without a cap above it.**
+   `BodyLimitMiddleware` sits above every stage that buffers a body —
+   `telemetry.CaptureBody` and all the detectors — and below the enforcer, so
+   a blocked address is refused before its body is read at all. Config
+   (`MaxBodyBytes`) may raise or lower the cap, never remove it. Adding a new
+   body reader means checking it is below this line, not above it.
 
 ## House style
 
@@ -90,9 +101,19 @@ where you left it.
 
 Each of these was hit for real. They fail silently, which is why they are here.
 
-**`gateway/configs/config.yaml` is both tracked and gitignored.** Local demo
-edits therefore always appear as repo changes. Stage selectively; do not commit
-someone's local tuning.
+**`gateway/configs/config.yaml` is tracked and *not* ignored**, despite
+`.gitignore` carrying a `configs/config.yaml` line. That pattern has a slash in
+the middle, so git anchors it to the repository root and it never reaches the
+`gateway/` directory. Local demo tuning therefore shows up as a real repo
+change and will be committed if you stage it blindly. Stage selectively.
+
+**Telemetry writes to three streams, not one.** `iasg:events` on completion,
+`iasg:arrivals` before the request runs, and `iasg:telemetry:health` once a
+second. Windowing keys on arrival time, so anything that consumes telemetry
+for the anomaly features reads arrivals; the console and the `iasg:stats` /
+`iasg:attackers` counters read only `iasg:events` and must keep doing so. Use
+`configs/config.collect.yaml` (`IASG_CONFIG=...`) for a capture run — the
+default caps are a hot window, not a dataset.
 
 **Adding a section to `enforcement:` config needs three places** — `main.go`
 building the server config, `proxy.Config.Enforcement()` reassembling the block
@@ -132,8 +153,6 @@ Then check the consumer groups survived.
 
 ## Known gaps — do not "discover" these as new
 
-- No request body cap: `io.ReadAll` in both `internal/telemetry` and
-  `internal/signals`, and the telemetry read happens *before* the enforcer.
 - The console has no authentication (`gateway-dashboard/lib/auth.js` is a stub
   that always authorises). Deliberate, but it now fronts settings and reset.
 - No graceful shutdown, no health endpoint, no metrics. `go run` does not

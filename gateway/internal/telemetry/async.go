@@ -11,12 +11,23 @@ import (
 
 var ErrQueueFull = errors.New("telemetry queue is full")
 
+// Writer accepts one record for storage. Production uses AsyncWriter so
+// persistence never holds the client connection open.
+//
+// Generic over the record because arrivals and completions travel to different
+// streams with different shapes, but need identical back-pressure behaviour.
+// Two copies of the code below would be two chances to get that wrong in only
+// one of them.
+type Writer[T any] interface {
+	WriteEvent(ctx context.Context, rec T) error
+}
+
 // AsyncWriter bounds both queued work and the time spent on one write. A slow
 // Redis must lose telemetry instead of holding client requests or accumulating
 // one goroutine per request until the gateway runs out of memory.
-type AsyncWriter struct {
-	writer   Writer
-	queue    chan Event
+type AsyncWriter[T any] struct {
+	writer   Writer[T]
+	queue    chan T
 	timeout  time.Duration
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -24,25 +35,37 @@ type AsyncWriter struct {
 	close    sync.Once
 	dropped  atomic.Uint64
 	lastDrop atomic.Int64
+	what     string
 }
 
-func NewAsyncWriter(writer Writer, capacity int, timeout time.Duration) *AsyncWriter {
+func NewAsyncWriter[T any](writer Writer[T], capacity int, timeout time.Duration) *AsyncWriter[T] {
+	return NewNamedAsyncWriter(writer, capacity, timeout, "telemetry")
+}
+
+// NewNamedAsyncWriter labels the overflow warning. With two queues running,
+// "telemetry_queue_full" alone would not say which one is losing records, and
+// the arrivals queue overflowing means something different from the events
+// queue overflowing: arrivals are written before the backend is called.
+func NewNamedAsyncWriter[T any](writer Writer[T], capacity int, timeout time.Duration, what string) *AsyncWriter[T] {
 	if capacity < 1 {
 		capacity = 1
 	}
 	if timeout <= 0 {
 		timeout = 100 * time.Millisecond
 	}
+	if what == "" {
+		what = "telemetry"
+	}
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &AsyncWriter{
-		writer: writer, queue: make(chan Event, capacity), timeout: timeout,
-		ctx: ctx, cancel: cancel, done: make(chan struct{}),
+	w := &AsyncWriter[T]{
+		writer: writer, queue: make(chan T, capacity), timeout: timeout,
+		ctx: ctx, cancel: cancel, done: make(chan struct{}), what: what,
 	}
 	go w.run()
 	return w
 }
 
-func (w *AsyncWriter) WriteEvent(ctx context.Context, ev Event) error {
+func (w *AsyncWriter[T]) WriteEvent(ctx context.Context, rec T) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -50,7 +73,7 @@ func (w *AsyncWriter) WriteEvent(ctx context.Context, ev Event) error {
 		return err
 	}
 	select {
-	case w.queue <- ev:
+	case w.queue <- rec:
 		return nil
 	default:
 		dropped := w.dropped.Add(1)
@@ -58,15 +81,22 @@ func (w *AsyncWriter) WriteEvent(ctx context.Context, ev Event) error {
 		// per second avoids replacing an overloaded Redis with a log flood.
 		now, last := time.Now().UnixNano(), w.lastDrop.Load()
 		if now-last >= int64(time.Second) && w.lastDrop.CompareAndSwap(last, now) {
-			slog.Warn("telemetry_queue_full", "dropped_total", dropped, "capacity", cap(w.queue))
+			slog.Warn(w.what+"_queue_full", "dropped_total", dropped, "capacity", cap(w.queue))
 		}
 		return ErrQueueFull
 	}
 }
 
-func (w *AsyncWriter) Dropped() uint64 { return w.dropped.Load() }
+func (w *AsyncWriter[T]) Dropped() uint64 { return w.dropped.Load() }
 
-func (w *AsyncWriter) Close() {
+// Depth is what the queue is holding right now. Read by the health heartbeat:
+// a queue that sits near capacity is about to start dropping, which is the
+// warning a drop counter only gives after the loss has happened.
+func (w *AsyncWriter[T]) Depth() int { return len(w.queue) }
+
+func (w *AsyncWriter[T]) Capacity() int { return cap(w.queue) }
+
+func (w *AsyncWriter[T]) Close() {
 	if w == nil {
 		return
 	}
@@ -74,7 +104,7 @@ func (w *AsyncWriter) Close() {
 	<-w.done
 }
 
-func (w *AsyncWriter) run() {
+func (w *AsyncWriter[T]) run() {
 	defer close(w.done)
 	for {
 		if w.ctx.Err() != nil {
@@ -83,12 +113,12 @@ func (w *AsyncWriter) run() {
 		select {
 		case <-w.ctx.Done():
 			return
-		case ev := <-w.queue:
+		case rec := <-w.queue:
 			ctx, cancel := context.WithTimeout(w.ctx, w.timeout)
-			err := w.writer.WriteEvent(ctx, ev)
+			err := w.writer.WriteEvent(ctx, rec)
 			cancel()
 			if err != nil && w.ctx.Err() == nil {
-				slog.Warn("telemetry_write_failed", "error", err)
+				slog.Warn(w.what+"_write_failed", "error", err)
 			}
 		}
 	}

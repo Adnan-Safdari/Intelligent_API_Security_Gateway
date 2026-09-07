@@ -12,6 +12,53 @@ Redis is a **capped live window**, not an archive of every request forever.
 | `iasg:stats` | hash | Counters: `requests`, `alerts`, `decision:allow`, `signal:*` |
 | `iasg:attackers` | sorted set | IP → alert count (top attackers) |
 | `iasg:ip:{ip}:latest` | string JSON, TTL 24h | Last event for that IP |
+| `iasg:arrivals` | stream | One record per request, written **before** it runs |
+| `iasg:telemetry:health` | stream | One heartbeat per second from the gateway |
+
+### Three streams, and which consumer reads which
+
+`iasg:events` is written when a request **finishes**. `iasg:arrivals` is written
+when it **starts**. They are separate streams rather than one stream with a
+`kind` field, because the console, the `iasg:stats` and `iasg:attackers`
+counters and the control plane's Evidence consumer all read `iasg:events` — and
+none of them should have to learn to skip half of it.
+
+| Consumer | Reads | Must not read |
+| --- | --- | --- |
+| Console / dashboard | `iasg:events` | — |
+| Control plane (`iasg-agent`) | `iasg:events` | — |
+| Dataset capture (`iasg-dataset`) | all three | — |
+
+Redis delivers every entry to every consumer group independently, so capture
+sees the same entries the agent does without disturbing it.
+
+**Why arrivals exist at all.** Windowing for the anomaly features keys on
+arrival time. A request that arrives at 12:00:59 and finishes at 12:01:02
+belongs to the 12:00 window; with completion records alone it would be counted
+in the wrong minute, and slow requests are what an attack produces, so that
+error is not random. A request still in flight — or one the backend never
+answers — has no completion record at all, and the arrival is the only evidence
+it existed.
+
+This is the one thing on the request path that this adds, and it is safe
+because `AsyncWriter.WriteEvent` is a `select` with a `default`: a channel send
+or an immediate drop, never I/O, never a lock. A dead Redis costs an arrival
+record, not a slow request. It has its own queue, so a slow backend's
+completions cannot crowd out the arrivals of the requests still waiting on it.
+
+**Why a heartbeat.** It answers three things no per-request record can: whether
+telemetry was dropped (from the counters, which are process-wide, so the flag is
+window-wide and cannot be attributed to one address), whether the whole minute
+was observed (sixty consecutive `seq` values — a gap means a window is short for
+reasons unrelated to its traffic), and how many requests were still in flight.
+With no traffic at all, "gateway up and watching" is otherwise indistinguishable
+from "gateway down".
+
+```json
+{"seq": 412, "at": "...", "droppedTotal": 0, "arrivalsDroppedTotal": 0,
+ "inFlight": 3, "queueCap": 1024, "queueLen": 0,
+ "arrivalQueueCap": 1024, "arrivalQueueLen": 0}
+```
 
 Event payload (field `event` on the stream):
 
@@ -38,6 +85,12 @@ Passwords and token-like JSON fields are redacted. Bodies are truncated to 512 b
 
 The Python control plane consumes this same stream (`IASG_EVIDENCE_STREAM=iasg:events`). Clean requests are ignored; each fired signal becomes one Evidence record. Policy keys are written separately as `policy:<ip>` and do not collide with `iasg:*`.
 
+Reset the streams with `POST /api/admin/reset` (`{"confirm":"reset"}`), never
+`DEL` — `DEL` on a stream takes its consumer groups with it, and every later
+cycle then fails `NOGROUP` until the control plane restarts. That endpoint uses
+`XTRIM MAXLEN 0` for exactly this reason, and deliberately spares `policy:*`:
+clearing history and lifting live blocks are different actions.
+
 If Redis is down, the gateway still proxies. It logs `redis telemetry write failed` and continues.
 
 ## Config
@@ -53,6 +106,18 @@ storage:
     stream_key: iasg:events
     stream_maxlen: 2000
     ip_latest_ttl: 24h
+    arrival_stream_key: iasg:arrivals
+    arrival_maxlen: 2000
+    health_stream_key: iasg:telemetry:health
+    health_maxlen: 86400
+```
+
+A dataset collection run wants far more history than a hot window does, so it
+uses `configs/config.collect.yaml` instead — same detection and enforcement,
+200,000 entries per request stream and a 16,384-entry queue:
+
+```bash
+IASG_CONFIG=configs/config.collect.yaml docker compose -f infra/docker-compose.yml up -d gateway
 ```
 
 Docker Compose sets `IASG_REDIS_HOST=redis` so the gateway container talks to the Redis service.
@@ -78,6 +143,8 @@ Or:
 
 ```bash
 redis-cli XREVRANGE iasg:events + - COUNT 5
+redis-cli XREVRANGE iasg:arrivals + - COUNT 5
+redis-cli XREVRANGE iasg:telemetry:health + - COUNT 1
 redis-cli HGETALL iasg:stats
 redis-cli ZREVRANGE iasg:attackers 0 9 WITHSCORES
 ```

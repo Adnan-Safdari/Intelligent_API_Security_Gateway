@@ -183,3 +183,39 @@ func TestShippedConfigIsValid(t *testing.T) {
 		t.Fatalf("configs/config.yaml does not load: %v", err)
 	}
 }
+
+// The routes block is deliberately top-level rather than under enforcement:,
+// so it does not travel through the settings watcher. This asserts it survives
+// the load at all -- a block that parsed into nothing would leave every request
+// recording an unmatched route with nothing failing.
+func TestRouteTemplatesSurviveTheLoad(t *testing.T) {
+	cfg, err := Load(write(t, minimal+`
+routes:
+  templates:
+    - GET /api/products
+    - GET /api/products/{id}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.Routes.Templates) != 2 {
+		t.Fatalf("Routes.Templates = %v, want the two configured templates", cfg.Routes.Templates)
+	}
+	if cfg.Routes.Templates[1] != "GET /api/products/{id}" {
+		t.Errorf("template = %q, want it verbatim", cfg.Routes.Templates[1])
+	}
+}
+
+// A gateway with no routes block must still load. Route templates describe the
+// backend, and a deployment that has not described one is not misconfigured.
+func TestMissingRoutesBlockIsNotAnError(t *testing.T) {
+	cfg, err := Load(write(t, minimal))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(cfg.Routes.Templates) != 0 {
+		t.Errorf("Routes.Templates = %v, want empty", cfg.Routes.Templates)
+	}
+}

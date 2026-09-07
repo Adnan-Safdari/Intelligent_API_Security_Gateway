@@ -43,7 +43,7 @@ func TestStalledStorageCannotHoldAResponseOrGrowTheQueue(t *testing.T) {
 		t.Fatalf("dropped = %d, want 1", writer.Dropped())
 	}
 
-	handler := Middleware(writer, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := Middleware(writer, nil, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	rec := httptest.NewRecorder()

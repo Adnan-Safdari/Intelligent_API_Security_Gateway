@@ -144,7 +144,11 @@ services:
     volumes:
       - ../gateway:/app
     environment:
-      IASG_CONFIG: configs/config.yaml
+      # Override for a dataset capture run:
+      #   IASG_CONFIG=configs/config.collect.yaml docker compose up -d gateway
+      # A second gateway service would collide on 8082, so the config is
+      # selected rather than the service duplicated.
+      IASG_CONFIG: ${IASG_CONFIG:-configs/config.yaml}
       IASG_BACKEND_URL: http://vulnerable_api:5002
       IASG_REDIS_HOST: redis
     command: sh -c "go run ./cmd/server"
@@ -218,6 +222,83 @@ services:
     command: sh -c "pip install --no-cache-dir -r gateway/docs/requirements.txt && mkdocs serve -a 0.0.0.0:8000"
     ports:
       - "8000:8000"
+
+  # --- Dataset collection. Off unless --profile collect is passed. ---------
+  #
+  #   IASG_CONFIG=configs/config.collect.yaml \
+  #     docker compose -f infra/docker-compose.yml up -d gateway
+  #   docker compose -f infra/docker-compose.yml --profile collect run --rm traffic
+  #
+  # Runs from inside the compose network on purpose. Docker Desktop rewrites a
+  # host request's source address, so traffic from the host arrives as one
+  # private address and every persona collapses into it. The generator's
+  # pre-flight refuses to start when that happens rather than producing a
+  # dataset that is silently one client pretending to be forty.
+  traffic:
+    profiles: ["collect"]
+    image: python:3.12-alpine
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace
+      # Passed through explicitly. The command below defers these to the
+      # container's shell with $$, so an unlisted variable is simply never set
+      # and every run silently becomes run1 -- overwriting the previous one.
+      RUN_ID: ${RUN_ID:-run1}
+      TRAFFIC_SECONDS: ${TRAFFIC_SECONDS:-180}
+    # redis>=5.0 is quoted because this string is parsed by the container's
+    # shell, where > is a redirection: unquoted it installs plain `redis` and
+    # writes a file called =5.0 into the bind-mounted repository root.
+    command:
+      - sh
+      - -c
+      - >-
+        pip install --no-cache-dir 'redis>=5.0' &&
+        python -m testing.traffic.generate
+        --run-id "$${RUN_ID:-run1}"
+        --out "datasets/raw/$${RUN_ID:-run1}"
+        --gateway http://gateway:8082
+        --redis redis://redis:6379/0
+        --seconds "$${TRAFFIC_SECONDS:-180}"
+    # Deliberately does NOT depend_on gateway. `compose run` starts a
+    # dependency with the invoking shell's environment, which silently
+    # recreated the gateway on the default config -- reverting stream_maxlen
+    # from 200000 to 2000 in the middle of a collection run. The pre-flight
+    # below is a stronger readiness check than `service_started` anyway: it
+    # proves the gateway is up *and* that it believes our addresses.
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Drains the three telemetry streams to datasets/raw/<run_id>/. Its own
+  # consumer group, so it does not disturb the control plane's.
+  capture:
+    profiles: ["collect"]
+    image: python:3.12-alpine
+    working_dir: /app
+    volumes:
+      - ../control-plane:/app
+      - ../datasets:/datasets
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      IASG_REDIS_URL: redis://redis:6379/0
+      RUN_ID: ${RUN_ID:-run1}
+      CAPTURE_SECONDS: ${CAPTURE_SECONDS:-300}
+    command:
+      - sh
+      - -c
+      - >-
+        pip install --no-cache-dir 'redis>=5.0' &&
+        python -m iasg.dataset.capture
+        --run-id "$${RUN_ID:-run1}"
+        --out "/datasets/raw/$${RUN_ID:-run1}"
+        --seconds "$${CAPTURE_SECONDS:-300}"
+    depends_on:
+      redis:
+        condition: service_healthy
 
 volumes:
   postgres_data:

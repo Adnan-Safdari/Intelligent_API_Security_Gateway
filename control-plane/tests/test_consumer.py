@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from datetime import datetime, timedelta, timezone
 
 from iasg.config import Settings
@@ -143,6 +144,93 @@ def test_pending_is_only_reclaimed_once():
     restarted = consumer(store)
     assert len(restarted.fetch()) == 2
     assert restarted.fetch() == []
+
+
+# The gateway writes one entry per request and most requests are clean, so the
+# majority of entries produce no Evidence at all. Acking only what became
+# Evidence left those pending forever.
+def clean_request(store: MemoryStore, path: str = "/api/products") -> None:
+    store.append("iasg:events", {
+        "event": json.dumps({
+            "requestId": "abc123",
+            "ts": BASE.isoformat(),
+            "ip": "203.0.113.50",
+            "method": "GET",
+            "path": path,
+            "status": 200,
+            "decision": "allow",
+            "fired": [],
+            "signals": [],
+        }),
+        "ip": "203.0.113.50",
+        "path": path,
+    })
+
+
+def test_clean_request_produces_no_evidence():
+    store = MemoryStore()
+    clean_request(store)
+
+    assert consumer(store).fetch() == []
+
+
+def test_an_entry_that_produced_no_evidence_is_still_acked():
+    store = MemoryStore()
+    clean_request(store)
+    c = consumer(store)
+
+    assert c.fetch() == []
+    assert c.ack([]) == 1, "a clean request stayed pending forever"
+
+
+def test_clean_requests_do_not_replay_after_restart():
+    store = MemoryStore()
+    for _ in range(3):
+        clean_request(store)
+
+    first = consumer(store)
+    first.ack(first.fetch())
+
+    restarted = consumer(store)
+    assert restarted.fetch() == []
+    # Nothing was recovered, so nothing was left pending.
+    assert restarted.ack([]) == 0
+
+
+def test_a_crash_before_ack_still_replays_clean_requests():
+    store = MemoryStore()
+    clean_request(store)
+
+    crashed = consumer(store)
+    crashed.fetch()  # read, then "crash" without acking
+
+    # It yields no Evidence either way, so the observable proof that it was
+    # recovered is that the restarted consumer can still ack it.
+    restarted = consumer(store)
+    restarted.fetch()
+    assert restarted.ack([]) == 1, "an unacked clean request was lost"
+
+
+def test_mixed_batch_acks_every_entry_not_just_the_firing_ones():
+    store = MemoryStore()
+    seed(store, 2)
+    clean_request(store)
+    c = consumer(store)
+
+    evidence = c.fetch()
+
+    assert len(evidence) == 2, "only the firing entries become Evidence"
+    assert c.ack(evidence) == 3, "the clean entry was not acked"
+
+
+def test_ack_twice_does_not_double_count():
+    store = MemoryStore()
+    seed(store, 2)
+    c = consumer(store)
+
+    evidence = c.fetch()
+    assert c.ack(evidence) == 2
+    assert c.ack(evidence) == 0, "already-acked entries were acked again"
 
 
 def test_group_is_created_on_construction():

@@ -14,7 +14,6 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/reputation"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
-	redisstore "github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/storage/redis"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/telemetry"
 )
 
@@ -54,6 +53,12 @@ type Config struct {
 	// falls back to DefaultMaxBodyBytes; the cap cannot be turned off from
 	// config, because every stage below it buffers whatever it is handed.
 	MaxBodyBytes int64
+
+	// Routes describes the backend's own endpoints, so telemetry can record
+	// which template a path matched. Structural and boot-only: changing a
+	// template changes what previously recorded telemetry means, which is why
+	// it is not part of the block the settings watcher carries.
+	Routes config.RoutesConfig
 
 	// RateLimit holds the configuration for API flooding detection.
 	RateLimit         config.RateLimitConfig
@@ -164,23 +169,23 @@ func (s *Server) Start() error {
 		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, reputationDetector,
 	)
 
-	var eventWriter telemetry.Writer
-	if s.config.Redis.Enabled {
-		store, err := redisstore.New(s.config.Redis)
-		if err != nil {
-			log.Printf("Redis telemetry disabled: %v", err)
-		} else {
-			defer store.Close()
-			asyncWriter := telemetry.NewAsyncWriter(store, s.config.Redis.TelemetryQueueSize, s.config.Redis.TelemetryWriteTimeout)
-			defer asyncWriter.Close()
-			eventWriter = asyncWriter
-		}
-	}
+	sinks := newTelemetrySinks(s.config.Redis)
+	defer sinks.Close()
 
 	resolver, err := netutil.NewResolver(s.config.TrustedProxies)
 	if err != nil {
 		return err
 	}
+
+	// A route table that would not compile stops the gateway, for the same
+	// reason a bad reputation list does: one that silently loaded nothing
+	// records <unmatched> for every real endpoint, and nothing downstream can
+	// tell that from a client walking paths the application does not serve.
+	routes, err := telemetry.NewTable(s.config.Routes.Templates)
+	if err != nil {
+		return err
+	}
+	auth := telemetry.NewAuthOutcomes(authRulesFrom(s.config.Routes.AuthOutcomes))
 
 	// The gateway's own reflex, and the enforcer that acts on both it and the
 	// control plane's decisions.
@@ -233,11 +238,27 @@ func (s *Server) Start() error {
 		maxBody = DefaultMaxBodyBytes
 	}
 
+	recorder := &telemetry.Recorder{
+		Events:    sinks.Events,
+		Arrivals:  sinks.Arrivals,
+		Collector: s.collector,
+		Routes:    routes,
+		Auth:      auth,
+	}
+	if heartbeat := sinks.Heartbeat; heartbeat != nil {
+		// Started here rather than beside the writers so it can report the
+		// in-flight count, which only exists once the recorder does.
+		heartbeat.Requests = recorder
+		stopHeartbeat := make(chan struct{})
+		defer close(stopHeartbeat)
+		heartbeat.Start(stopHeartbeat)
+	}
+
 	// Refusals are recorded without reading a body. Accepted traffic is capped
 	// before the telemetry snippet or any detector buffers client input.
 	handler := ChainMiddleware(
 		resolver.Middleware,
-		telemetry.Middleware(eventWriter, s.collector),
+		recorder.Middleware,
 		LoggingMiddleware,
 		enforcer.Middleware,
 		BodyLimitMiddleware(maxBody),
@@ -424,4 +445,21 @@ func (c Config) Enforcement() config.EnforcementConfig {
 		Block:             c.Block,
 		Policy:            c.Policy,
 	}
+}
+
+// authRulesFrom turns the configured endpoints into the rules telemetry reads
+// an authentication outcome with. Configuration rather than inference: 401 does
+// not mean "wrong password" in general, only on an endpoint documented to
+// answer that way.
+func authRulesFrom(entries []config.AuthOutcomeConfig) []telemetry.AuthRule {
+	rules := make([]telemetry.AuthRule, 0, len(entries))
+	for _, e := range entries {
+		rules = append(rules, telemetry.AuthRule{
+			Method:             e.Method,
+			Template:           e.Template,
+			Success:            e.Success,
+			InvalidCredentials: e.InvalidCredentials,
+		})
+	}
+	return rules
 }

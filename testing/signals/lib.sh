@@ -37,6 +37,20 @@ assert_not_throttled() {
 	fi
 }
 
+# ATTACK_IP, when set, drives the request as that address instead of the peer.
+#
+# The gateway believes X-Forwarded-For only from a configured trusted proxy, so
+# this does nothing from an untrusted network -- which is the safe direction to
+# fail. Unset, the behaviour is exactly what it was.
+#
+# Useful because policy/writer.py refuses to police private and loopback
+# addresses: a detector script run from the host produces evidence that can
+# never turn into a policy, and looks broken. ATTACK_IP=203.0.113.66 fixes that.
 curl_code() {
-	curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 5 "$@"
+	if [ -n "${ATTACK_IP:-}" ]; then
+		curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 5 \
+			-H "X-Forwarded-For: ${ATTACK_IP}" "$@"
+	else
+		curl -sS -o /dev/null -w "%{http_code}" --connect-timeout 5 "$@"
+	fi
 }

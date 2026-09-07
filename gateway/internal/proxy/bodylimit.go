@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/telemetry"
 )
 
 // DefaultMaxBodyBytes is the cap applied when the config does not name one.
@@ -30,6 +32,13 @@ func BodyLimitMiddleware(maxBytes int64) Middleware {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if maxBytes <= 0 || r.Body == nil || r.Body == http.NoBody {
+				// A request that definitely carried no body is a measured
+				// zero, not an unknown. The distinction is the whole point of
+				// the field: a mean over body sizes must count this and must
+				// not count a body that was refused unread.
+				if r.Body == nil || r.Body == http.NoBody {
+					telemetry.RecordBodySize(r, 0)
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -39,7 +48,7 @@ func BodyLimitMiddleware(maxBytes int64) Middleware {
 			// without reading any of it. A lying or chunked request falls
 			// through to the limited read below, which does not trust it.
 			if r.ContentLength > maxBytes {
-				refuseTooLarge(w)
+				refuseTooLarge(w, r)
 				return
 			}
 
@@ -47,21 +56,29 @@ func BodyLimitMiddleware(maxBytes int64) Middleware {
 			// from one that ends exactly on the limit and is still allowed.
 			body, err := io.ReadAll(io.LimitReader(r.Body, maxBytes+1))
 			if err != nil {
+				telemetry.RecordGatewayAnswer(r, telemetry.ReasonBodyUnreadable)
 				http.Error(w, "cannot read request body", http.StatusBadRequest)
 				return
 			}
 			if int64(len(body)) > maxBytes {
-				refuseTooLarge(w)
+				refuseTooLarge(w, r)
 				return
 			}
 
+			// The size was already computed to make the decision above; it was
+			// previously thrown away.
+			telemetry.RecordBodySize(r, int64(len(body)))
 			r.Body = io.NopCloser(bytes.NewReader(body))
 			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-func refuseTooLarge(w http.ResponseWriter) {
+func refuseTooLarge(w http.ResponseWriter, r *http.Request) {
+	// The body was never read, so its size is unknown rather than zero, and
+	// this status is the gateway's own rather than anything the backend said.
+	telemetry.RecordGatewayAnswer(r, telemetry.ReasonBodyTooLarge)
+
 	// Closed rather than kept alive: the rest of the body is still on the wire,
 	// and draining it to make the connection reusable is exactly the work this
 	// refusal exists to avoid doing.
