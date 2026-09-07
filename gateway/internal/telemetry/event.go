@@ -11,7 +11,13 @@ import (
 // Redis keeps a capped recent window; Postgres will store history later.
 // The isolated agent should read this shape from both stores.
 type Event struct {
-	RequestID string    `json:"requestId"`
+	RequestID string `json:"requestId"`
+
+	// ArrivalTS is when the request arrived; Timestamp is when it finished.
+	// Windowing keys on arrival, so a slow request lands in the window it
+	// started in. Timestamp keeps both its name and its completion meaning
+	// because the console sorts on it.
+	ArrivalTS time.Time `json:"arrivalTs"`
 	Timestamp time.Time `json:"ts"`
 	IP        string    `json:"ip"`
 	Method    string    `json:"method"`

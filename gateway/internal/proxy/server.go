@@ -170,16 +170,37 @@ func (s *Server) Start() error {
 		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, reputationDetector,
 	)
 
-	var eventWriter telemetry.Writer
+	var (
+		eventWriter   telemetry.Writer[telemetry.Event]
+		arrivalWriter telemetry.Writer[telemetry.Arrival]
+		heartbeat     *telemetry.Heartbeat
+	)
 	if s.config.Redis.Enabled {
 		store, err := redisstore.New(s.config.Redis)
 		if err != nil {
 			log.Printf("Redis telemetry disabled: %v", err)
 		} else {
 			defer store.Close()
-			asyncWriter := telemetry.NewAsyncWriter(store, s.config.Redis.TelemetryQueueSize, s.config.Redis.TelemetryWriteTimeout)
+			queue, timeout := s.config.Redis.TelemetryQueueSize, s.config.Redis.TelemetryWriteTimeout
+			asyncWriter := telemetry.NewNamedAsyncWriter[telemetry.Event](store, queue, timeout, "telemetry")
 			defer asyncWriter.Close()
 			eventWriter = asyncWriter
+
+			// Its own queue, not a share of the events queue. Arrivals are
+			// written before the backend is called and completions after, so
+			// one queue would let a slow backend's completions crowd out the
+			// arrivals of the requests still waiting on it -- losing exactly
+			// the records that prove those requests existed.
+			asyncArrivals := telemetry.NewNamedAsyncWriter[telemetry.Arrival](
+				store.Arrivals(s.config.Redis), queue, timeout, "arrivals")
+			defer asyncArrivals.Close()
+			arrivalWriter = asyncArrivals
+
+			heartbeat = &telemetry.Heartbeat{
+				Writer:   store.Health(s.config.Redis),
+				Events:   asyncWriter,
+				Arrivals: asyncArrivals,
+			}
 		}
 	}
 
@@ -249,11 +270,27 @@ func (s *Server) Start() error {
 		maxBody = DefaultMaxBodyBytes
 	}
 
+	recorder := &telemetry.Recorder{
+		Events:    eventWriter,
+		Arrivals:  arrivalWriter,
+		Collector: s.collector,
+		Routes:    routes,
+		Auth:      auth,
+	}
+	if heartbeat != nil {
+		// Started here rather than beside the writers so it can report the
+		// in-flight count, which only exists once the recorder does.
+		heartbeat.Requests = recorder
+		stopHeartbeat := make(chan struct{})
+		defer close(stopHeartbeat)
+		heartbeat.Start(stopHeartbeat)
+	}
+
 	// Refusals are recorded without reading a body. Accepted traffic is capped
 	// before the telemetry snippet or any detector buffers client input.
 	handler := ChainMiddleware(
 		resolver.Middleware,
-		telemetry.Middleware(eventWriter, s.collector, routes, auth),
+		recorder.Middleware,
 		LoggingMiddleware,
 		enforcer.Middleware,
 		BodyLimitMiddleware(maxBody),

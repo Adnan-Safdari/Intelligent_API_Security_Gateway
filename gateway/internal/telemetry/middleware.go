@@ -10,18 +10,13 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 )
-
-// Writer accepts a security event for storage. Production uses AsyncWriter so
-// persistence never holds the client connection open.
-type Writer interface {
-	WriteEvent(ctx context.Context, ev Event) error
-}
 
 type statusRecorder struct {
 	http.ResponseWriter
@@ -67,8 +62,31 @@ type bodyCapture struct {
 // routes may be nil, in which case every request records UnmatchedRoute. That
 // is a usable answer rather than an empty one, so a gateway configured without
 // a route table still produces a consistent column.
-func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth *AuthOutcomes) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
+func Middleware(writer Writer[Event], collector *signals.Collector, routes *Table, auth *AuthOutcomes) func(http.Handler) http.Handler {
+	return (&Recorder{Events: writer, Collector: collector, Routes: routes, Auth: auth}).Middleware
+}
+
+// Recorder holds what the request path writes telemetry through. It exists so
+// the in-flight count has one owner: the heartbeat reports the same number the
+// middleware maintains, rather than a second estimate of it.
+//
+// Arrivals may be nil, in which case only completions are recorded.
+type Recorder struct {
+	Events    Writer[Event]
+	Arrivals  Writer[Arrival]
+	Collector *signals.Collector
+	Routes    *Table
+	Auth      *AuthOutcomes
+
+	inFlight atomic.Int64
+}
+
+// InFlight is how many requests are inside the chain right now. A request the
+// backend never answers is counted here and nowhere else.
+func (rc *Recorder) InFlight() int64 { return rc.inFlight.Load() }
+
+func (rc *Recorder) Middleware(next http.Handler) http.Handler {
+	{
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			started := time.Now()
 			requestID := newRequestID()
@@ -83,12 +101,21 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth
 			// travels, and it is read once after the chain returns.
 			r, upstream := AttachUpstream(r)
 			capture := &bodyCapture{}
-			if writer != nil {
+			if rc.Events != nil {
 				r = r.WithContext(context.WithValue(r.Context(), bodyCaptureKey{}, capture))
 			}
 
+			// The route table is consulted twice per request rather than
+			// passed forward, because the arrival record must not depend on
+			// anything the chain could change on its way through.
+			routeTemplate := rc.Routes.Match(r.Method, r.URL.Path)
+			ip := netutil.ClientIP(r)
+			rc.recordArrival(r, requestID, started, ip, routeTemplate)
+
 			rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+			rc.inFlight.Add(1)
 			next.ServeHTTP(rec, r)
+			rc.inFlight.Add(-1)
 			match := policy.Matched(r)
 			if match != nil {
 				slog.InfoContext(r.Context(), "policy_match",
@@ -98,7 +125,7 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth
 					"outcome", match.Outcome, "status", rec.status,
 				)
 			}
-			if writer == nil {
+			if rc.Events == nil {
 				return
 			}
 
@@ -109,16 +136,13 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth
 				upstream.GatewayReason = gatewayReasonFor(policy.Applied(r))
 			}
 
-			routeTemplate := routes.Match(r.Method, r.URL.Path)
-
-			ip := netutil.ClientIP(r)
 			// Scoped to this request, not to the address. A blocked IP is
 			// answered by the enforcer before the detectors run, so an
 			// address-wide snapshot would report the attack that got it
 			// blocked on every later request -- evidence the control plane
 			// ingests as a fresh hit, keeping a campaign alive on traffic
 			// nobody inspected.
-			snap := collector.SnapshotFor(ip, requestID)
+			snap := rc.Collector.SnapshotFor(ip, requestID)
 			status := rec.status
 			if status == 0 {
 				status = http.StatusOK
@@ -126,6 +150,7 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth
 
 			ev := Event{
 				RequestID: requestID,
+				ArrivalTS: started.UTC(),
 				Timestamp: time.Now().UTC(),
 				IP:        ip,
 				Method:    r.Method,
@@ -159,8 +184,8 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth
 				// Read from the backend's status, never the one the client
 				// saw: a login the enforcer answered with a 403 says nothing
 				// about the password.
-				LoginAttempt: auth.IsLogin(r.Method, routeTemplate),
-				AuthOutcome: auth.Outcome(
+				LoginAttempt: rc.Auth.IsLogin(r.Method, routeTemplate),
+				AuthOutcome: rc.Auth.Outcome(
 					r.Method, routeTemplate, upstream.Status, upstream.HaveStatus),
 
 				BackendMS: upstream.DurationMS,
@@ -169,11 +194,32 @@ func Middleware(writer Writer, collector *signals.Collector, routes *Table, auth
 
 			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 			defer cancel()
-			if err := writer.WriteEvent(ctx, ev); err != nil && !errors.Is(err, ErrQueueFull) {
+			if err := rc.Events.WriteEvent(ctx, ev); err != nil && !errors.Is(err, ErrQueueFull) {
 				log.Printf("redis telemetry write failed: %v", err)
 			}
 		})
 	}
+}
+
+// recordArrival announces the request before it runs.
+//
+// This is the only thing this plan adds to the request path, and it is safe
+// for one reason: WriteEvent on an AsyncWriter is a select with a default --
+// a channel send or an immediate drop. It never does I/O, never takes a lock
+// and never waits. A dead Redis costs a dropped arrival, not a slow request.
+func (rc *Recorder) recordArrival(r *http.Request, requestID string, at time.Time, ip, routeTemplate string) {
+	if rc.Arrivals == nil {
+		return
+	}
+	_ = rc.Arrivals.WriteEvent(r.Context(), Arrival{
+		RequestID:     requestID,
+		ArrivalTS:     at.UTC(),
+		IP:            ip,
+		Method:        r.Method,
+		Path:          r.URL.Path,
+		RouteTemplate: routeTemplate,
+		ContentLength: r.ContentLength,
+	})
 }
 
 // CaptureBody belongs after policy enforcement and the body-size guard. Keeping

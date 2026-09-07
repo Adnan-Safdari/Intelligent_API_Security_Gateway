@@ -85,14 +85,24 @@ type StorageConfig struct {
 }
 
 type RedisConfig struct {
-	Enabled               bool          `yaml:"enabled"`
-	Host                  string        `yaml:"host"`
-	Port                  int           `yaml:"port"`
-	Password              string        `yaml:"password"`
-	DB                    int           `yaml:"db"`
-	PoolSize              int           `yaml:"pool_size"`
-	StreamKey             string        `yaml:"stream_key"`
-	StreamMaxLen          int64         `yaml:"stream_maxlen"`
+	Enabled      bool   `yaml:"enabled"`
+	Host         string `yaml:"host"`
+	Port         int    `yaml:"port"`
+	Password     string `yaml:"password"`
+	DB           int    `yaml:"db"`
+	PoolSize     int    `yaml:"pool_size"`
+	StreamKey    string `yaml:"stream_key"`
+	StreamMaxLen int64  `yaml:"stream_maxlen"`
+
+	// Arrival records go to their own stream so every existing consumer of
+	// stream_key keeps seeing exactly what it sees today. They are capped
+	// separately because there is one per request either way, but a capture
+	// run wants far more history than the console does.
+	ArrivalStreamKey string `yaml:"arrival_stream_key"`
+	ArrivalMaxLen    int64  `yaml:"arrival_maxlen"`
+
+	HealthStreamKey       string        `yaml:"health_stream_key"`
+	HealthMaxLen          int64         `yaml:"health_maxlen"`
 	IPLatestTTL           time.Duration `yaml:"ip_latest_ttl"`
 	TelemetryQueueSize    int           `yaml:"telemetry_queue_size"`
 	TelemetryWriteTimeout time.Duration `yaml:"telemetry_write_timeout"`
@@ -318,6 +328,19 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Storage.Redis.StreamMaxLen <= 0 {
 		cfg.Storage.Redis.StreamMaxLen = 2000
+	}
+	if cfg.Storage.Redis.ArrivalStreamKey == "" {
+		cfg.Storage.Redis.ArrivalStreamKey = "iasg:arrivals"
+	}
+	if cfg.Storage.Redis.ArrivalMaxLen <= 0 {
+		cfg.Storage.Redis.ArrivalMaxLen = cfg.Storage.Redis.StreamMaxLen
+	}
+	if cfg.Storage.Redis.HealthStreamKey == "" {
+		cfg.Storage.Redis.HealthStreamKey = "iasg:telemetry:health"
+	}
+	if cfg.Storage.Redis.HealthMaxLen <= 0 {
+		// One record a second, so this is a day of heartbeats.
+		cfg.Storage.Redis.HealthMaxLen = 86400
 	}
 	if cfg.Storage.Redis.IPLatestTTL <= 0 {
 		cfg.Storage.Redis.IPLatestTTL = 24 * time.Hour
