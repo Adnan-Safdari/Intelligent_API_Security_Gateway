@@ -31,6 +31,11 @@ cd gateway && go test ./internal/signals/ -race      # detectors hold live state
 # Python — the venv already exists; PYTHONPATH is required
 cd control-plane && PYTHONPATH=. .venv/bin/python -m pytest -q
 cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg --once
+
+# Anomaly dataset. Capture needs Redis and refuses to run without it, because
+# the memory fallback would produce an empty run that looks like quiet traffic.
+cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg.dataset.capture --run-id <id> --out datasets/raw/<id>
+cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg.dataset.build --runs datasets/raw/<id> --out datasets/v1
 ```
 
 Go 1.22 in `go.mod` (containers run 1.23), Python ≥3.11. There are no linters
