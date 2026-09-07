@@ -1,0 +1,17 @@
+{
+  "medians": {
+    "backend_404_ratio": 0.0,
+    "backend_5xx_ratio": 0.0,
+    "dominant_route_ratio": 1.0,
+    "interarrival_cv": 0.3637902174063896,
+    "login_failure_ratio": 0.0,
+    "login_ratio": 0.0,
+    "mean_request_body_bytes": 0.0,
+    "p95_upstream_duration_ms": 20.0,
+    "peak_1s_requests": 1.0,
+    "post_ratio": 0.0,
+    "request_count": 7.5,
+    "unique_path_ratio": 0.5277777777777778
+  },
+  "spec_version": "v1"
+}
