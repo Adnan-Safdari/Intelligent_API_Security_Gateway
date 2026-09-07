@@ -223,6 +223,63 @@ services:
     ports:
       - "8000:8000"
 
+  # --- Dataset collection. Off unless --profile collect is passed. ---------
+  #
+  #   IASG_CONFIG=configs/config.collect.yaml \
+  #     docker compose -f infra/docker-compose.yml up -d gateway
+  #   docker compose -f infra/docker-compose.yml --profile collect run --rm traffic
+  #
+  # Runs from inside the compose network on purpose. Docker Desktop rewrites a
+  # host request's source address, so traffic from the host arrives as one
+  # private address and every persona collapses into it. The generator's
+  # pre-flight refuses to start when that happens rather than producing a
+  # dataset that is silently one client pretending to be forty.
+  traffic:
+    profiles: ["collect"]
+    image: python:3.12-alpine
+    working_dir: /workspace
+    volumes:
+      - ..:/workspace
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /workspace
+    command: >
+      sh -c "pip install --no-cache-dir redis>=5.0 &&
+             python -m testing.traffic.generate
+               --run-id $${RUN_ID:-run1}
+               --out datasets/raw/$${RUN_ID:-run1}
+               --gateway http://gateway:8082
+               --redis redis://redis:6379/0
+               --seconds $${TRAFFIC_SECONDS:-180}"
+    depends_on:
+      gateway:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  # Drains the three telemetry streams to datasets/raw/<run_id>/. Its own
+  # consumer group, so it does not disturb the control plane's.
+  capture:
+    profiles: ["collect"]
+    image: python:3.12-alpine
+    working_dir: /app
+    volumes:
+      - ../control-plane:/app
+      - ../datasets:/datasets
+    environment:
+      PYTHONUNBUFFERED: "1"
+      PYTHONPATH: /app
+      IASG_REDIS_URL: redis://redis:6379/0
+    command: >
+      sh -c "pip install --no-cache-dir redis>=5.0 &&
+             python -m iasg.dataset.capture
+               --run-id $${RUN_ID:-run1}
+               --out /datasets/raw/$${RUN_ID:-run1}
+               --seconds $${CAPTURE_SECONDS:-300}"
+    depends_on:
+      redis:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   vulnerable_postgres_data:
