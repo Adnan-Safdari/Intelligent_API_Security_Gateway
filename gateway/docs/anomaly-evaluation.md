@@ -27,9 +27,10 @@ is replaced by a number.
 > a false-positive rate above 1.0%, and the pooled benign false-positive rate is
 > at or below 1.0%. Test is then read once.**
 
-**Gated** means the persona has at least 300 benign rows in the partition being
-measured. Personas below that are **reported but not gated**, because the
-measurement cannot support the claim:
+**Gated** means the persona has at least **100 benign rows of test support**.
+Personas below that are **reported but not gated** — as a raw `FP / N` count with
+a 95% confidence interval, never as a bare percentage — because the measurement
+cannot support the claim:
 
 | Persona | v2 val rows | one FP = | v2 test rows | one FP = | Gated |
 | --- | --- | --- | --- | --- | --- |
@@ -47,6 +48,27 @@ A 1.0% budget is not measurable on `one_shot`: a single false positive is
 already 3.6% of its validation rows. Gating on it would mean the threshold was
 chosen by one window.
 
+**The gate is not a licence to loosen the budget.** The tempting move is to set
+the budget wherever one false positive happens to fit the smallest denominator —
+2%, because `one_shot` has 50 test rows. That picks a number to fit an artefact
+of sample size rather than to express what a false positive costs. The budget
+stays at 1.0%; the personas too small to measure it are excluded from gating
+instead.
+
+**A clean small persona proves very little and must not be reported as if it
+did.** Zero false positives in 50 rows is consistent with a true rate near 6%.
+By the rule of three the 95% upper bound is `3/n`:
+
+| Persona | Test rows | 0 FPs still allows a true rate up to |
+| --- | --- | --- |
+| `one_shot` | 50 | ~6.0% |
+| `idle` | 88 | ~3.4% |
+| smallest gated persona (`browser`) | 327 | ~0.9% |
+
+`idle` and `one_shot` are therefore reported as counts with intervals, and the
+honest remedy is more independent capture of those two behaviours — not a softer
+threshold.
+
 **Why 1.0% and not tighter.** The anomaly score is worth at most one severity
 rung, and only on a campaign that already earned an action on evidence alone —
 it never originates enforcement. A false positive here costs a severity bump on
@@ -58,8 +80,9 @@ that a persona being systematically flagged fails the gate.
 failure from a uniform low rate, and a pooled average hides it. The pooled
 figure is reported *in addition to* the per-persona figures, never instead.
 
-Row counts above are v2's. After a v3 build they must be recomputed, and the
-300-row gate applied to whatever the new partitions contain.
+Row counts above are v2's, where the 100-row and 300-row gates happen to select
+the same seven personas. After a v3 build they must be recomputed and the
+100-row gate applied to whatever the new partitions contain.
 
 ---
 
@@ -113,29 +136,59 @@ most.
 
 ## 3. Detection delay
 
-> **Detection delay is measured from the first attack request of a campaign to
-> the end of the first fully-observed window whose anomaly score exceeds the
-> threshold. It is reported as a window count and in seconds, where seconds is
-> `(windows × 60) + scoring lag`, with the lag stated separately.**
+> **Model detection delay is measured from the first attack request to the
+> timestamp of the first fully-observed window whose anomaly score exceeds the
+> threshold. Abstaining windows count as non-detections and extend it. Model
+> detection delay and policy-enforcement delay are reported separately, together
+> with the control-plane scheduling lag.**
 
-Three rules that the definition needs to be usable:
+Both delays share the same origin — the first attack request — and differ in
+what they measure reaching:
+
+| Delay | Measured to |
+| --- | --- |
+| **Model detection** | the first window whose score exceeds the threshold |
+| **Policy enforcement** | the moment a policy key was written and applied |
+
+Four rules make the definition usable.
+
+**Do not compute delay as `windows × 60`.** An attack rarely begins on a window
+boundary — a campaign starting at `12:00:47` has 13 seconds in its first window,
+and multiplying a window count by 60 charges it a full minute it never used. Use
+real timestamps and report the window count alongside as a separate, integer
+figure.
 
 **Abstaining windows count as non-detections and extend the delay.** A window
-that declined to score cannot exceed a threshold. Skipping it would measure
-delay against a timeline the runtime does not have.
+that declined to score cannot exceed a threshold. Skipping it would measure delay
+against a timeline the runtime does not have.
 
-**The scoring lag is named, not folded in.** Scoring waits for the window to
-close, so an assessment is up to 60 seconds behind the traffic it describes,
-plus the control plane's own cycle (currently 30s). A seconds figure computed
-only from window counts understates real-world delay by up to 90 seconds, and
-quantises to 60-second steps regardless — the precision is in the window count,
-not the seconds.
+**The scheduling lag is reported separately, not folded in.** Scoring waits for
+the window to close, so an assessment is up to 60 seconds behind the traffic it
+describes, plus the control plane's own cycle (currently 30s). Burying that in a
+single number makes a fast model look slow and hides which half to fix.
 
 **Undetected campaigns are reported as undetected.** They are never given an
-imputed delay and never dropped from the denominator. A mean delay computed
-only over successes is a mean over the easy cases.
+imputed delay and never dropped from the denominator. A mean delay computed only
+over successes is a mean over the easy cases.
 
----
+### What the frozen dataset cannot answer
+
+A constraint rather than a rule, because it decides where the measurement runs.
+
+`metadata.csv` carries `window_start` and nothing finer. The attack interval
+itself lives in the run manifest's `attacks.jsonl`, which is **not copied into
+the frozen dataset**, and individual request arrival times live only in the raw
+capture under `datasets/raw/` — gitignored, and reproducible only by rerunning.
+
+So the dataset alone supports delay at **whole-window granularity**. Timestamp
+precision needs one of:
+
+- an `attack_start` column added to `metadata.csv` at build time (v3), or
+- a join back to the raw capture for the runs being measured.
+
+Policy-enforcement delay is not in the dataset under any option — it comes from
+the control plane's own policy-write records, gathered at evaluation time.
+Reporting it means capturing those alongside the scoring run.
 
 ## 4. Data admitted to evaluation
 
@@ -240,7 +293,56 @@ claims.
 
 ---
 
-## 6. Known limits
+## 6. Required v3 build changes
+
+The rules above take effect only when a build enforces them. v2 is frozen and
+stays as it is.
+
+| Change | Status today |
+| --- | --- |
+| `interval_fully_observed` required for every partition | not built |
+| Split membership assigned by whole `run_id` | partly — grouping is `run_id\|ip`, not run |
+| Three runs reserved entirely for test | not built |
+| Assert train is benign-only | **not built** |
+| Assert reserved scenarios never leave test | enforced (`check_reserved`) |
+| `features.csv` is `row_id` plus the twelve | enforced |
+| No group key spans two partitions | **written, never called** |
+| Labels independent of detector output | **written, never called** |
+| Empty paths fail the build in strict mode | **written, never called** |
+| Scenario × split × run count table in `evaluation.md` | not built |
+| Protocol version and commit hash in `versions.json` | not built |
+| `attack_start` in `metadata.csv` for delay measurement | not built |
+
+### Three guards exist and guard nothing
+
+`control-plane/iasg/anomaly/checks.py` defines `check_split_disjoint`,
+`check_labels_independent_of_detectors` and `check_no_empty_paths`. All three are
+written, documented, and unit-tested in `test_anomaly_dataset.py` — and none is
+called by `build()`, which imports only `check_feature_header` and
+`check_no_identifying_columns`.
+
+They are promises the build does not keep. The properties happen to hold in v2 —
+verified directly: 1,896 groups with none spanning a partition, zero telemetry
+defects, labels taken only from the run manifest. But they hold by construction
+and luck rather than by enforcement, and nothing would fail if a future change
+broke them. Wiring them into `build()` is a precondition for v3, not a cleanup.
+
+**There is no benign-only-train assertion at all.** `splits.assign` never returns
+`train` for a labelled attack, so the property holds structurally — but it is the
+single most load-bearing claim in the design, and it should fail loudly rather
+than rely on one branch staying correct.
+
+### Recording which protocol a result was measured under
+
+This page is allowed to change, which is exactly why a result must name the
+version it was judged by. The build writes the protocol's file path and the
+repository commit hash into `versions.json`, and any reported metric cites it.
+Otherwise a threshold chosen under one budget gets compared against a number
+produced under another, and nothing in the artefacts says so.
+
+---
+
+## 7. Known limits
 
 Recorded so they are not rediscovered as findings.
 
@@ -260,13 +362,13 @@ replaced by this layer and must keep running alongside it.
 
 ---
 
-## 7. To recompute after a v3 build
+## 8. To recompute after a v3 build
 
 The rules above are fixed. These figures are not, and every one of them is
 quoted from v2 in this page:
 
-- Benign rows per persona in val and test, and which personas clear the 300-row
-  gate in §1.
+- Benign rows per persona in val and test, and which personas clear the 100-row
+  test-support gate in §1, with rule-of-three bounds for those that do not.
 - Abstention counts and the per-scenario operational-recall ceilings in §2.
 - The completeness-against-scoreability table in §4.
 - Train-partition size after the three reserved runs are removed.
