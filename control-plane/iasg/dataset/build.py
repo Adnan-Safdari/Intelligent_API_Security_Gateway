@@ -52,6 +52,21 @@ class DatasetFrozen(RuntimeError):
     changes what a trained model's inputs meant, silently."""
 
 
+class UnplannedTrafficTooHigh(RuntimeError):
+    """
+    Raised rather than filtering, when a run is mostly traffic nobody planned.
+
+    A handful of stray windows is something to drop and count. A run where a
+    large share of the traffic came from addresses the plan never assigned is a
+    run that was collected while something else was talking to the gateway, and
+    filtering it would leave a dataset shaped by whatever that was.
+    """
+
+
+# Above this share of a run's windows, the run is wrong rather than dirty.
+UNPLANNED_ROW_LIMIT = 0.05
+
+
 @dataclass
 class BuiltRow:
     row_id: int
@@ -59,7 +74,17 @@ class BuiltRow:
     row: WindowRow
     label: int
     scenario: str
+    persona: str = ""
     split: str = ""
+
+
+@dataclass
+class RunRows:
+    """One run's rows, plus what was thrown away getting them."""
+
+    rows: list[BuiltRow]
+    unplanned_rows: int = 0
+    unplanned_ips: tuple[str, ...] = ()
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -119,10 +144,44 @@ def health_by_window(entries: Iterable[dict], trim_losses: bool) -> dict[datetim
     return verdicts
 
 
-def rows_for_run(run: RawRun, run_id: str) -> list[BuiltRow]:
+def load_sessions(run: RawRun) -> dict[str, str] | None:
+    """
+    Which address the plan gave to which persona or scenario.
+
+    Returns None when the run has no sessions.jsonl at all, which means the run
+    predates the file rather than that every address in it was unplanned --
+    those two have to be distinguishable, because treating the first as the
+    second would silently produce an empty dataset.
+    """
+    if not run.sessions.exists():
+        return None
+    planned: dict[str, str] = {}
+    for line in run.sessions.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            session = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if session.get("ip"):
+            planned[session["ip"]] = session.get("name", "")
+    return planned
+
+
+def rows_for_run(run: RawRun, run_id: str) -> RunRows:
+    """
+    Windows for the addresses this run planned, and only those.
+
+    An address the plan never assigned is *unlabelled*, not benign: nothing in
+    attacks.jsonl covers it, so label_for answers 0 and it would join the class
+    the anomaly model is fitted on. That is how a stray browser tab teaches the
+    model what normal looks like.
+    """
     arrivals = read_jsonl(run.arrivals)
     completions = read_jsonl(run.completions)
     attacks = load_attacks(run.attacks.read_text().splitlines() if run.attacks.exists() else [])
+    planned = load_sessions(run)
 
     manifest = json.loads(run.manifest.read_text()) if run.manifest.exists() else {}
     streams = (manifest.get("capture") or {}).get("streams") or {}
@@ -132,7 +191,13 @@ def rows_for_run(run: RawRun, run_id: str) -> list[BuiltRow]:
     grouped = assign(join(arrivals, completions))
 
     built: list[BuiltRow] = []
+    unplanned_rows = 0
+    unplanned_ips: set[str] = set()
     for (ip, start), records in sorted(grouped.items(), key=lambda kv: (kv[0][1], kv[0][0])):
+        if planned is not None and ip not in planned:
+            unplanned_rows += 1
+            unplanned_ips.add(ip)
+            continue
         # build_as_of, never now. Passing now is the single mistake that would
         # undo the availability guarantee, so the build never writes it.
         row = extract(records, start, build_as_of(start), health.get(start))
@@ -143,9 +208,21 @@ def rows_for_run(run: RawRun, run_id: str) -> list[BuiltRow]:
                 row=row,
                 label=label_for(ip, start, attacks),
                 scenario=scenario_for(ip, start, attacks),
+                # Straight from the plan, so an attack session's quiet minute
+                # reads persona=api_flood, scenario=benign -- the session was an
+                # attack, that particular minute was outside its interval.
+                persona=(planned or {}).get(ip, ""),
             )
         )
-    return built
+
+    total = len(built) + unplanned_rows
+    if planned is not None and total and unplanned_rows / total > UNPLANNED_ROW_LIMIT:
+        raise UnplannedTrafficTooHigh(
+            f"{run_id}: {unplanned_rows} of {total} windows came from addresses the "
+            f"plan never assigned ({', '.join(sorted(unplanned_ips))}). Discard the "
+            f"run rather than filtering it."
+        )
+    return RunRows(built, unplanned_rows, tuple(sorted(unplanned_ips)))
 
 
 def build(
@@ -162,12 +239,20 @@ def build(
 
     built: list[BuiltRow] = []
     run_ids: list[str] = []
+    unplanned: list[tuple[str, int, tuple[str, ...]]] = []
     for raw in raw_dirs:
         run = RawRun.at(raw)
         manifest = json.loads(run.manifest.read_text()) if run.manifest.exists() else {}
         run_id = manifest.get("run_id") or Path(raw).name
         run_ids.append(run_id)
-        built.extend(rows_for_run(run, run_id))
+        result = rows_for_run(run, run_id)
+        built.extend(result.rows)
+        if result.unplanned_rows:
+            unplanned.append((run_id, result.unplanned_rows, result.unplanned_ips))
+            print(
+                f"[build] {run_id}: dropped {result.unplanned_rows} window(s) from "
+                f"unplanned addresses: {', '.join(result.unplanned_ips)}"
+            )
 
     built.sort(key=lambda b: (b.row.window_start, b.run_id, b.row.ip))
     for index, item in enumerate(built, start=1):
@@ -203,7 +288,7 @@ def build(
         medians.save(out / "medians.json")
     (out / "held_out_scenarios.txt").write_text("\n".join(RESERVED_SCENARIOS) + "\n")
     _write_versions(out / "versions.json", run_ids)
-    _write_evaluation(out / "evaluation.md", built)
+    _write_evaluation(out / "evaluation.md", built, unplanned)
     _write_manifest(out / "manifest.json", out, run_ids, built)
     (out / "FROZEN").write_text(datetime.now(timezone.utc).isoformat() + "\n")
     return out
@@ -230,11 +315,14 @@ def _write_metadata(path: Path, built: Sequence[BuiltRow]) -> None:
     living in a different file."""
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["row_id", "run_id", "ip", "window_start", "label", "scenario"])
+        writer.writerow(
+            ["row_id", "run_id", "ip", "window_start", "label", "scenario", "persona"]
+        )
         for item in built:
             writer.writerow([
                 item.row_id, item.run_id, item.row.ip,
                 item.row.window_start.isoformat(), item.label, item.scenario,
+                item.persona,
             ])
 
 
@@ -259,6 +347,7 @@ def _write_rows(path: Path, built: Sequence[BuiltRow]) -> None:
                 "window_start": item.row.window_start.isoformat(),
                 "label": item.label,
                 "scenario": item.scenario,
+                "persona": item.persona,
                 "split": item.split,
                 "features": item.row.features,
                 "quality": item.row.quality.as_dict(),
@@ -283,7 +372,34 @@ def _write_versions(path: Path, run_ids: Sequence[str]) -> None:
     }, indent=2, sort_keys=True) + "\n")
 
 
-def _write_evaluation(path: Path, built: Sequence[BuiltRow]) -> None:
+def _unplanned_section(
+    unplanned: Sequence[tuple[str, int, tuple[str, ...]]],
+) -> list[str]:
+    """
+    What was dropped, named. Recorded in the dataset rather than only printed,
+    because the build log is gone by the time anyone asks why a run looks thin.
+    """
+    if not unplanned:
+        return []
+    lines = [
+        "### Dropped as unplanned",
+        "",
+        "Windows from addresses the run's plan never assigned. Unlabelled rather",
+        "than benign -- nothing in attacks.jsonl covers them, so keeping them",
+        "would have put unknown traffic in the class the model is fitted on.",
+        "",
+    ]
+    for run_id, count, ips in unplanned:
+        lines.append(f"- `{run_id}`: {count} rows from {', '.join(ips)}")
+    lines.append("")
+    return lines
+
+
+def _write_evaluation(
+    path: Path,
+    built: Sequence[BuiltRow],
+    unplanned: Sequence[tuple[str, int, tuple[str, ...]]] = (),
+) -> None:
     """
     Written before any model is fit, on purpose.
 
@@ -292,11 +408,17 @@ def _write_evaluation(path: Path, built: Sequence[BuiltRow]) -> None:
     separately so "the mobile poller is always flagged" is visible rather than
     averaged away, and abstentions are counted as abstentions rather than
     misses.
+
+    The benign persona counts are listed because metric 1 is only meaningful if
+    every persona actually has test mass. A persona with two rows cannot have a
+    false-positive rate worth reporting, and that has to be visible here rather
+    than discovered afterwards.
     """
     from collections import Counter
 
     by_split = Counter(b.split for b in built)
     by_scenario = Counter(b.scenario for b in built)
+    by_persona = Counter(b.persona or "<unknown>" for b in built if b.label == 0)
     abstained = sum(1 for b in built if b.row.quality.insufficient_history)
     unobserved = sum(1 for b in built if not b.row.quality.interval_fully_observed)
 
@@ -318,6 +440,11 @@ def _write_evaluation(path: Path, built: Sequence[BuiltRow]) -> None:
         "",
         *[f"- `{name}`: {count} rows" for name, count in sorted(by_scenario.items())],
         "",
+        "### Benign rows per persona",
+        "",
+        *[f"- `{name}`: {count} rows" for name, count in sorted(by_persona.items())],
+        "",
+        *_unplanned_section(unplanned),
         "## How it will be measured",
         "",
         "1. **False positives on benign test traffic, per persona.** Reported",

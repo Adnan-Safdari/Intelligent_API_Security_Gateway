@@ -13,7 +13,13 @@ import pytest
 
 from iasg.anomaly.checks import check_feature_header, check_no_identifying_columns
 from iasg.anomaly.spec import FEATURE_NAMES
-from iasg.dataset.build import DatasetFrozen, build, health_by_window, verify
+from iasg.dataset.build import (
+    DatasetFrozen,
+    UnplannedTrafficTooHigh,
+    build,
+    health_by_window,
+    verify,
+)
 from iasg.dataset.labels import Attack, label_for, scenario_for
 from iasg.dataset.layout import RawRun
 from iasg.dataset.splits import RESERVED_SCENARIOS, ReservedScenarioMisplaced, Split, check_reserved
@@ -25,7 +31,13 @@ def iso(dt):
     return dt.isoformat().replace("+00:00", "Z")
 
 
-def write_run(tmp_path, name, requests, attacks=(), health=()):
+def write_run(tmp_path, name, requests, attacks=(), health=(), sessions=None):
+    """
+    A run directory. `sessions` defaults to every address that appears in the
+    requests, which is what a real generator writes; pass it explicitly to
+    build a run where traffic arrived from an address the plan never assigned.
+    Pass False to write no sessions.jsonl at all, as pre-sessions runs had.
+    """
     run = RawRun.at(tmp_path / name)
     with open(run.arrivals, "w") as a, open(run.completions, "w") as c:
         for rec in requests:
@@ -49,6 +61,13 @@ def write_run(tmp_path, name, requests, attacks=(), health=()):
     with open(run.health, "w") as f:
         for beat in health:
             f.write(json.dumps(beat) + "\n")
+    if sessions is not False:
+        if sessions is None:
+            sessions = [{"ip": ip, "name": "browser"}
+                        for ip in dict.fromkeys(r["ip"] for r in requests)]
+        with open(run.sessions, "w") as f:
+            for session in sessions:
+                f.write(json.dumps({"run_id": name, **session}) + "\n")
     run.manifest.write_text(json.dumps({"run_id": name}))
     return run
 
@@ -175,6 +194,99 @@ def test_dropped_telemetry_is_a_delta_not_the_lifetime_counter():
 def test_a_trim_loss_makes_every_window_in_the_run_untrusted():
     beats = [{"at": iso(W + timedelta(seconds=s)), "seq": s + 1, "droppedTotal": 0} for s in range(60)]
     assert health_by_window(beats, trim_losses=True)[W].fully_observed is False
+
+
+# ---------------------------------------------------------------------------
+# Unplanned traffic
+# ---------------------------------------------------------------------------
+
+
+def test_an_address_the_plan_never_assigned_is_dropped_not_labelled_benign(tmp_path):
+    """
+    The defect that put a stray Google address and the Docker Desktop host
+    address into v1 as benign training rows. Nothing in attacks.jsonl covers an
+    unplanned address, so label_for answers 0 and it joins the class the model
+    is fitted on -- which is how a browser tab left open teaches the model what
+    normal looks like.
+    """
+    # Twenty-four planned addresses, so one stray stays under UNPLANNED_ROW_LIMIT
+    # and this test measures the filtering rather than the run-level refusal.
+    planned = [f"203.0.113.{n}" for n in range(10, 34)]
+    requests = [r for ip in planned for r in busy(ip, W)]
+    requests += busy("142.251.222.177", W)  # never in the plan
+    write_run(tmp_path, "run1", requests,
+              sessions=[{"ip": ip, "name": "browser"} for ip in planned])
+    out = build([tmp_path / "run1"], tmp_path / "v1")
+
+    addresses = {row["ip"] for row in csv.DictReader(open(out / "metadata.csv"))}
+    assert addresses == set(planned)
+
+    # Dropped in the dataset, not only in a build log that is gone by the time
+    # anyone asks why the run looks thin.
+    assert "142.251.222.177" in (out / "evaluation.md").read_text()
+
+
+def test_a_run_that_is_mostly_unplanned_raises_rather_than_being_filtered(tmp_path):
+    """A handful of stray windows is dirt. A run where most of the traffic came
+    from somewhere else is a run collected while something else was talking to
+    the gateway, and filtering it would leave a dataset shaped by whatever that
+    was."""
+    requests = busy("203.0.113.10", W) + busy("192.168.65.1", W)
+    write_run(tmp_path, "run1", requests,
+              sessions=[{"ip": "203.0.113.10", "name": "browser"}])
+
+    with pytest.raises(UnplannedTrafficTooHigh) as raised:
+        build([tmp_path / "run1"], tmp_path / "v1")
+    assert "192.168.65.1" in str(raised.value)
+
+
+def test_a_run_without_sessions_is_not_read_as_entirely_unplanned(tmp_path):
+    """Absent sessions.jsonl means the run predates the file, not that every
+    address in it was unplanned. Conflating those would silently build an empty
+    dataset from a perfectly good run."""
+    write_run(tmp_path, "run1", busy("203.0.113.10", W), sessions=False)
+    out = build([tmp_path / "run1"], tmp_path / "v1")
+
+    rows = (out / "rows.jsonl").read_text().splitlines()
+    assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# Personas
+# ---------------------------------------------------------------------------
+
+
+def test_the_persona_survives_into_the_dataset(tmp_path):
+    """
+    evaluation.md commits to per-persona false positives "reported separately,
+    never averaged". v1 could not deliver that: the persona lived only in
+    sessions.jsonl and the build discarded it, so every benign row said
+    `benign` and metric 1 was uncomputable from the frozen dataset.
+    """
+    requests = busy("203.0.113.10", W) + busy("203.0.113.11", W)
+    write_run(tmp_path, "run1", requests, sessions=[
+        {"ip": "203.0.113.10", "name": "forgetful_user"},
+        {"ip": "203.0.113.11", "name": "mobile_poller"},
+    ])
+    out = build([tmp_path / "run1"], tmp_path / "v1")
+
+    personas = {row["ip"]: row["persona"]
+                for row in csv.DictReader(open(out / "metadata.csv"))}
+    assert personas == {"203.0.113.10": "forgetful_user", "203.0.113.11": "mobile_poller"}
+    assert "forgetful_user" in (out / "evaluation.md").read_text()
+
+
+def test_the_persona_stays_out_of_the_feature_matrix(tmp_path):
+    """It identifies a row, so it belongs in metadata.csv. The leakage check is
+    on the file, and it must still be the thing that fails if this is done
+    wrong."""
+    write_run(tmp_path, "run1", busy("203.0.113.10", W))
+    out = build([tmp_path / "run1"], tmp_path / "v1")
+
+    header = next(csv.reader(open(out / "features.csv")))
+    assert header == ["row_id", *FEATURE_NAMES]
+    assert "persona" not in header
+    assert check_no_identifying_columns(out / "features.csv") == []
 
 
 # ---------------------------------------------------------------------------
