@@ -201,6 +201,7 @@ func (s *Server) Start() error {
 	if err != nil {
 		return err
 	}
+	enforcer.WithRouteResolver(routes.Match)
 	defer s.closePolicy()
 
 	// Live settings. The file is what the gateway boots with; the console can

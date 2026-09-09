@@ -52,7 +52,7 @@ class CheckFailure:
 
 def check_feature_header(path: str | Path) -> list[CheckFailure]:
     """
-    features.csv is exactly row_id plus the twelve, in order.
+    features.csv is exactly row_id plus the versioned feature set, in order.
 
     This is the leakage guarantee made physical. It cannot contain an address,
     a label or a timestamp because there is no column for one.
@@ -88,14 +88,14 @@ def check_split_disjoint(rows: Iterable[dict]) -> list[CheckFailure]:
     """
     No group key appears in two partitions.
 
-    Groups are placed whole, so one address's windows cannot be split across
+    Groups are placed whole, so one client's windows cannot be split across
     train and test. Otherwise a model can memorise an address in training and
     be graded on the same address's other minutes.
     """
     seen: dict[tuple, str] = {}
     failures: list[CheckFailure] = []
     for row in rows:
-        key = (row.get("run_id"), row.get("ip"))
+        key = (row.get("run_id"), row.get("client_id") or row.get("ip"))
         split = row.get("split")
         previous = seen.setdefault(key, split)
         if previous != split:

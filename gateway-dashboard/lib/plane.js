@@ -98,13 +98,25 @@ export async function readPolicies(redis) {
       const decision = parseJson(values[i]);
       if (!decision) return null;
       return {
-        ip: key.slice(POLICY_PREFIX.length),
+        key,
+        policyId: decision.policy_id || key,
+        ip: decision.target_identity || key.slice(POLICY_PREFIX.length).split(":")[0],
+        scope: decision.scope || "client",
+        method: decision.endpoint_scope?.method || decision.method || "",
+        routeTemplate: decision.endpoint_scope?.route_template || decision.route || "",
         action: decision.action || "",
         campaignId: decision.campaign_id || "",
         confidence: Number(decision.confidence || 0),
+        riskScore: Number(decision.risk_score || 0),
         reason: decision.reason || "",
         source: decision.source || "agent",
         issuedAt: decision.issued_at || null,
+        issuedBy: decision.issued_by || "control-plane",
+        mode: decision.mode || "automatic",
+        baselineVersion: decision.baseline_version || "",
+        configVersion: Number(decision.config_version || 0),
+        modelVersion: decision.model_version || "",
+        explanation: decision.explanation || {},
         // What Redis says is left, not what was originally asked for -- the
         // difference is the point of a policy that expires by itself.
         expiresIn: Number(ttls[i] ?? -1),
@@ -177,6 +189,10 @@ export async function readHeartbeat(redis) {
     late: secondsAgo > Number(beat.interval_seconds || 30) * 2,
     durable: Boolean(beat.durable),
     dryRun: Boolean(beat.dry_run),
+    mode: beat.mode || "unknown",
+    configVersion: Number(beat.config_version || 0),
+    modelAvailable: Boolean(beat.model_available),
+    modelError: beat.model_error || "",
     lastCycle: {
       evidence: Number(beat.evidence || 0),
       campaigns: Number(beat.campaigns || 0),
@@ -187,18 +203,6 @@ export async function readHeartbeat(redis) {
 
 /** One address's current enforcement, or null when it is not under policy. */
 export async function readPolicyFor(redis, ip) {
-  const key = `${POLICY_PREFIX}${ip}`;
-  const [raw, ttl] = await Promise.all([redis.get(key), redis.ttl(key)]);
-  const decision = parseJson(raw);
-  if (!decision) return null;
-  return {
-    ip,
-    action: decision.action || "",
-    campaignId: decision.campaign_id || "",
-    confidence: Number(decision.confidence || 0),
-    reason: decision.reason || "",
-    source: decision.source || "agent",
-    issuedAt: decision.issued_at || null,
-    expiresIn: Number(ttl ?? -1),
-  };
+  const policies = await readPolicies(redis);
+  return policies.find((policy) => policy.ip === ip) || null;
 }

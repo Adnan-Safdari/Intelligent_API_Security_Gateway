@@ -202,8 +202,9 @@ def test_build_produces_a_frozen_checkable_dataset(tmp_path):
 
     rows = [json.loads(line) for line in (out / "rows.jsonl").read_text().splitlines()]
     assert len(rows) == 2
-    labels = {r["ip"]: r["label"] for r in rows}
-    assert labels == {"203.0.113.10": 0, "203.0.113.200": 1}
+    assert sorted(r["label"] for r in rows) == [0, 1]
+    assert len({r["client_id"] for r in rows}) == 2
+    assert "203.0.113" not in (out / "rows.jsonl").read_text()
 
 
 def test_the_feature_matrix_carries_no_identity(tmp_path):
@@ -218,9 +219,11 @@ def test_the_feature_matrix_carries_no_identity(tmp_path):
     header = next(csv.reader(open(out / "features.csv")))
     assert header == ["row_id", *FEATURE_NAMES]
 
-    # The identity is in the other file, joined by row_id.
+    # Only an opaque grouping identity is in the other file, joined by row_id.
     meta = next(csv.DictReader(open(out / "metadata.csv")))
-    assert meta["ip"] == "203.0.113.10"
+    assert len(meta["client_id"]) == 24
+    assert "ip" not in meta
+    assert "203.0.113.10" not in (out / "metadata.csv").read_text()
 
 
 def test_unknowns_are_written_empty_rather_than_imputed(tmp_path):

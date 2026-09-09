@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 
 from iasg.config import Settings
 from iasg.models import (
+    ACTION_ALLOW,
     ACTION_ESCALATE,
     ACTION_MONITOR,
     ACTION_TEMP_BLOCK,
@@ -72,6 +73,16 @@ def test_an_allowlisted_address_gets_no_policy_at_all():
 
     assert approved == []
     assert "allowlisted" in notes[0]
+
+
+def test_an_explicit_allow_can_release_an_allowlisted_address_from_reflex():
+    approved, notes = review(
+        [decision(action=ACTION_ALLOW, source="human")],
+        allowlist=("203.0.113.0/24",),
+    )
+
+    assert approved[0].action == ACTION_ALLOW
+    assert notes == []
 
 
 def test_the_allowlist_leaves_other_addresses_alone():

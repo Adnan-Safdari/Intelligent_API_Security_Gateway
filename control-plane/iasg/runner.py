@@ -11,10 +11,19 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from iasg.alerts import AlertSink
+from iasg.adaptive.baseline import MemoryBaselineRepository
+from iasg.adaptive.controller import AdaptiveController
+from iasg.adaptive.lifecycle import (
+    STATUS_APPROVED,
+    STATUS_REJECTED,
+    MemoryLifecycleRepository,
+    Recommendation,
+)
+from iasg.adaptive.windows import WindowConsumer
 from iasg.assessment.agent import AssessmentAgent
 from iasg.campaigns.repository import CampaignRepository
 from iasg.config import Settings
@@ -24,8 +33,9 @@ from iasg.explanation.agent import ExplanationAgent
 from iasg.feedback import overrides as human
 from iasg.feedback.memory import FeedbackMemory
 from iasg.feedback.overrides import OverrideChannel
-from iasg.models import ACTION_ESCALATE, ACTION_MONITOR, Campaign
-from iasg.policy.agent import PolicyAgent, reputation_bias
+from iasg.ml.scorer import ModelScorer
+from iasg.models import ACTION_ESCALATE, ACTION_MONITOR, Campaign, PolicyDecision
+from iasg.policy.agent import PolicyAgent
 from iasg.policy.simulation import Simulator
 from iasg.policy.writer import PolicyWriter
 from iasg.reasoning import open_provider
@@ -89,8 +99,10 @@ class Runner:
             self.store,
             persistence=self.database.campaigns if self.database else None,
         )
-        self.policy = PolicyAgent()
         self.simulator = Simulator(self.store, settings)
+        # Kept as the compatibility surface for embedders and historical
+        # feedback tests. Production decisions below use AdaptiveController.
+        self.policy = PolicyAgent()
         self.overrides = OverrideChannel(self.store, settings)
         self.feedback = FeedbackMemory(
             self.store,
@@ -103,6 +115,15 @@ class Runner:
                 print(f"[postgres] restored {restored} records into Redis")
 
         self.writer = PolicyWriter(self.store, settings)
+        baseline_repository = self.database.adaptive if self.database else MemoryBaselineRepository()
+        lifecycle_repository = self.database.adaptive if self.database else MemoryLifecycleRepository()
+        self.windows = WindowConsumer(self.store, settings)
+        self.adaptive = AdaptiveController(
+            baseline_repository,
+            lifecycle_repository,
+            ModelScorer(settings.model_path, settings.model_metadata_path),
+            settings.adaptive,
+        )
         self.provider = provider
         self.explanation = ExplanationAgent(provider)
         self.assessment = AssessmentAgent(provider)
@@ -110,6 +131,20 @@ class Runner:
 
     def cycle(self) -> CycleResult:
         result = CycleResult()
+
+        config = (
+            self.database.adaptive.load_config(self.settings.adaptive)
+            if self.database else self.settings.adaptive
+        )
+        self.adaptive.apply_config(config)
+        self.writer.apply_config(config)
+        self.simulator.apply_config(config)
+        self.writer.begin_cycle()
+        self.adaptive.lifecycle.repository.expire_due(datetime.now(timezone.utc))
+        for decision, enforce, _ in self.adaptive.observe(self.windows.completed()):
+            if enforce:
+                self._write_active(decision, result, actor=decision.issued_by)
+        self._activate_approved(config, result)
 
         # Narration is capped per cycle, not per call, so the allowance has to
         # be restored before any campaign spends it. Providers without a
@@ -148,9 +183,12 @@ class Runner:
             # a mistyped instruction exactly as it is from the agent.
             result.manual, notes = self.simulator.review(loose, evidence)
             result.notes.extend(notes)
-            written, notes = self.writer.write(result.manual)
-            result.policies_written += written
-            result.notes.extend(notes)
+            for decision in result.manual:
+                now = datetime.now(timezone.utc)
+                self.adaptive.lifecycle.repository.save_recommendation(
+                    Recommendation(decision, STATUS_APPROVED, now, now)
+                )
+                self._write_active(decision, result, actor=decision.issued_by)
 
         # 6. review -- did acting on the older campaigns change anything? A
         # cycle with no evidence is not a wasted one: silence is the signal.
@@ -188,6 +226,10 @@ class Runner:
                         "policies_written": result.policies_written,
                         "durable": bool(self.database),
                         "dry_run": self.settings.dry_run,
+                        "mode": self.adaptive.config.mode,
+                        "config_version": self.adaptive.config.version,
+                        "model_available": self.adaptive.scorer.available,
+                        "model_error": self.adaptive.scorer.error,
                     }
                 ),
                 ttl_seconds=max(self.settings.interval_seconds * 3, 90),
@@ -197,24 +239,22 @@ class Runner:
 
     def _respond(self, campaign, evidence, pending, result: CycleResult) -> None:
         """Decide, check the decision is safe, let a human overrule it, write."""
-        # 4. decide -- rules only, no LLM anywhere near this
-        learned_bias = self.feedback.bias_for(campaign.type)
-
-        # Two independent reasons to answer more firmly, added before the
-        # ladder clamps them: what humans keep correcting, and what someone
-        # else already knew about the address. _promote allows one rung in
-        # total, so these cannot compound.
-        known_bias = reputation_bias(campaign, evidence, self.policy)
-        bias = learned_bias + known_bias
-
-        decisions = self.policy.decide(campaign, bias=bias)
-        if learned_bias:
-            result.learned.append(self.feedback.explain(campaign.type))
-        if known_bias:
-            result.notes.append(
-                f"[reputation] {campaign.campaign_id} includes an address on a "
-                f"reputation feed -- answering one rung firmer"
+        # 4. decide -- validated numeric configuration and completed-window
+        # facts only.  ML is advisory input here; the scorer never runs in Go.
+        staged = self.adaptive.decisions(campaign, evidence)
+        decisions = [decision for decision, _, _ in staged]
+        eligible = {decision.policy_id: enforce for decision, enforce, _ in staged}
+        standing = [
+            replace(
+                decision,
+                action=(decision.explanation.get("final") or {}).get(
+                    "standing_action", decision.action
+                ),
             )
+            for decision, _, why in staged
+            if "not renewed" in why or "change cooldown" in why
+        ]
+        standing_ids = {decision.policy_id for decision in standing}
 
         # 4b. a person outranks the agent, and disagreeing with us is the only
         # thing here worth learning from.
@@ -226,16 +266,47 @@ class Runner:
 
         # 4c. simulate -- last, so nothing reaches the gateway without passing
         # the safety checks, whoever asked for it.
+        proposed_ids = {decision.policy_id for decision in decisions}
         decisions, notes = self.simulator.review(decisions, evidence)
         result.notes.extend(notes)
+        reviewed_ids = {decision.policy_id for decision in decisions}
+        for policy_id in proposed_ids - reviewed_ids - standing_ids:
+            self.adaptive.lifecycle.repository.mark_status(
+                policy_id,
+                STATUS_REJECTED,
+                "control-plane",
+                {"reason": "final collateral review rejected the recommendation"},
+            )
 
-        written, notes = self.writer.write(decisions)
-        result.policies_written += written
-        result.notes.extend(notes)
+        active: list[PolicyDecision] = []
+        for decision in decisions:
+            human_override = decision.source == "human"
+            automatic = eligible.get(decision.policy_id, False)
+            if human_override or automatic:
+                now = datetime.now(timezone.utc)
+                self.adaptive.lifecycle.repository.save_recommendation(
+                    Recommendation(decision, STATUS_APPROVED, now, now)
+                )
+            if human_override or automatic:
+                if self._write_active(decision, result, actor=decision.issued_by):
+                    active.append(decision)
 
         # What was actually applied, not what was first proposed -- the next
         # cycle judges whether this worked.
-        campaign.last_action = decisions[0].action if decisions else ACTION_MONITOR
+        effective = active or standing
+        campaign.last_action = effective[0].action if effective else ACTION_MONITOR
+        guard = self.adaptive.config.guardrails
+        if effective and (
+            (
+                campaign.confidence >= guard.analyst_escalation_confidence
+                and len(campaign.ips) >= guard.analyst_escalation_min_clients
+            )
+            or len(campaign.stages) >= guard.analyst_escalation_min_stages
+        ):
+            # Escalation is an alert, not a fourth automatic enforcement action.
+            # The Redis policy remains the bounded throttle/block selected by
+            # guardrails while a person is asked to inspect the campaign.
+            campaign.last_action = ACTION_ESCALATE
 
         # 5. explain -- advisory text, after the decision is already made
         campaign.explanation = self.explanation.explain(campaign, decisions)
@@ -248,6 +319,55 @@ class Runner:
                 result.escalated.append(campaign)
 
         self.campaigns.save(campaign)
+
+    def _activate_approved(self, config, result: CycleResult) -> None:
+        # An analyst may approve in Manual mode.  Switching back to Monitor
+        # before the next cycle is a safety stop and leaves approval durable
+        # without turning it into a live Redis key.
+        if config.mode == "monitor":
+            return
+        for decision in self.adaptive.lifecycle.approved():
+            # Automatic proposals are approved and activated in the same
+            # cycle after final review. Only an analyst-approved Manual row is
+            # eligible for this durable queue.
+            if decision.source != "approved":
+                continue
+            if decision.action == ACTION_MONITOR:
+                self.adaptive.lifecycle.repository.mark_status(
+                    decision.policy_id,
+                    "expired",
+                    decision.issued_by,
+                    {"reason": "approved monitor recommendation has no active Redis policy"},
+                )
+                continue
+            now = datetime.now(timezone.utc)
+            remaining = int((decision.expires_at - now).total_seconds())
+            if remaining <= 0:
+                self.adaptive.lifecycle.repository.mark_status(
+                    decision.policy_id, "expired", "control-plane"
+                )
+                continue
+            # Approval starts a bounded window at the analyst's click. Agent
+            # scheduling delay consumes that window; it must not silently
+            # grant a fresh full TTL when Redis is finally written.
+            approved = replace(
+                decision,
+                source="approved",
+                issued_at=now,
+                ttl_seconds=remaining,
+            )
+            self._write_active(approved, result, actor=approved.issued_by)
+
+    def _write_active(
+        self, decision: PolicyDecision, result: CycleResult, *, actor: str
+    ) -> bool:
+        written, notes = self.writer.write([decision])
+        result.policies_written += written
+        result.notes.extend(notes)
+        if written:
+            self.adaptive.lifecycle.activated(decision, actor=actor)
+            return True
+        return False
 
     def run_forever(self) -> None:
         print(

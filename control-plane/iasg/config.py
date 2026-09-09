@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from iasg.adaptive.config import AdaptiveConfig, load_adaptive_config
 
 def _env_int(name: str,default : int) -> int:
     """read an int from the environment , falling back if unset or unparsable"""
@@ -82,6 +84,21 @@ class Settings:
 
     postgres_url : str | None = None
 
+    # The adaptive block is replaceable by a JSON value or JSON file through
+    # IASG_ADAPTIVE_CONFIG.  A persisted dashboard value supersedes it at the
+    # beginning of each cycle; this remains the validated boot/fallback value.
+    adaptive: AdaptiveConfig = field(default_factory=AdaptiveConfig)
+
+    # Separate groups let runtime windowing see clean traffic without changing
+    # the evidence consumer's contract (which intentionally returns attacks).
+    arrival_stream: str = "iasg:arrivals"
+    health_stream: str = "iasg:telemetry:health"
+    window_consumer_group: str = "iasg-windowing"
+    window_consumer_name: str = "window-agent-1"
+    window_completion_grace_seconds: int = 5
+    model_path: str = "models/current/model.joblib"
+    model_metadata_path: str = "models/current/metadata.json"
+
     @classmethod
     def from_env(cls) -> "Settings":
         return cls(
@@ -116,5 +133,22 @@ class Settings:
                 "IASG_NARRATION_BUDGET_SECONDS", cls.narration_budget_seconds
             ),
             postgres_url=os.getenv("IASG_POSTGRES_URL"),
+            adaptive=load_adaptive_config(os.getenv("IASG_ADAPTIVE_CONFIG")),
+            arrival_stream=os.getenv("IASG_ARRIVAL_STREAM", cls.arrival_stream),
+            health_stream=os.getenv("IASG_HEALTH_STREAM", cls.health_stream),
+            window_consumer_group=os.getenv(
+                "IASG_WINDOW_CONSUMER_GROUP", cls.window_consumer_group
+            ),
+            window_consumer_name=os.getenv(
+                "IASG_WINDOW_CONSUMER_NAME", cls.window_consumer_name
+            ),
+            window_completion_grace_seconds=_env_int(
+                "IASG_WINDOW_COMPLETION_GRACE_SECONDS",
+                cls.window_completion_grace_seconds,
+            ),
+            model_path=os.getenv("IASG_MODEL_PATH", cls.model_path),
+            model_metadata_path=os.getenv(
+                "IASG_MODEL_METADATA_PATH", cls.model_metadata_path
+            ),
         )
 

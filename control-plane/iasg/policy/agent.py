@@ -9,6 +9,7 @@ influence the gateway, so the ladder is deliberately boring and readable.
 from __future__ import annotations
 
 from iasg.models import (
+    ACTION_ALLOW,
     ACTION_ESCALATE,
     DETECTOR_REPUTATION,
     ACTION_LADDER,
@@ -25,6 +26,7 @@ from iasg.models import (
 
 # How long each action stands before Redis expires it by itself.
 TTL = {
+    ACTION_ALLOW: 900,
     ACTION_MONITOR: 300,
     ACTION_THROTTLE: 900,
     ACTION_TEMP_BLOCK: 1800,

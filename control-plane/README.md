@@ -21,15 +21,16 @@ given until those keys expire. It just stops getting smarter.
               policy:<ip> (Redis, TTL)
 ```
 
-The gateway writes one JSON event per request to `iasg:events`. The control plane
-reads that stream, skips clean traffic, and turns fired signals into Evidence.
+The gateway writes arrivals and completion events. One independent consumer
+turns fired signals into campaign Evidence; another keeps clean traffic long
+enough to finish privacy-safe 60-second windows and endpoint baselines.
 `iasg.evidence.ingest` remains as a fallback for piping old SECURITY ALERT logs.
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev]"
+.venv/bin/pip install -e ".[dev,postgres,ml]"
 ```
 
 Needs Redis on `localhost:6379`. Nothing else — no Docker, no Postgres, no LLM.
@@ -180,8 +181,9 @@ Disagreement is tallied per campaign type, and after enough consistent correctio
 direction the agent starts making that correction itself. Bounded hard: one rung ever,
 several samples before it moves at all, opposing corrections cancel, and it shifts only
 the starting recommendation — the checks above run afterwards and are not learnable, since
-a system that could learn its way past its own rails eventually would. There is no model
-and nothing is trained; it is a tally.
+a system that could learn its way past its own rails eventually would. Feedback
+is still a tally. Separately, the offline Isolation Forest is advisory only and
+cannot authorize enforcement without deterministic evidence.
 
 Both features are off until configured. With nothing set, the ladder behaves exactly as it
 did before they existed, and a test pins that.
@@ -249,6 +251,8 @@ there together:
 `sys.path` correctly on Python 3.14, so `-m` — which puts the current directory on the
 path — is the dependable form. `pytest` and `python -m iasg` work either way.
 
-**Postgres is not used.** Campaigns are stored in Redis with a TTL. The Compose stack runs
-a Postgres for the gateway, and `IASG_POSTGRES_URL` exists in config, but nothing here
-reads it yet.
+**Postgres is the durable record when configured.** Campaigns, feedback,
+adaptive settings, endpoint baseline summaries and samples, recommendations,
+and the policy audit lifecycle survive restarts there. Redis remains transport
+and the expiring active-policy lookup. See the Adaptive Policy documentation
+for training, migration, and three-mode demo steps.

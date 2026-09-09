@@ -1,7 +1,8 @@
 """
 Which partition a row goes to.
 
-Groups are placed whole. The group key is (run_id, ip) plus a replay group, so
+Groups are placed whole. The in-memory group key is (run_id, client identity)
+plus a replay group, so
 one address's windows cannot land on both sides -- otherwise a model memorises
 an address in training and is graded on the same address's other minutes.
 
@@ -35,8 +36,8 @@ class Split:
     seed: str = "iasg-v1"
     val_fraction: float = 0.5
 
-    def group_key(self, run_id: str, ip: str, replay_group: str = "") -> tuple[str, str, str]:
-        return (run_id, ip, replay_group)
+    def group_key(self, run_id: str, client_identity: str, replay_group: str = "") -> tuple[str, str, str]:
+        return (run_id, client_identity, replay_group)
 
     def _bucket(self, key: tuple[str, str, str]) -> float:
         """

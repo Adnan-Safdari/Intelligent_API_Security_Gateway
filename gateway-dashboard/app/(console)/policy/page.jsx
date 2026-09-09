@@ -88,7 +88,7 @@ export default function PolicyPage() {
                 </thead>
                 <tbody>
                   {rows.map((p) => (
-                    <tr key={p.ip}>
+                    <tr key={p.policyId || `${p.ip}-${p.method}-${p.routeTemplate}`}>
                       <td>
                         <Link href={`/events?q=${encodeURIComponent(p.ip)}`} className="mono">
                           {p.ip}

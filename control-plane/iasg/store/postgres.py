@@ -21,7 +21,10 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
-from iasg.models import Campaign
+from iasg.adaptive.baseline import BaselineSummary, EndpointKey
+from iasg.adaptive.config import AdaptiveConfig
+from iasg.adaptive.lifecycle import Recommendation
+from iasg.models import Campaign, PolicyDecision
 
 # Campaigns older than this stop being offered to the correlator. It matches
 # the TTL the Redis-backed path used, so switching stores does not change which
@@ -67,6 +70,62 @@ CREATE TABLE IF NOT EXISTS feedback (
 );
 
 CREATE SEQUENCE IF NOT EXISTS campaign_id_seq;
+
+CREATE TABLE IF NOT EXISTS adaptive_settings (
+    singleton_id  SMALLINT PRIMARY KEY CHECK (singleton_id = 1),
+    version       INTEGER     NOT NULL,
+    mode          TEXT        NOT NULL CHECK (mode IN ('monitor', 'manual', 'automatic')),
+    config        JSONB       NOT NULL,
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_by    TEXT        NOT NULL DEFAULT 'bootstrap'
+);
+
+CREATE TABLE IF NOT EXISTS endpoint_baselines (
+    method                TEXT        NOT NULL,
+    route_template        TEXT        NOT NULL,
+    sample_count          INTEGER     NOT NULL,
+    statistic             DOUBLE PRECISION NOT NULL,
+    mad                   DOUBLE PRECISION NOT NULL,
+    derived_threshold     INTEGER     NOT NULL,
+    observed_rate         INTEGER     NOT NULL,
+    last_update           TIMESTAMPTZ,
+    last_threshold_change TIMESTAMPTZ,
+    version               INTEGER     NOT NULL,
+    ready                 BOOLEAN     NOT NULL,
+    samples               JSONB       NOT NULL DEFAULT '[]'::jsonb,
+    PRIMARY KEY (method, route_template)
+);
+
+CREATE TABLE IF NOT EXISTS policy_recommendations (
+    policy_id       TEXT PRIMARY KEY,
+    target_identity TEXT        NOT NULL,
+    method          TEXT        NOT NULL DEFAULT '',
+    route_template  TEXT        NOT NULL DEFAULT '',
+    action          TEXT        NOT NULL,
+    status          TEXT        NOT NULL,
+    risk_score      DOUBLE PRECISION NOT NULL,
+    confidence      DOUBLE PRECISION NOT NULL,
+    mode            TEXT        NOT NULL,
+    issued_by       TEXT        NOT NULL,
+    expires_at      TIMESTAMPTZ NOT NULL,
+    payload         JSONB       NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL,
+    updated_at      TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX IF NOT EXISTS policy_recommendations_status_idx
+    ON policy_recommendations (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS policy_recommendations_scope_idx
+    ON policy_recommendations (target_identity, method, route_template, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS policy_audit (
+    audit_id   BIGSERIAL PRIMARY KEY,
+    policy_id  TEXT        NOT NULL,
+    event      TEXT        NOT NULL,
+    actor      TEXT        NOT NULL,
+    details    JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS policy_audit_created_idx ON policy_audit (created_at DESC);
 """
 
 # Column order shared by the reader and both writers, so they cannot drift.
@@ -99,6 +158,7 @@ class Database:
 
         self.campaigns = PostgresCampaigns(self._conn)
         self.feedback = PostgresFeedback(self._conn)
+        self.adaptive = PostgresAdaptive(self._conn)
 
     def close(self) -> None:
         self._conn.close()
@@ -193,6 +253,153 @@ class PostgresFeedback:
             }
 
 
+class PostgresAdaptive:
+    """Durable settings, endpoint learning, and complete policy lifecycle."""
+
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def ensure_config(self, default: AdaptiveConfig) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO adaptive_settings (singleton_id, version, mode, config)"
+                " VALUES (1, %s, %s, %s::jsonb) ON CONFLICT (singleton_id) DO NOTHING",
+                (default.version, default.mode, json.dumps(default.to_dict())),
+            )
+
+    def load_config(self, default: AdaptiveConfig) -> AdaptiveConfig:
+        with self._conn.cursor() as cur:
+            cur.execute("SELECT config FROM adaptive_settings WHERE singleton_id = 1")
+            row = cur.fetchone()
+        if not row:
+            self.ensure_config(default)
+            return default
+        value = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+        return AdaptiveConfig.from_mapping(value, default)
+
+    def get_baseline(self, key: EndpointKey) -> BaselineSummary | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT method, route_template, sample_count, statistic, mad,"
+                " derived_threshold, observed_rate, last_update, last_threshold_change,"
+                " version, ready, samples FROM endpoint_baselines"
+                " WHERE method = %s AND route_template = %s",
+                (key.method, key.route_template),
+            )
+            row = cur.fetchone()
+        return _to_baseline(row) if row else None
+
+    def save_baseline(self, summary: BaselineSummary) -> None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO endpoint_baselines"
+                " (method, route_template, sample_count, statistic, mad, derived_threshold,"
+                " observed_rate, last_update, last_threshold_change, version, ready, samples)"
+                " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)"
+                " ON CONFLICT (method, route_template) DO UPDATE SET"
+                " sample_count=EXCLUDED.sample_count, statistic=EXCLUDED.statistic,"
+                " mad=EXCLUDED.mad, derived_threshold=EXCLUDED.derived_threshold,"
+                " observed_rate=EXCLUDED.observed_rate, last_update=EXCLUDED.last_update,"
+                " last_threshold_change=EXCLUDED.last_threshold_change,"
+                " version=EXCLUDED.version, ready=EXCLUDED.ready, samples=EXCLUDED.samples",
+                (
+                    summary.method, summary.route_template, summary.sample_count,
+                    summary.statistic, summary.mad, summary.derived_threshold,
+                    summary.observed_rate, summary.last_update,
+                    summary.last_threshold_change, summary.version, summary.ready,
+                    json.dumps(summary.samples),
+                ),
+            )
+
+    def list_baselines(self) -> list[BaselineSummary]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT method, route_template, sample_count, statistic, mad,"
+                " derived_threshold, observed_rate, last_update, last_threshold_change,"
+                " version, ready, samples FROM endpoint_baselines"
+                " ORDER BY method, route_template"
+            )
+            return [_to_baseline(row) for row in cur.fetchall()]
+
+    def save_recommendation(self, recommendation: Recommendation) -> None:
+        decision = recommendation.decision
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO policy_recommendations"
+                " (policy_id,target_identity,method,route_template,action,status,risk_score,"
+                " confidence,mode,issued_by,expires_at,payload,created_at,updated_at)"
+                " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s)"
+                " ON CONFLICT (policy_id) DO UPDATE SET"
+                " target_identity=EXCLUDED.target_identity, method=EXCLUDED.method,"
+                " route_template=EXCLUDED.route_template, action=EXCLUDED.action,"
+                " status=EXCLUDED.status, risk_score=EXCLUDED.risk_score,"
+                " confidence=EXCLUDED.confidence, mode=EXCLUDED.mode,"
+                " issued_by=EXCLUDED.issued_by, expires_at=EXCLUDED.expires_at,"
+                " payload=EXCLUDED.payload, updated_at=EXCLUDED.updated_at",
+                (
+                    decision.policy_id, decision.ip, decision.method,
+                    decision.route_template, decision.action, recommendation.status,
+                    decision.risk_score, decision.confidence, decision.mode,
+                    decision.issued_by, decision.expires_at,
+                    json.dumps(decision.to_dict()), recommendation.created_at,
+                    recommendation.updated_at,
+                ),
+            )
+            cur.execute(
+                "INSERT INTO policy_audit (policy_id,event,actor,details)"
+                " VALUES (%s,%s,%s,'{}'::jsonb)",
+                (decision.policy_id, recommendation.status, decision.issued_by),
+            )
+
+    def approved_recommendations(self) -> list[Recommendation]:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT payload,status,created_at,updated_at FROM policy_recommendations"
+                " WHERE status='approved' ORDER BY updated_at"
+            )
+            return [_to_recommendation(row) for row in cur.fetchall()]
+
+    def mark_status(self, policy_id: str, status: str, actor: str, details: dict | None = None) -> None:
+        now = datetime.now(timezone.utc)
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE policy_recommendations SET status=%s, updated_at=%s WHERE policy_id=%s",
+                (status, now, policy_id),
+            )
+            cur.execute(
+                "INSERT INTO policy_audit (policy_id,event,actor,details)"
+                " VALUES (%s,%s,%s,%s::jsonb)",
+                (policy_id, status, actor, json.dumps(details or {})),
+            )
+
+    def last_for_scope(self, decision: PolicyDecision) -> Recommendation | None:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT payload,status,created_at,updated_at FROM policy_recommendations"
+                " WHERE target_identity=%s AND method=%s AND route_template=%s"
+                " ORDER BY updated_at DESC LIMIT 1",
+                (decision.ip, decision.method, decision.route_template),
+            )
+            row = cur.fetchone()
+        return _to_recommendation(row) if row else None
+
+    def expire_due(self, now: datetime) -> int:
+        with self._conn.cursor() as cur:
+            cur.execute(
+                "UPDATE policy_recommendations SET status='expired',updated_at=%s"
+                " WHERE status='active' AND expires_at<=%s RETURNING policy_id",
+                (now, now),
+            )
+            ids = [row[0] for row in cur.fetchall()]
+            for policy_id in ids:
+                cur.execute(
+                    "INSERT INTO policy_audit (policy_id,event,actor,details)"
+                    " VALUES (%s,'expired','control-plane','{}'::jsonb)",
+                    (policy_id,),
+                )
+        return len(ids)
+
+
 def open_database(settings) -> Database | None:
     """
     Connect, or return None and let the caller carry on with Redis.
@@ -204,6 +411,7 @@ def open_database(settings) -> Database | None:
         return None
     try:
         db = Database(settings.postgres_url)
+        db.adaptive.ensure_config(settings.adaptive)
     except ImportError:
         print(
             "[postgres] psycopg not installed; campaigns stay in Redis. "
@@ -214,7 +422,7 @@ def open_database(settings) -> Database | None:
         print(f"[postgres] unavailable ({err}); campaigns stay in Redis")
         return None
 
-    print("[postgres] campaigns and feedback are durable")
+    print("[postgres] campaigns, adaptive settings, baselines, and policy audit are durable")
     return db
 
 
@@ -288,3 +496,24 @@ def _utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return value.astimezone(timezone.utc)
+
+
+def _to_baseline(row: tuple) -> BaselineSummary:
+    samples = row[11]
+    if isinstance(samples, str):
+        samples = json.loads(samples)
+    return BaselineSummary(
+        method=row[0], route_template=row[1], sample_count=row[2],
+        statistic=float(row[3]), mad=float(row[4]), derived_threshold=row[5],
+        observed_rate=row[6], last_update=_utc(row[7]),
+        last_threshold_change=_utc(row[8]), version=row[9], ready=row[10],
+        samples=[float(value) for value in (samples or [])],
+    )
+
+
+def _to_recommendation(row: tuple) -> Recommendation:
+    payload = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+    return Recommendation(
+        decision=PolicyDecision.from_dict(payload), status=row[1],
+        created_at=_utc(row[2]), updated_at=_utc(row[3]),
+    )

@@ -211,7 +211,7 @@ def test_to_vector_fills_unknowns_and_keeps_feature_order():
     medians = Medians.fit(rows_for_medians([2.0, 4.0]))
     row = rows_for_medians([None])[0]
     vector = to_vector(row, medians)
-    assert len(vector) == 12
+    assert len(vector) == len(FEATURE_NAMES)
     assert vector[FEATURE_NAMES.index("interarrival_cv")] == 3.0
     assert all(isinstance(v, float) for v in vector)
 

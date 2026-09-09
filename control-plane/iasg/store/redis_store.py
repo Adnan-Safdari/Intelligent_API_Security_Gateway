@@ -30,6 +30,9 @@ class RedisStore:
             stream, fields, maxlen=self._max_len, approximate=True
         )
 
+    def trim(self, stream: str, maxlen: int) -> int:
+        return int(self._client.xtrim(stream, maxlen=maxlen, approximate=False))
+
     def read_group(
         self,
         stream: str,

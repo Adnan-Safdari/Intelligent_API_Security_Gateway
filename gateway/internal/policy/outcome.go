@@ -18,14 +18,20 @@ type Outcome struct {
 // Match keeps the policy that applied separate from the eventual HTTP outcome:
 // an allowed request under a throttle policy still matched that policy.
 type Match struct {
-	Action            string `json:"action"`
-	Source            string `json:"source"`
-	ClientIP          string `json:"client_ip"`
-	Route             string `json:"route"`
-	Method            string `json:"method"`
-	RequestsPerMinute int    `json:"requests_per_minute"`
-	Reason            string `json:"reason"`
-	Outcome           string `json:"outcome"`
+	PolicyID          string  `json:"policy_id,omitempty"`
+	CampaignID        string  `json:"campaign_id,omitempty"`
+	Action            string  `json:"action"`
+	Source            string  `json:"source"`
+	ClientIP          string  `json:"client_ip"`
+	Route             string  `json:"route"`
+	Method            string  `json:"method"`
+	RequestsPerMinute int     `json:"requests_per_minute"`
+	Reason            string  `json:"reason"`
+	Outcome           string  `json:"outcome"`
+	RiskScore         float64 `json:"risk_score,omitempty"`
+	Confidence        float64 `json:"confidence,omitempty"`
+	Mode              string  `json:"mode,omitempty"`
+	IssuedBy          string  `json:"issued_by,omitempty"`
 }
 
 // AttachOutcome puts a mutable outcome on the request. Call once, outermost.

@@ -1,9 +1,10 @@
 import { getRedis } from "@/lib/redis";
 import { require as requireRole } from "@/lib/auth";
+import { isIP } from "node:net";
 
 export const dynamic = "force-dynamic";
 
-const OVERRIDE_STREAM = "iasg_overrides";
+const OVERRIDE_STREAM = process.env.IASG_OVERRIDE_STREAM || "iasg_overrides";
 
 // Exactly the ladder the control plane knows. Anything else is rejected here
 // rather than written and silently ignored a cycle later.
@@ -64,10 +65,5 @@ export async function POST(request) {
 }
 
 function isAddress(value) {
-  // v4, and the bracketless v6 shapes the gateway can produce.
-  const v4 = /^(\d{1,3}\.){3}\d{1,3}$/;
-  if (v4.test(value)) {
-    return value.split(".").every((part) => Number(part) <= 255);
-  }
-  return /^[0-9a-fA-F:]+$/.test(value) && value.includes(":");
+  return isIP(value) !== 0;
 }

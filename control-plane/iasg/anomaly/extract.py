@@ -45,7 +45,7 @@ class WindowRow:
     The address and the window are here because a row has to be identifiable,
     and they are never features. That is enforced physically when a dataset is
     written: they go in metadata.csv, and the build fails if features.csv
-    carries any column that is not one of the twelve.
+    carries any column outside the versioned schema.
     """
 
     ip: str
@@ -127,6 +127,12 @@ def extract(
 
     durations = [r.upstream_duration_ms for r in settled if r.upstream_duration_ms is not None]
     features["p95_upstream_duration_ms"] = _p95(durations)
+
+    # Runtime windowing replaces this with the largest ready endpoint/method
+    # deviation visible in the window.  Offline dataset preparation leaves it
+    # unknown until a training-partition baseline is fitted; deterministic
+    # missing-value handling makes that absence explicit rather than a zero.
+    features["endpoint_method_deviation"] = None
 
     health = health or WindowHealth()
     quality = WindowQuality(

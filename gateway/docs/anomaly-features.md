@@ -2,15 +2,14 @@
 
 | | |
 | --- | --- |
-| **Spec version** | `v1` |
+| **Spec version** | `v2` |
 | **Written against** | `aaddadb`, 2026-09-06 |
 | **Implemented by** | `control-plane/iasg/anomaly/` |
 
 **This document is the contract, not the code.** If the extractor and this page
 disagree, the extractor is wrong. A feature whose meaning changes gets a new
 spec version and a new dataset; it does not get edited in place, because a model
-trained on `v1` has no way to notice that column 9 started meaning something
-else.
+trained on `v1` has no way to notice that column 13 was added.
 
 ## Scope
 
@@ -23,7 +22,7 @@ One row is **one resolved client address's activity during one non-overlapping
 | Window type | Non-overlapping, aligned to `:00` UTC — `12:00:00–12:01:00`, `12:01:00–12:02:00` |
 | Window membership | Arrival time falls within `[window_start, window_end)` |
 | Client identity | The gateway's resolved client identity (`internal/netutil`), trusted-proxy aware |
-| Model inputs | Twelve numerical behaviour summaries, nothing else |
+| Model inputs | Thirteen numerical behaviour summaries, nothing else |
 | Model output | An anomaly score on the risk convention (higher = worse) |
 | Execution | Python control plane, off the synchronous Go request path |
 
@@ -31,6 +30,8 @@ One row is **one resolved client address's activity during one non-overlapping
 array in any form — not as an integer, not hashed, not bucketed. Two reasons: a
 model that learns addresses learns this lab's address pool rather than
 behaviour, and one address can be a whole office behind a shared network.
+Dataset export replaces it with a keyed, per-export opaque `client_id`, used to
+prove split disjointness without retaining a reversible address hash.
 
 Scoring necessarily waits for the window to close, so an assessment can be up to
 sixty seconds behind the traffic it describes, plus the control plane's own
@@ -116,7 +117,7 @@ database error. So:
 This mapping is configuration and must be re-verified if the backend changes. A
 401 elsewhere is not a failed password attempt.
 
-## The twelve features
+## The thirteen features
 
 `N` is the number of requests from that client whose arrival fell in the window.
 Every ratio is in `[0, 1]`.
@@ -222,6 +223,18 @@ Sort the completed upstream durations ascending and take position
 
 **Null** when no completed durations are available. A request that timed out has
 no duration, and one is never invented for it.
+
+### 13. `endpoint_method_deviation`
+
+The largest positive deviation among the client's method + normalized-route
+request counts in this window: `(observed - learned threshold) / learned
+threshold`, floored at zero. It is zero while no endpoint in the window has a
+ready baseline. Runtime computes it before admitting the current clean window
+to learning, so a burst cannot raise its own comparison point.
+
+The offline extractor writes null until a training-partition baseline is
+available. Model vectorisation replaces missing values with the corresponding
+training-partition median, exactly like every other unavailable measurement.
 
 ### A note on what is deliberately absent
 
@@ -352,11 +365,12 @@ model to reproduce the detectors, including their mistakes, and it would score
 well while being worthless: the whole point of this layer is to catch what the
 detectors miss.
 
-`run_id`, `scenario`, attack interval, label, address, timestamps, detector
-scores, campaign confidence and enforcement decisions are **dataset metadata and
-never model inputs**. That guarantee is physical: they live in a different file
-from the feature matrix, and the build fails if `features.csv` has any column
-that is not one of the twelve.
+`run_id`, opaque `client_id`, scenario, label, and window timestamp are
+**dataset metadata and never model inputs**. Raw addresses, detector scores,
+campaign confidence, request content, and enforcement decisions are not written
+to the exported dataset. That guarantee is physical: metadata lives in a
+different file from the feature matrix, and the build fails if `features.csv`
+has any column that is not one of the thirteen.
 
 A high `login_failure_ratio` does not make a row an attack. A genuine user who
 mistypes a password three times produces one, and the training set contains that
@@ -364,14 +378,11 @@ case on purpose.
 
 ## Score authority
 
-The anomaly score is worth **at most one rung**, and only on a campaign that
-already earned an action on evidence alone. It **never originates enforcement**.
-
-This mirrors `reputation_bias` in `control-plane/iasg/policy/agent.py`, for the
-same reason and with the same clamp: an unsupervised model fit on a small
-laboratory dataset is the last input that should be trusted to block somebody by
-itself. It returns 0 when the evidence alone would only monitor, and the
-promotion clamp means it cannot compound with the reputation or learned bias.
+The anomaly score contributes only its configured, bounded portion of the
+0–100 risk score (5 points by default). It **never originates enforcement**:
+without deterministic gateway evidence the selected action is always Monitor.
+A model-assisted temporary block must additionally clear the repeated-evidence,
+campaign-confidence, action-ceiling, duration, and strong-anomaly guardrails.
 
 Two further constraints:
 
@@ -383,8 +394,8 @@ Two further constraints:
 
 `control-plane/iasg/policy/writer.py` remains the only code that can influence
 the gateway, and all of its rails — no private or reserved addresses, no policy
-without a TTL, the per-cycle cap, dry-run — apply unchanged to any policy a
-campaign carrying an anomaly bias produces.
+without a TTL, the per-cycle cap, dry-run — apply unchanged to every adaptive
+policy.
 
 ## Divergences and known gaps
 

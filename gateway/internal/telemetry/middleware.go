@@ -119,7 +119,11 @@ func (rc *Recorder) Middleware(next http.Handler) http.Handler {
 			match := policy.Matched(r)
 			if match != nil {
 				slog.InfoContext(r.Context(), "policy_match",
-					"request_id", requestID, "action", match.Action, "policy_source", match.Source,
+					"request_id", requestID, "policy_id", match.PolicyID,
+					"campaign_id", match.CampaignID, "action", match.Action,
+					"policy_source", match.Source, "mode", match.Mode,
+					"issued_by", match.IssuedBy, "risk_score", match.RiskScore,
+					"confidence", match.Confidence,
 					"client_ip", match.ClientIP, "route", match.Route, "method", match.Method,
 					"requests_per_minute", match.RequestsPerMinute, "reason", match.Reason,
 					"outcome", match.Outcome, "status", rec.status,

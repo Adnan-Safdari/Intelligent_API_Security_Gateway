@@ -252,20 +252,17 @@ def main() -> None:
         default="credential-stuffing",
         choices=[*SCENARIOS, "mixed"],
     )
-    parser.add_argument("--clear", action="store_true", help="delete the stream first")
+    parser.add_argument("--clear", action="store_true", help="trim the stream first")
     args = parser.parse_args()
 
     settings = Settings.from_env()
     store = open_store(settings)
 
     if args.clear:
-        # Deleting the stream also drops the consumer group's position, so the
-        # agent starts clean.
-        try:
-            store._client.delete(settings.evidence_stream)  # type: ignore[attr-defined]
-            print(f"cleared {settings.evidence_stream}")
-        except AttributeError:
-            pass
+        # DEL also destroys consumer groups and leaves a running agent failing
+        # with NOGROUP. XTRIM clears history while preserving those cursors.
+        store.trim(settings.evidence_stream, 0)
+        print(f"cleared {settings.evidence_stream} without deleting consumer groups")
 
     if args.scenario == "mixed":
         events = (
