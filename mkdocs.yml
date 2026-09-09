@@ -66,6 +66,7 @@ nav:
   - Anomaly Detection:
       - Feature Specification: anomaly-features.md
       - Evaluation Protocol: anomaly-evaluation.md
+      - Adaptive Policy and Analyst Control: adaptive-policy.md
   - Modules:
       - Proxy Module: modules/proxy-module.md
       - Signal Test Scripts: modules/signal-tests.md

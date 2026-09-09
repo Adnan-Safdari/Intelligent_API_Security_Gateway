@@ -1,7 +1,8 @@
 from __future__ import annotations
 import json
+import uuid
 from dataclasses import dataclass,field
-from datetime import datetime,timezone
+from datetime import datetime,timedelta,timezone
 
 DETECTOR_BRUTE_FORCE = "bruteforce"
 DETECTOR_FLOOD = "flood"
@@ -60,6 +61,7 @@ SEVERITY_MEDIUM = "medium"
 SEVERITY_HIGH = "high"
 
 ACTION_MONITOR = "monitor"
+ACTION_ALLOW = "allow"
 ACTION_THROTTLE = "throttle"
 ACTION_TEMP_BLOCK = "temp_block"
 ACTION_ESCALATE = "escalate"
@@ -361,6 +363,62 @@ class PolicyDecision:
     # configuration. See policy/simulation.py.
     source : str = "agent"
     issued_at : datetime = field(default_factory=_now)
+    policy_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    scope: str = "client"
+    target_identity: str = ""
+    method: str = ""
+    route_template: str = ""
+    risk_score: float = 0.0
+    explanation: dict = field(default_factory=dict)
+    mode: str = "automatic"
+    issued_by: str = "control-plane"
+    baseline_version: str = ""
+    config_version: int = 1
+    model_version: str = ""
+    supersedes_policy_id: str = ""
+
+    @property
+    def expires_at(self) -> datetime:
+        return self.issued_at + timedelta(seconds=max(0, self.ttl_seconds))
+
+    def _canonical_dict(self) -> dict:
+        """
+        The decision's fields, action spelled the way the rest of the control
+        plane and every non-Redis consumer expect -- ACTION_TEMP_BLOCK's own
+        value, never the Redis wire spelling.
+
+        This is what a recommendation's Postgres payload is built from. A
+        dashboard reading it back (to render a default, or to validate an
+        approval that didn't override the action) has to see the same
+        spelling its own action vocabulary uses, or a canonical-but-unedited
+        approval fails validation for a reason no one asked it to check.
+        """
+        return {
+            "action": self.action,
+            "policy_id": self.policy_id,
+            "scope": self.scope,
+            "target_identity": self.target_identity or self.ip,
+            "endpoint_scope": (
+                {"method": self.method, "route_template": self.route_template}
+                if self.method or self.route_template else None
+            ),
+            "campaign_id": self.campaign_id,
+            "confidence": round(self.confidence, 3),
+            "risk_score": round(max(0.0, min(100.0, self.risk_score)), 2),
+            "reason": self.reason,
+            "explanation": self.explanation,
+            "source": self.source,
+            "mode": self.mode,
+            "issued_by": self.issued_by,
+            "issued_at": self.issued_at.astimezone(timezone.utc).isoformat(),
+            "expires_at": self.expires_at.astimezone(timezone.utc).isoformat(),
+            "expires_in": self.ttl_seconds,
+            "requests_per_minute": self.requests_per_minute,
+            "baseline_version": self.baseline_version,
+            "config_version": self.config_version,
+            "model_version": self.model_version,
+            "supersedes_policy_id": self.supersedes_policy_id or None,
+        }
 
     def to_json(self) -> str:
         """
@@ -368,16 +426,60 @@ class PolicyDecision:
 
         The Go gateway will one day read this key and act on it. Keeping the
         shape here means there's a single definition of that contract.
+
+        Wire format only -- do not use this (or to_dict()) for anything that
+        gets read back and compared against the canonical action vocabulary,
+        such as a recommendation's stored payload or the dashboard's approve
+        validation. Use to_dict() for that; it is deliberately not derived
+        from this method.
         """
-        return json.dumps(
-            {
-                "action": self.action,
-                "campaign_id": self.campaign_id,
-                "confidence": round(self.confidence, 3),
-                "reason": self.reason,
-                "source": self.source,
-                "issued_at": self.issued_at.astimezone(timezone.utc).isoformat(),
-                "expires_in": self.ttl_seconds,
-                "requests_per_minute": self.requests_per_minute,
-            }
+        wire = self._canonical_dict()
+        # The adaptive contract uses the unambiguous public spelling while
+        # legacy agent/manual records keep their historical value. The Go
+        # gateway accepts both during the migration.
+        if self.action == ACTION_TEMP_BLOCK and (
+            self.source in ("adaptive", "approved") or self.mode == "manual_override"
+        ):
+            wire["action"] = "temporary_block"
+        return json.dumps(wire)
+
+    def to_dict(self) -> dict:
+        """The canonical shape -- see _canonical_dict(). Not the Redis wire
+        format; use to_json() for that."""
+        return self._canonical_dict()
+
+    @classmethod
+    def from_dict(cls, value: dict) -> "PolicyDecision":
+        endpoint = value.get("endpoint_scope") or {}
+        issued = _parse_timestamp(str(value.get("issued_at") or ""))
+        action = str(value.get("action") or ACTION_MONITOR)
+        if action in ("temporary_block", "block"):
+            action = ACTION_TEMP_BLOCK
+        expires_in = value.get("expires_in")
+        if expires_in is None and value.get("expires_at"):
+            expires = _parse_timestamp(str(value["expires_at"]))
+            expires_in = max(0, int((expires - issued).total_seconds()))
+        return cls(
+            ip=str(value.get("target_identity") or value.get("ip") or ""),
+            action=action,
+            campaign_id=str(value.get("campaign_id") or ""),
+            confidence=float(value.get("confidence") or 0),
+            ttl_seconds=int(expires_in or 0),
+            reason=str(value.get("reason") or ""),
+            requests_per_minute=int(value.get("requests_per_minute") or 0),
+            source=str(value.get("source") or "agent"),
+            issued_at=issued,
+            policy_id=str(value.get("policy_id") or uuid.uuid4()),
+            scope=str(value.get("scope") or "client"),
+            target_identity=str(value.get("target_identity") or value.get("ip") or ""),
+            method=str(endpoint.get("method") or value.get("method") or ""),
+            route_template=str(endpoint.get("route_template") or value.get("route_template") or ""),
+            risk_score=float(value.get("risk_score") or 0),
+            explanation=dict(value.get("explanation") or {}),
+            mode=str(value.get("mode") or "automatic"),
+            issued_by=str(value.get("issued_by") or "control-plane"),
+            baseline_version=str(value.get("baseline_version") or ""),
+            config_version=int(value.get("config_version") or 1),
+            model_version=str(value.get("model_version") or ""),
+            supersedes_policy_id=str(value.get("supersedes_policy_id") or ""),
         )

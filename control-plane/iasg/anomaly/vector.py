@@ -1,7 +1,7 @@
 """
 Turning a row into the array a model sees.
 
-Nothing but the twelve features crosses this boundary. The address, the
+Nothing but the versioned numerical features crosses this boundary. The address, the
 timestamp, the label, the run, the detector output and the enforcement decision
 are all metadata, and a model that learns any of them learns this laboratory
 rather than behaviour.

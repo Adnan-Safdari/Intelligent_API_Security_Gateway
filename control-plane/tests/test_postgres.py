@@ -19,10 +19,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from iasg.adaptive.baseline import BaselineSummary, EndpointKey
+from iasg.adaptive.config import AdaptiveConfig
+from iasg.adaptive.lifecycle import STATUS_APPROVED, Recommendation
 from iasg.campaigns.repository import CampaignRepository
 from iasg.config import Settings
 from iasg.feedback.memory import FeedbackMemory
-from iasg.models import Campaign
+from iasg.models import ACTION_TEMP_BLOCK, ACTION_THROTTLE, Campaign, PolicyDecision
 from iasg.store.memory import MemoryStore
 
 DSN = os.getenv("IASG_TEST_POSTGRES_URL")
@@ -38,8 +41,12 @@ def db():
 
     database = Database(DSN)
     with database._conn.cursor() as cur:
-        cur.execute("TRUNCATE campaigns, feedback")
+        cur.execute(
+            "TRUNCATE policy_audit, policy_recommendations, endpoint_baselines,"
+            " adaptive_settings, campaigns, feedback"
+        )
         cur.execute("SELECT setval('campaign_id_seq', 1, false)")
+    database.adaptive.ensure_config(AdaptiveConfig())
     yield database
     database.close()
 
@@ -209,3 +216,82 @@ def test_warming_rebuilds_the_feedback_read_path(db):
 
     assert memory.warm() == 1
     assert json.loads(wiped.get("feedback:Brute Force")) == {"up": 1, "down": 0}
+
+
+def test_adaptive_configuration_and_baseline_survive_a_restart(db):
+    configured = AdaptiveConfig.from_mapping({"mode": "manual", "version": 7})
+    with db._conn.cursor() as cur:
+        cur.execute(
+            "UPDATE adaptive_settings SET version=%s,mode=%s,config=%s::jsonb"
+            " WHERE singleton_id=1",
+            (configured.version, configured.mode, json.dumps(configured.to_dict())),
+        )
+    baseline = BaselineSummary(
+        method="POST", route_template="/api/login", sample_count=8,
+        statistic=4.0, mad=1.0, derived_threshold=7, observed_rate=6,
+        last_update=datetime.now(timezone.utc), version=2, ready=True,
+        samples=[3, 4, 4, 5],
+    )
+    db.adaptive.save_baseline(baseline)
+
+    assert db.adaptive.load_config(AdaptiveConfig()).mode == "manual"
+    loaded = db.adaptive.get_baseline(EndpointKey.of("POST", "/api/login"))
+    assert loaded.ready and loaded.derived_threshold == 7
+    assert loaded.samples == [3.0, 4.0, 4.0, 5.0]
+
+
+def test_policy_lifecycle_and_audit_are_durable(db):
+    now = datetime.now(timezone.utc)
+    decision = PolicyDecision(
+        ip="203.0.113.5", action=ACTION_THROTTLE, campaign_id="c1",
+        confidence=0.9, ttl_seconds=300, requests_per_minute=20,
+        source="approved", issued_by="analyst", issued_at=now,
+    )
+    db.adaptive.save_recommendation(
+        Recommendation(decision, STATUS_APPROVED, now, now)
+    )
+    db.adaptive.mark_status(decision.policy_id, "active", "control-plane")
+
+    assert db.adaptive.approved_recommendations() == []
+    with db._conn.cursor() as cur:
+        cur.execute(
+            "SELECT status FROM policy_recommendations WHERE policy_id=%s",
+            (decision.policy_id,),
+        )
+        assert cur.fetchone()[0] == "active"
+        cur.execute(
+            "SELECT event,actor FROM policy_audit WHERE policy_id=%s ORDER BY audit_id",
+            (decision.policy_id,),
+        )
+        assert cur.fetchall() == [("approved", "analyst"), ("active", "control-plane")]
+
+
+def test_stored_recommendation_payload_keeps_the_canonical_action(db):
+    # decision.to_json() rewrites temp_block to "temporary_block" for an
+    # adaptive-sourced decision -- that spelling is the Redis wire contract,
+    # required only at the moment a decision is actually written to
+    # policy:<ip>. The dashboard reads this payload back and validates an
+    # approval against its own ["monitor", "throttle", "temp_block"]
+    # vocabulary; storing the wire spelling here made an unedited approval
+    # of a pending temp_block recommendation fail as "invalid action".
+    now = datetime.now(timezone.utc)
+    decision = PolicyDecision(
+        ip="203.0.113.9", action=ACTION_TEMP_BLOCK, campaign_id="c2",
+        confidence=0.9, ttl_seconds=900, source="adaptive",
+        issued_by="control-plane", issued_at=now,
+    )
+    db.adaptive.save_recommendation(
+        Recommendation(decision, STATUS_APPROVED, now, now)
+    )
+
+    with db._conn.cursor() as cur:
+        cur.execute(
+            "SELECT payload FROM policy_recommendations WHERE policy_id=%s",
+            (decision.policy_id,),
+        )
+        payload = cur.fetchone()[0]
+
+    assert payload["action"] == ACTION_TEMP_BLOCK
+    # The Redis wire format is unaffected -- it still rewrites the action for
+    # exactly this combination of action and source.
+    assert json.loads(decision.to_json())["action"] == "temporary_block"

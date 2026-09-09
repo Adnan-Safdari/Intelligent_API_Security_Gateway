@@ -51,6 +51,10 @@ class Store(Protocol):
     def append(self , stream: str, fields: dict[str,str]) -> str:
         pass
 
+    def trim(self, stream: str, maxlen: int) -> int:
+        """Remove old entries without deleting the stream's consumer groups."""
+        ...
+
     def get(self, key: str) -> str | None:
         pass
 

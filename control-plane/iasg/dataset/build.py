@@ -3,8 +3,9 @@ Turn raw capture into a frozen dataset.
 
 The output is deliberately several files rather than one table, because the
 split between them is the leakage guard. features.csv physically cannot contain
-an address, a label or a timestamp -- those live in metadata.csv -- and a check
-asserts its header is exactly row_id plus the twelve. A guarantee that depends
+an address, a label or a timestamp; metadata carries an opaque per-export
+client id, never the raw address. A check asserts its header is exactly row_id
+plus the versioned features. A guarantee that depends
 on nobody adding the wrong column is not a guarantee.
 
 FROZEN marks a directory as finished. A frozen dataset is not rebuilt in place:
@@ -17,19 +18,23 @@ import csv
 import hashlib
 import json
 import platform
+import secrets
 import sys
-from dataclasses import dataclass
+from collections import Counter
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Sequence
 
 from iasg.anomaly.checks import check_feature_header, check_no_identifying_columns
 from iasg.anomaly.extract import WindowRow, build_as_of, extract
+from iasg.anomaly.health import health_by_window
 from iasg.anomaly.impute import Medians
-from iasg.anomaly.quality import WindowHealth
 from iasg.anomaly.records import join
 from iasg.anomaly.spec import FEATURE_NAMES, FEATURE_SPEC_VERSION, QUALITY_NAMES
 from iasg.anomaly.windows import assign, window_start
+from iasg.adaptive.baseline import BaselineLearner, EndpointKey, MemoryBaselineRepository
+from iasg.adaptive.config import AdaptiveConfig
 from iasg.dataset.labels import Attack, label_for, load_attacks, scenario_for
 from iasg.dataset.layout import RawRun
 from iasg.dataset.splits import RESERVED_SCENARIOS, Split, TRAIN, check_reserved
@@ -76,6 +81,9 @@ class BuiltRow:
     scenario: str
     persona: str = ""
     split: str = ""
+    client_id: str = ""
+    endpoint_counts: dict[tuple[str, str], int] = None
+    safe_to_learn: bool = False
 
 
 @dataclass
@@ -102,46 +110,6 @@ def read_jsonl(path: Path) -> list[dict]:
             # the quality columns are where defects are reported.
             continue
     return out
-
-
-def health_by_window(entries: Iterable[dict], trim_losses: bool) -> dict[datetime, WindowHealth]:
-    """
-    Fold the heartbeat into one verdict per minute.
-
-    A window is fully observed only if sixty consecutive sequence numbers cover
-    it. A gap means the gateway was not running for part of the minute, which
-    otherwise reads as a quiet one.
-    """
-    from iasg.anomaly.records import parse_ts
-
-    seen: dict[datetime, list[dict]] = {}
-    for entry in entries:
-        at = parse_ts(entry.get("at"))
-        if at is None:
-            continue
-        seen.setdefault(window_start(at), []).append(entry)
-
-    verdicts: dict[datetime, WindowHealth] = {}
-    for start, beats in seen.items():
-        beats.sort(key=lambda b: b.get("seq", 0))
-        seqs = [b.get("seq", 0) for b in beats]
-        contiguous = len(seqs) == 60 and seqs == list(range(seqs[0], seqs[0] + 60))
-
-        dropped = 0
-        if beats:
-            first, last = beats[0], beats[-1]
-            # A delta, because the counter is cumulative for the process's
-            # whole life. Negative means a restart, and a restart is a gap.
-            dropped = max(
-                0,
-                (last.get("droppedTotal", 0) + last.get("arrivalsDroppedTotal", 0))
-                - (first.get("droppedTotal", 0) + first.get("arrivalsDroppedTotal", 0)),
-            )
-        verdicts[start] = WindowHealth(
-            dropped=dropped,
-            fully_observed=contiguous and dropped == 0 and not trim_losses,
-        )
-    return verdicts
 
 
 def load_sessions(run: RawRun) -> dict[str, str] | None:
@@ -180,6 +148,9 @@ def rows_for_run(run: RawRun, run_id: str) -> RunRows:
     """
     arrivals = read_jsonl(run.arrivals)
     completions = read_jsonl(run.completions)
+    completions_by_id = {
+        value.get("requestId"): value for value in completions if value.get("requestId")
+    }
     attacks = load_attacks(run.attacks.read_text().splitlines() if run.attacks.exists() else [])
     planned = load_sessions(run)
 
@@ -201,17 +172,31 @@ def rows_for_run(run: RawRun, run_id: str) -> RunRows:
         # build_as_of, never now. Passing now is the single mistake that would
         # undo the availability guarantee, so the build never writes it.
         row = extract(records, start, build_as_of(start), health.get(start))
+        label = label_for(ip, start, attacks)
+        ids = {record.request_id for record in records}
+        observed = [completions_by_id.get(request_id) for request_id in ids]
+        safe_to_learn = (
+            label == 0
+            and all(value is not None for value in observed)
+            and all((value.get("decision") or "allow") == "allow" for value in observed)
+            and not any(value.get("fired") for value in observed)
+            and row.quality.interval_fully_observed
+        )
         built.append(
             BuiltRow(
                 row_id=0,
                 run_id=run_id,
                 row=row,
-                label=label_for(ip, start, attacks),
+                label=label,
                 scenario=scenario_for(ip, start, attacks),
                 # Straight from the plan, so an attack session's quiet minute
                 # reads persona=api_flood, scenario=benign -- the session was an
                 # attack, that particular minute was outside its interval.
                 persona=(planned or {}).get(ip, ""),
+                endpoint_counts=dict(Counter(
+                    (record.method, record.route_template) for record in records
+                )),
+                safe_to_learn=safe_to_learn,
             )
         )
 
@@ -255,15 +240,26 @@ def build(
             )
 
     built.sort(key=lambda b: (b.row.window_start, b.run_id, b.row.ip))
+    privacy_key = secrets.token_bytes(32)
     for index, item in enumerate(built, start=1):
         item.row_id = index
         item.split = split.assign(
             split.group_key(item.run_id, item.row.ip), item.label, item.scenario
         )
+        # Grouping uses the resolved client identity in memory, but exported
+        # datasets never retain the address. A per-export keyed digest keeps
+        # one client's windows together without creating a reversible IP hash.
+        item.client_id = hashlib.blake2b(
+            f"{item.run_id}\0{item.row.ip}".encode(),
+            key=privacy_key,
+            digest_size=12,
+        ).hexdigest()
 
     check_reserved(
         [{"scenario": b.scenario, "split": b.split} for b in built]
     )
+
+    _derive_endpoint_deviation(built)
 
     # Medians from the training partition only. A median over the whole dataset
     # would leak the test partition into the model through the back door.
@@ -294,9 +290,31 @@ def build(
     return out
 
 
+def _derive_endpoint_deviation(built: Sequence[BuiltRow]) -> None:
+    """Fit only on earlier clean training rows, then fill schema-v2 column."""
+    repository = MemoryBaselineRepository()
+    learner = BaselineLearner(repository, AdaptiveConfig().baseline)
+    for item in built:
+        deviations = []
+        for (method, route), observed in (item.endpoint_counts or {}).items():
+            key = EndpointKey.of(method, route)
+            deviations.append(learner.deviation(repository.get_baseline(key), observed))
+        features = dict(item.row.features)
+        features["endpoint_method_deviation"] = max(deviations, default=0.0)
+        item.row = replace(item.row, features=features)
+
+        trusted = item.split == TRAIN and item.safe_to_learn
+        for (method, route), observed in (item.endpoint_counts or {}).items():
+            learner.observe(
+                EndpointKey.of(method, route), observed,
+                trusted=trusted,
+                now=item.row.window_start,
+            )
+
+
 def _write_features(path: Path, built: Sequence[BuiltRow]) -> None:
     """
-    row_id plus the twelve, and nothing else, ever.
+    row_id plus the versioned feature set, and nothing else, ever.
 
     Unknowns are written empty rather than imputed. Imputation belongs at
     vectorisation time using training medians, and baking it in here would make
@@ -316,11 +334,11 @@ def _write_metadata(path: Path, built: Sequence[BuiltRow]) -> None:
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(
-            ["row_id", "run_id", "ip", "window_start", "label", "scenario", "persona"]
+            ["row_id", "run_id", "client_id", "window_start", "label", "scenario", "persona"]
         )
         for item in built:
             writer.writerow([
-                item.row_id, item.run_id, item.row.ip,
+                item.row_id, item.run_id, item.client_id,
                 item.row.window_start.isoformat(), item.label, item.scenario,
                 item.persona,
             ])
@@ -343,7 +361,7 @@ def _write_rows(path: Path, built: Sequence[BuiltRow]) -> None:
             handle.write(json.dumps({
                 "row_id": item.row_id,
                 "run_id": item.run_id,
-                "ip": item.row.ip,
+                "client_id": item.client_id,
                 "window_start": item.row.window_start.isoformat(),
                 "label": item.label,
                 "scenario": item.scenario,
@@ -359,7 +377,7 @@ def _write_splits(path: Path, built: Sequence[BuiltRow]) -> None:
         writer = csv.writer(handle)
         writer.writerow(["row_id", "split", "group_key"])
         for item in built:
-            writer.writerow([item.row_id, item.split, f"{item.run_id}|{item.row.ip}"])
+            writer.writerow([item.row_id, item.split, f"{item.run_id}|{item.client_id}"])
 
 
 def _write_versions(path: Path, run_ids: Sequence[str]) -> None:

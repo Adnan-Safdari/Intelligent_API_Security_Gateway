@@ -22,12 +22,13 @@ from dataclasses import replace
 
 from iasg.config import Settings
 from iasg.models import (
+    ACTION_ALLOW,
     ACTION_LADDER,
+    ACTION_MONITOR,
     ACTION_THROTTLE,
     Evidence,
     PolicyDecision,
 )
-from iasg.policy.agent import TTL
 from iasg.store.base import Store
 
 
@@ -37,6 +38,10 @@ class Simulator:
         self._settings = settings
         self._allowlist = _networks(settings.allowlist)
         self._shared = _networks(settings.shared_ranges)
+        self._adaptive = settings.adaptive
+
+    def apply_config(self, config) -> None:
+        self._adaptive = config.validate()
 
     def review(
         self, decisions: list[PolicyDecision], evidence: list[Evidence]
@@ -64,7 +69,7 @@ class Simulator:
         for decision in decisions:
             # 1. Declared ours. Not negotiable, and not overridable either --
             # an operator who listed a range here has already answered.
-            if _within(decision.ip, self._allowlist):
+            if decision.action != ACTION_ALLOW and _within(decision.ip, self._allowlist):
                 notes.append(f"[sim] {decision.ip} allowlisted, no policy written")
                 continue
 
@@ -72,7 +77,10 @@ class Simulator:
             # can be slowed but never cut off.
             if _within(decision.ip, self._shared):
                 decision, note = _soften(
-                    decision, ACTION_THROTTLE, "declared a shared range"
+                    decision,
+                    ACTION_THROTTLE,
+                    "declared a shared range",
+                    self._adaptive,
                 )
                 if note:
                     notes.append(note)
@@ -101,6 +109,7 @@ class Simulator:
                         decision,
                         ACTION_THROTTLE,
                         f"{seen} distinct clients suggest a shared address",
+                        self._adaptive,
                     )
                     if note:
                         notes.append(note)
@@ -132,16 +141,25 @@ class Simulator:
 
 
 def _soften(
-    decision: PolicyDecision, ceiling: str, why: str
+    decision: PolicyDecision, ceiling: str, why: str, config
 ) -> tuple[PolicyDecision, str]:
     """Cap a decision at `ceiling`, leaving anything gentler alone."""
     if _rung(decision.action) <= _rung(ceiling):
         return decision, ""
 
+    guard = config.guardrails
+    ttl = {
+        ACTION_THROTTLE: guard.throttle_duration_seconds,
+        ACTION_MONITOR: guard.monitor_duration_seconds,
+    }.get(ceiling, decision.ttl_seconds)
+    rpm = decision.requests_per_minute
+    if ceiling == ACTION_THROTTLE and rpm <= 0:
+        rpm = guard.default_throttle_rpm
     softened = replace(
         decision,
         action=ceiling,
-        ttl_seconds=TTL[ceiling],
+        ttl_seconds=min(ttl, guard.maximum_policy_duration_seconds),
+        requests_per_minute=rpm,
         reason=f"{decision.reason}; reduced from {decision.action} ({why})",
     )
     return softened, (

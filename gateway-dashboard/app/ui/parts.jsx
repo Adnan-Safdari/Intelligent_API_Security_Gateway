@@ -169,7 +169,7 @@ export function PolicyList({ policies }) {
   return (
     <ul className="policy-list">
       {policies.map((p) => (
-        <li key={p.ip}>
+        <li key={p.policyId || `${p.ip}-${p.method}-${p.routeTemplate}`}>
           <div className="policy-top">
             <IpLink ip={p.ip} />
             <span className={`risk ${ACTION_TONE[p.action] || "low"}`}>

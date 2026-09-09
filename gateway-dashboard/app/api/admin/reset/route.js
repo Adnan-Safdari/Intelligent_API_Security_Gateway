@@ -35,7 +35,10 @@ export const dynamic = "force-dynamic";
 
 // Reset together or not at all: feedback refers to campaign types, so keeping
 // one without the other leaves the agent learning from a record that is gone.
-const TABLES = ["campaigns", "feedback"];
+const TABLES = [
+  "policy_audit", "policy_recommendations", "endpoint_baselines",
+  "campaigns", "feedback",
+];
 
 // Streams the control plane holds consumer groups on. These are TRIMMED, never
 // deleted: deleting a stream key deletes its consumer groups with it, and the
@@ -48,7 +51,9 @@ const TABLES = ["campaigns", "feedback"];
 // stream and leaves the group in place, which is what a reset actually wants.
 const REDIS_STREAMS = [
   "iasg:events", // group iasg-agent, read by the evidence consumer
-  "iasg_overrides", // group iasg-overrides, read by the override channel
+  "iasg:arrivals", // group iasg-windowing, read by completed-window analysis
+  "iasg:telemetry:health",
+  process.env.IASG_OVERRIDE_STREAM || "iasg_overrides", // group iasg-overrides
   "iasg_alerts",
 ];
 

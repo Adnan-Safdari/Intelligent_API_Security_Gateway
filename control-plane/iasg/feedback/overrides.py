@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from iasg.config import Settings
-from iasg.models import ACTION_LADDER, PolicyDecision
+from iasg.models import ACTION_ALLOW, ACTION_LADDER, PolicyDecision
 from iasg.policy.agent import TTL
 from iasg.store.base import Store
 
@@ -32,6 +32,11 @@ class Override:
     action: str
     actor: str = ""
     reason: str = ""
+    method: str = ""
+    route_template: str = ""
+    emergency: bool = False
+    policy_id: str = ""
+    ttl_seconds: int = 0
 
     @classmethod
     def from_fields(cls, fields: dict[str, str]) -> "Override | None":
@@ -39,13 +44,19 @@ class Override:
         action = (fields.get("action") or "").strip()
         # An instruction we cannot act on is worse than none, because acting on
         # a misspelled action would silently write nonsense into the gateway.
-        if not ip or action not in ACTION_LADDER:
+        if not ip or action not in (*ACTION_LADDER, ACTION_ALLOW):
             return None
         return cls(
             ip=ip,
             action=action,
             actor=(fields.get("actor") or "unknown").strip(),
             reason=(fields.get("reason") or "").strip(),
+            method=(fields.get("method") or "").strip().upper(),
+            route_template=(fields.get("route_template") or "").strip(),
+            emergency=(fields.get("emergency") or "").strip().lower()
+            in ("1", "true", "yes"),
+            policy_id=(fields.get("policy_id") or "").strip(),
+            ttl_seconds=_positive_int(fields.get("ttl_seconds")),
         )
 
 
@@ -106,7 +117,7 @@ def apply(
                 f"[human] {override.actor} confirmed {decision.action} "
                 f"for {decision.ip}"
             )
-            applied.append(decision)
+            applied.append(_as_decision(decision, override))
             continue
 
         lessons.append((decision.action, override.action))
@@ -135,8 +146,14 @@ def standalone(
             action=o.action,
             campaign_id=campaign_id,
             confidence=1.0,
-            ttl_seconds=TTL[o.action],
+            ttl_seconds=o.ttl_seconds or TTL[o.action],
             source="human",
+            issued_by=o.actor or "unknown",
+            mode="manual_override" if o.emergency else "manual",
+            method=o.method,
+            route_template=o.route_template,
+            scope="client_endpoint" if o.route_template else "client",
+            policy_id=o.policy_id or PolicyDecision.__dataclass_fields__["policy_id"].default_factory(),
             reason=(
                 f"set by {o.actor}"
                 + (f": {o.reason}" if o.reason else "")
@@ -148,14 +165,37 @@ def standalone(
 
 
 def _as_decision(decision: PolicyDecision, override: Override) -> PolicyDecision:
+    standing_policy_id = str(
+        ((decision.explanation or {}).get("final") or {}).get("standing_policy_id")
+        or ""
+    )
     return replace(
         decision,
         action=override.action,
-        ttl_seconds=TTL[override.action],
+        ttl_seconds=override.ttl_seconds or TTL[override.action],
         confidence=1.0,  # a person looked; that is not a probability
         source="human",
+        issued_by=override.actor or "unknown",
+        mode="manual_override" if override.emergency else "manual",
+        method=override.method or decision.method,
+        route_template=override.route_template or decision.route_template,
+        scope=("client_endpoint" if (override.route_template or decision.route_template) else "client"),
+        policy_id=override.policy_id or decision.policy_id,
+        supersedes_policy_id=(
+            standing_policy_id
+            if standing_policy_id != (override.policy_id or decision.policy_id)
+            else decision.supersedes_policy_id
+        ),
         reason=(
             f"set by {override.actor}, overriding {decision.action}"
             + (f": {override.reason}" if override.reason else "")
         ),
     )
+
+
+def _positive_int(value) -> int:
+    try:
+        parsed = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return parsed if parsed > 0 else 0

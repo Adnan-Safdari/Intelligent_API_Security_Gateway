@@ -27,6 +27,7 @@ export const ACTION_TONE = {
   // request was the one that went over the rate it allowed.
   rate_limited: "mid",
   temp_block: "high",
+  temporary_block: "high",
   escalate: "high",
 };
 

@@ -11,13 +11,19 @@ and `Retry-After`. Throttling never sleeps or queues a request.
 ## Policy contract
 
 The existing Python `PolicyDecision.to_json()` format remains accepted. Store
-this JSON as the **string value** of `policy:203.0.113.55`, with a Redis expiry:
+this JSON as `policy:203.0.113.55` for address-wide policy or
+`policy:<ip>:<scope-digest>` for endpoint scope, always with a Redis expiry:
 
 ```json
 {
   "action": "throttle",
+  "policy_id": "a5484d97-0791-4eb4-b1cb-6a7518f94b22",
+  "scope": "client_endpoint",
+  "target_identity": "203.0.113.55",
+  "endpoint_scope": {"method": "POST", "route_template": "/api/login"},
   "campaign_id": "demo-adaptive",
   "confidence": 0.95,
+  "risk_score": 81.5,
   "reason": "Repeated login attempts",
   "source": "agent",
   "issued_at": "2026-09-05T12:00:00+00:00",
@@ -29,26 +35,24 @@ this JSON as the **string value** of `policy:203.0.113.55`, with a Redis expiry:
 | Field | Meaning |
 | --- | --- |
 | `action` | One of the action labels below |
-| `campaign_id`, `confidence`, `reason`, `issued_at` | Existing decision metadata |
+| `policy_id`, `scope`, `target_identity`, `endpoint_scope` | Lifecycle identity and optional normalized method/route scope |
+| `campaign_id`, `risk_score`, `confidence`, `reason`, `issued_at` | Explainable decision metadata; anomaly score remains separate from confidence |
 | `source` | Existing origin, usually `agent` or `human`; defaults to `agent` when absent |
 | `expires_in` | Declared lifetime in seconds; **Redis `PTTL` is authoritative** |
 | `requests_per_minute` | Positive sustained rate for `throttle`; absent or zero uses the configured fallback |
-| `route` | Optional exact `URL.Path` selector, e.g. `/api/login`; absent/empty matches every path |
-| `method` | Optional HTTP method selector, e.g. `POST`; absent/empty matches every method |
+| `route`, `method` | Legacy exact selectors, still accepted |
 
-Python currently omits `route` and `method`, so its existing policies apply to
-every endpoint, with a separate quota for each endpoint and method. To scope a
-policy to login only, add `"route": "/api/login", "method": "POST"`. Selectors
-are exact, not route templates, globs, or regexes. The client IP comes from the
-key and the trusted client-IP resolver, not from a JSON field or an unchecked
-forwarding header. There is one policy key per IP; writing it replaces that
-IP's previous control-plane policy.
+New adaptive policies use the same configured route-template table as
+telemetry, so resource IDs do not create high-cardinality scopes. The client
+identity is resolved with the trusted-proxy rules. A manual address-wide
+override outranks an adaptive endpoint policy; among policies at the same
+priority, the endpoint scope wins.
 
 | Action | Behaviour |
 | --- | --- |
 | `allow`, `monitor` | Forward normally; do not apply the optional baseline to this match |
 | `throttle` | Consume one token at the policy's rate; return `429` when none is available |
-| `block`, `temp_block` | Return `403` without forwarding |
+| `block`, `temp_block`, `temporary_block` | Return `403` without forwarding |
 | `escalate` | Preserve the existing `403` behaviour described below |
 | Unknown | Forward normally; an unrecognised label cannot create enforcement through a fallback |
 
@@ -122,12 +126,11 @@ are displayed, but cannot be changed, through the live settings wire.
 
 ## Distributed quota and expiry
 
-Each bucket belongs to the resolved **client IP + exact URL path + HTTP
+Each bucket belongs to the resolved **client IP + normalized route template + HTTP
 method + policy identity**. Query parameters do not create new buckets.
 `/api/login` and `/api/products` are independent, as are `GET /api/login` and
-`POST /api/login`. This gateway has no backend route-template registry:
-distinct paths such as `/api/products/1` and `/api/products/2` have distinct
-buckets.
+`POST /api/login`. Paths such as `/api/products/1` and `/api/products/2` share
+the configured `/api/products/{id}` bucket.
 
 Redis Lua performs refill, admission, decrement, and expiry atomically using
 Redis server time. A bucket starts with `min(burst, requests_per_minute)` tokens

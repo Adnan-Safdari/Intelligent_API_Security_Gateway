@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "mode": "automatic",
+  "baseline": {
+    "method": "median_mad",
+    "window_seconds": 60,
+    "rolling_windows": 120,
+    "warmup_windows": 8,
+    "mad_multiplier": 3.0,
+    "minimum_mad": 1.0,
+    "minimum_threshold_rpm": 5,
+    "maximum_threshold_rpm": 600,
+    "hysteresis_ratio": 0.1,
+    "cooldown_seconds": 300
+  },
+  "risk": {
+    "deterministic_weight": 0.5,
+    "behavioural_weight": 0.15,
+    "campaign_weight": 0.3,
+    "ml_weight": 0.05,
+    "detector_points": {
+      "sqli": 100,
+      "traversal": 100,
+      "bruteforce": 80,
+      "flood": 70,
+      "enumeration": 55,
+      "reputation": 20
+    },
+    "repeated_evidence_increment": 5,
+    "severity_multipliers": { "low": 0.5, "medium": 0.75, "high": 1.0 },
+    "throttle_score": 45,
+    "temporary_block_score": 75,
+    "confidence_deterministic_weight": 0.55,
+    "confidence_campaign_weight": 0.45
+  },
+  "guardrails": {
+    "maximum_automatic_action": "temp_block",
+    "minimum_confidence_throttle": 0.5,
+    "minimum_confidence_temporary_block": 0.75,
+    "maximum_policy_duration_seconds": 1800,
+    "monitor_duration_seconds": 300,
+    "throttle_duration_seconds": 900,
+    "temporary_block_duration_seconds": 1800,
+    "minimum_throttle_rpm": 10,
+    "maximum_throttle_rpm": 300,
+    "default_throttle_rpm": 60,
+    "throttle_baseline_fraction": 0.5,
+    "policy_cooldown_seconds": 300,
+    "minimum_deterministic_evidence_throttle": 1,
+    "minimum_deterministic_evidence_temporary_block": 2,
+    "strong_ml_anomaly": 0.8,
+    "analyst_escalation_confidence": 0.75,
+    "analyst_escalation_min_clients": 5,
+    "analyst_escalation_min_stages": 2,
+    "allowlist": [],
+    "blocklist": []
+  }
+}

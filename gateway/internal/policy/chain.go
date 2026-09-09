@@ -41,7 +41,15 @@ func (c Chain) LookupRequest(ip, route, method string) (Decision, bool) {
 		if source == nil {
 			continue
 		}
-		if d, ok := source.Lookup(ip); ok && matches(d, route, method) {
+		if scoped, ok := source.(interface {
+			LookupRequest(string, string, string) (Decision, bool)
+		}); ok {
+			if d, found := scoped.LookupRequest(ip, route, method); found {
+				return d, true
+			}
+			continue
+		}
+		if d, found := source.Lookup(ip); found && matches(d, route, method) {
 			return d, true
 		}
 	}

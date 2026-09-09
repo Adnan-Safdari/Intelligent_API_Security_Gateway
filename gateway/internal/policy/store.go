@@ -28,12 +28,13 @@ import (
 // Actions the control plane can write. Anything else is treated as unknown
 // and allowed through -- an unrecognised action must never block traffic.
 const (
-	ActionAllow     = "allow"
-	ActionMonitor   = "monitor"
-	ActionThrottle  = "throttle"
-	ActionBlock     = "block"
-	ActionTempBlock = "temp_block"
-	ActionEscalate  = "escalate"
+	ActionAllow          = "allow"
+	ActionMonitor        = "monitor"
+	ActionThrottle       = "throttle"
+	ActionBlock          = "block"
+	ActionTempBlock      = "temp_block"
+	ActionTemporaryBlock = "temporary_block"
+	ActionEscalate       = "escalate"
 )
 
 // OutcomeRateLimited is recorded when a throttled address exceeded the rate
@@ -49,12 +50,24 @@ const OutcomeRateLimited = "rate_limited"
 // in control-plane/iasg/models.py. That method and this struct are the two
 // halves of the contract between the lanes.
 type Decision struct {
-	Action     string  `json:"action"`
-	CampaignID string  `json:"campaign_id"`
-	Confidence float64 `json:"confidence"`
-	Reason     string  `json:"reason"`
-	IssuedAt   string  `json:"issued_at"`
-	ExpiresIn  int     `json:"expires_in"`
+	Action             string          `json:"action"`
+	PolicyID           string          `json:"policy_id"`
+	Scope              string          `json:"scope"`
+	TargetIdentity     string          `json:"target_identity"`
+	CampaignID         string          `json:"campaign_id"`
+	Confidence         float64         `json:"confidence"`
+	RiskScore          float64         `json:"risk_score"`
+	Reason             string          `json:"reason"`
+	IssuedAt           string          `json:"issued_at"`
+	ExpiresIn          int             `json:"expires_in"`
+	Mode               string          `json:"mode"`
+	IssuedBy           string          `json:"issued_by"`
+	BaselineVersion    string          `json:"baseline_version"`
+	ConfigVersion      int             `json:"config_version"`
+	ModelVersion       string          `json:"model_version"`
+	SupersedesPolicyID string          `json:"supersedes_policy_id"`
+	Explanation        json.RawMessage `json:"explanation"`
+	EndpointScope      *EndpointScope  `json:"endpoint_scope"`
 
 	// RequestsPerMinute is what a throttled address may send while this policy
 	// stands. It is what makes the rate limiting adaptive: the control plane
@@ -75,6 +88,11 @@ type Decision struct {
 	cacheUntil time.Time
 	redisKey   string
 	rawPolicy  string
+}
+
+type EndpointScope struct {
+	Method        string `json:"method"`
+	RouteTemplate string `json:"route_template"`
 }
 
 // Lookuper is what the middleware actually depends on, so tests can supply a
@@ -144,6 +162,61 @@ func (s *Store) Lookup(ip string) (Decision, bool) {
 		return Decision{}, false
 	}
 	return d, ok
+}
+
+// LookupRequest considers only the two bounded candidates a request can have:
+// its address-wide policy and its exact normalized endpoint policy. Manual
+// overrides outrank adaptive decisions; within the same origin the endpoint
+// policy is more specific.
+func (s *Store) LookupRequest(ip, route, method string) (Decision, bool) {
+	m := s.snapshot.Load()
+	if m == nil {
+		return Decision{}, false
+	}
+	global, globalOK := live((*m)[ip])
+	if globalOK && !matches(global, route, method) {
+		globalOK = false
+	}
+	scoped, scopedOK := live((*m)[indexKey(ip, method, route)])
+	if !globalOK {
+		return scoped, scopedOK
+	}
+	if !scopedOK {
+		return global, true
+	}
+	if decisionPriority(global) > decisionPriority(scoped) {
+		return global, true
+	}
+	return scoped, true
+}
+
+func live(d Decision) (Decision, bool) {
+	if d.Action == "" {
+		return Decision{}, false
+	}
+	now := time.Now()
+	if (!d.ExpiresAt.IsZero() && !now.Before(d.ExpiresAt)) ||
+		(!d.cacheUntil.IsZero() && !now.Before(d.cacheUntil)) {
+		return Decision{}, false
+	}
+	return d, true
+}
+
+func decisionPriority(d Decision) int {
+	if d.Source == "human" || d.Source == "manual_override" || d.Mode == "manual_override" {
+		return 3
+	}
+	if d.Source == "approved" {
+		return 2
+	}
+	return 1
+}
+
+func indexKey(ip, method, route string) string {
+	if method == "" && route == "" {
+		return ip
+	}
+	return ip + "\x00" + strings.ToUpper(method) + "\x00" + route
 }
 
 // Start loads policy once, then keeps refreshing in the background.
@@ -315,11 +388,28 @@ func collectAt(into map[string]Decision, keys []string, values []any, ttls []tim
 		if d.Source == "" {
 			d.Source = "agent"
 		}
+		if d.EndpointScope != nil {
+			if d.Method == "" {
+				d.Method = d.EndpointScope.Method
+			}
+			if d.Route == "" {
+				d.Route = d.EndpointScope.RouteTemplate
+			}
+		}
 		d.ExpiresAt = observed.Add(ttls[i])
 		d.cacheUntil = cacheUntil
 		d.redisKey, d.rawPolicy = keys[i], raw
 
-		into[strings.TrimPrefix(keys[i], prefix)] = d
+		explicitTarget := d.TargetIdentity != ""
+		target := d.TargetIdentity
+		if target == "" {
+			target = strings.TrimPrefix(keys[i], prefix)
+		}
+		key := target
+		if explicitTarget {
+			key = indexKey(target, d.Method, d.Route)
+		}
+		into[key] = d
 	}
 
 	return unexpiring

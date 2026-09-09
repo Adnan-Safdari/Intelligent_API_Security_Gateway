@@ -74,7 +74,7 @@ def test_policy_keys_land_in_the_store():
     assert raw is not None, "no policy written for a campaign member"
 
     decision = json.loads(raw)
-    assert decision["action"] in ("temp_block", "escalate")
+    assert decision["action"] in ("temporary_block", "escalate")
     assert decision["campaign_id"]
 
 

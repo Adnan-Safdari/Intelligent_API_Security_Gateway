@@ -1,5 +1,5 @@
 """
-Names and constants the v1 feature contract fixes.
+Names and constants the v2 feature contract fixes.
 
 `gateway/docs/anomaly-features.md` is the contract; this module is the part of
 it the code has to agree with literally. Everything here is frozen for the life
@@ -10,7 +10,7 @@ started meaning something else.
 
 from __future__ import annotations
 
-FEATURE_SPEC_VERSION = "v1"
+FEATURE_SPEC_VERSION = "v2"
 
 # Non-overlapping and aligned to :00 UTC.
 WINDOW_SECONDS = 60
@@ -30,6 +30,7 @@ FEATURE_NAMES = (
     "backend_5xx_ratio",
     "mean_request_body_bytes",
     "p95_upstream_duration_ms",
+    "endpoint_method_deviation",
 )
 
 # Features 1-7 are computable from arrival alone; 8-12 need a settled response.
@@ -37,7 +38,8 @@ FEATURE_NAMES = (
 # what the availability guarantee rests on and it should be readable without
 # following the arithmetic.
 ARRIVAL_FEATURES = FEATURE_NAMES[:7]
-COMPLETION_FEATURES = FEATURE_NAMES[7:]
+COMPLETION_FEATURES = FEATURE_NAMES[7:12]
+BASELINE_FEATURES = FEATURE_NAMES[12:]
 
 QUALITY_NAMES = (
     "known_status_count",

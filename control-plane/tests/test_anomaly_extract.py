@@ -302,7 +302,7 @@ def test_every_feature_is_present_on_every_row():
     """A missing key is a KeyError at vectorisation time, far from the cause."""
     row = extract([req(0, completed_ms=10)], WINDOW, WINDOW + timedelta(seconds=60))
     assert set(row.features) == set(FEATURE_NAMES)
-    assert len(row.feature_tuple()) == 12
+    assert len(row.feature_tuple()) == len(FEATURE_NAMES)
 
 
 def test_an_empty_window_is_not_a_row():

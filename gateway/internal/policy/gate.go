@@ -36,3 +36,16 @@ func (g *Gate) Lookup(ip string) (Decision, bool) {
 	}
 	return g.inner.Lookup(ip)
 }
+
+func (g *Gate) LookupRequest(ip, route, method string) (Decision, bool) {
+	if g == nil || !g.on.Load() || g.inner == nil {
+		return Decision{}, false
+	}
+	if scoped, ok := g.inner.(interface {
+		LookupRequest(string, string, string) (Decision, bool)
+	}); ok {
+		return scoped.LookupRequest(ip, route, method)
+	}
+	d, found := g.inner.Lookup(ip)
+	return d, found && matches(d, route, method)
+}

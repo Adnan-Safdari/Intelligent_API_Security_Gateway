@@ -42,10 +42,11 @@ type Enforcer struct {
 
 	// Retained for existing embedders; the server only uses the Redis quota
 	// limiter so replicas cannot invent independent allowances.
-	limiter     *Limiter
-	quota       QuotaLimiter
-	fallbackRPM int
-	burst       int
+	limiter       *Limiter
+	quota         QuotaLimiter
+	fallbackRPM   int
+	burst         int
+	routeResolver func(method, path string) string
 }
 
 func NewEnforcer(l Lookuper, enabled bool, throttleDelay time.Duration) *Enforcer {
@@ -58,6 +59,13 @@ func NewEnforcer(l Lookuper, enabled bool, throttleDelay time.Duration) *Enforce
 // grants are cached locally, so replicas cannot each spend the same allowance.
 func (e *Enforcer) WithQuotaLimiter(l QuotaLimiter, fallbackRPM, burst int) *Enforcer {
 	e.quota, e.fallbackRPM, e.burst = l, fallbackRPM, burst
+	return e
+}
+
+// WithRouteResolver gives policy lookup the same normalized route templates
+// telemetry uses. It is an in-memory table lookup fixed at boot.
+func (e *Enforcer) WithRouteResolver(resolve func(method, path string) string) *Enforcer {
+	e.routeResolver = resolve
 	return e
 }
 
@@ -108,6 +116,7 @@ func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 		}
 
 		ip := netutil.ClientIP(r)
+		route := e.route(r.Method, r.URL.Path)
 
 		var decision Decision
 		var found bool
@@ -115,17 +124,17 @@ func (e *Enforcer) Middleware(next http.Handler) http.Handler {
 			if scoped, ok := e.lookup.(interface {
 				LookupRequest(string, string, string) (Decision, bool)
 			}); ok {
-				decision, found = scoped.LookupRequest(ip, r.URL.Path, r.Method)
+				decision, found = scoped.LookupRequest(ip, route, r.Method)
 			} else {
 				decision, found = e.lookup.Lookup(ip)
-				found = found && matches(decision, r.URL.Path, r.Method)
+				found = found && matches(decision, route, r.Method)
 			}
 		}
 
 		if found {
 			e.match(r, ip, decision, decision.RequestsPerMinute, "matched", "")
 			switch decision.Action {
-			case ActionBlock, ActionTempBlock, ActionEscalate:
+			case ActionBlock, ActionTempBlock, ActionTemporaryBlock, ActionEscalate:
 				Record(r, decision.Action)
 				e.match(r, ip, decision, 0, "blocked", "")
 				e.deny(w, decision)
@@ -169,7 +178,7 @@ func (e *Enforcer) limited(
 	if limit > 0 && e.quota != nil {
 		var err error
 		result, err = e.quota.Take(r.Context(), QuotaRequest{
-			IP: ip, Route: r.URL.Path, Method: r.Method, Decision: d,
+			IP: ip, Route: e.route(r.Method, r.URL.Path), Method: r.Method, Decision: d,
 			RequestsPerMinute: limit, Burst: e.burst,
 		})
 		if err != nil {
@@ -213,7 +222,17 @@ func (e *Enforcer) match(r *http.Request, ip string, d Decision, limit int, outc
 		reason = d.Reason + "; " + reason
 	}
 	RecordMatch(r, Match{Action: d.Action, Source: source, ClientIP: ip,
-		Route: r.URL.Path, Method: r.Method, RequestsPerMinute: limit, Reason: reason, Outcome: outcome})
+		Route: e.route(r.Method, r.URL.Path), Method: r.Method,
+		PolicyID: d.PolicyID, CampaignID: d.CampaignID, RiskScore: d.RiskScore,
+		Confidence: d.Confidence, Mode: d.Mode, IssuedBy: d.IssuedBy,
+		RequestsPerMinute: limit, Reason: reason, Outcome: outcome})
+}
+
+func (e *Enforcer) route(method, path string) string {
+	if e.routeResolver == nil {
+		return path
+	}
+	return e.routeResolver(method, path)
 }
 
 func (e *Enforcer) deny(w http.ResponseWriter, d Decision) {

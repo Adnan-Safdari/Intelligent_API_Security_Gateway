@@ -163,11 +163,15 @@ services:
         condition: service_healthy
 
   control_plane:
-    image: python:3.12-alpine
+    # glibc-based image keeps the official scikit-learn wheels available;
+    # Alpine would compile NumPy/SciPy on every start.
+    image: python:3.12-slim
     restart: unless-stopped
     working_dir: /app
     volumes:
       - ../control-plane:/app
+      - control_plane_models:/app/models
+      - ../datasets:/datasets:ro
     environment:
       # Without this Python block-buffers stdout when it is not a TTY, so the
       # agent's per-cycle reasoning never reaches `docker compose logs` and the
@@ -198,7 +202,10 @@ services:
       IASG_OLLAMA_MODEL: ${IASG_OLLAMA_MODEL:-llama3.2}
       # Campaigns and feedback outlive a restart. Policy keys stay in Redis.
       IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
-    command: sh -c "pip install --no-cache-dir redis 'psycopg[binary]' && PYTHONPATH=/app python -m iasg"
+      IASG_HEALTH_STREAM: iasg:telemetry:health
+      IASG_MODEL_PATH: /app/models/current/model.joblib
+      IASG_MODEL_METADATA_PATH: /app/models/current/metadata.json
+    command: sh -c "pip install --no-cache-dir -e '.[postgres,ml]' && PYTHONPATH=/app python -m iasg"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -321,4 +328,5 @@ volumes:
   vulnerable_api_node_modules:
   gateway_dashboard_node_modules:
   gateway_dashboard_next:
+  control_plane_models:
   vulnerable_web_node_modules:
