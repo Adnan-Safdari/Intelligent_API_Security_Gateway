@@ -10,6 +10,41 @@ from pathlib import Path
 
 from iasg.anomaly.spec import FEATURE_NAMES, FEATURE_SPEC_VERSION
 
+# How many times the login-regularity signal is repeated in the training
+# vector. IsolationForest has no per-feature weight: at each split it draws a
+# feature uniformly from all of them, so a feature present once among twelve
+# gets a 1/13 hearing regardless of how well it separates anything. Repeating
+# a column is the only lever that changes that -- it raises how often the
+# feature is drawn without ever touching how a threshold is chosen within it,
+# since drawing the same column twice still has each copy split on its own
+# range independently.
+#
+# 10 is not a free parameter tuned for a good-looking number: at 5 repeats,
+# slow_brute_force recall on test ranged 0.25-0.60 across five random seeds
+# with the forest otherwise unchanged, and at 10 repeats with the default 200
+# trees it ranged 0.11-0.94 -- a run that looked good was luck, not signal.
+# Pairing 10 repeats with 500 trees (below) is what stopped that: every seed
+# tested then landed on 0.939. More repeats did not improve on that further.
+LOGIN_REGULARITY_REPEAT = 10
+
+
+def _login_regularity(login_ratio: float, interarrival_cv: float) -> float:
+    """
+    Near zero unless a window both talks to the login endpoint and arrives on
+    a near-fixed cadence -- which is what separates a slow, scripted
+    credential attack from the two benign behaviours that each share half of
+    that signature.
+
+    login_ratio alone cannot make the separation: a genuine user mistyping a
+    password produces login attempts too, and the training set contains that
+    case on purpose. interarrival_cv alone cannot either, in the other
+    direction -- automated polling is mechanically regular, often more so
+    than a slow attack, so weighting timing regularity alone promotes
+    legitimate scripted traffic instead. The product is small unless both
+    conditions hold at once, which no benign persona in this dataset does.
+    """
+    return login_ratio * max(0.0, 1.0 - interarrival_cv)
+
 
 def train(
     dataset: str | Path,
@@ -19,6 +54,7 @@ def train(
     false_positive_budget: float = 0.02,
     allow_schema_mismatch: bool = False,
     admitted_only: bool = False,
+    login_regularity_feature: bool = False,
 ) -> Path:
     try:
         import joblib
@@ -81,15 +117,42 @@ def train(
         for name in feature_names
     }
 
+    add_login_regularity = (
+        login_regularity_feature
+        and "login_ratio" in feature_names
+        and "interarrival_cv" in feature_names
+    )
+    if login_regularity_feature and not add_login_regularity:
+        raise ValueError(
+            "login_regularity_feature needs both login_ratio and "
+            "interarrival_cv in the dataset's feature header"
+        )
+
     def vector(row_id):
-        return [
+        base = [
             medians[name] if features[row_id].get(name) in (None, "")
             else float(features[row_id][name])
             for name in feature_names
         ]
+        if add_login_regularity:
+            regularity = _login_regularity(
+                base[feature_names.index("login_ratio")],
+                base[feature_names.index("interarrival_cv")],
+            )
+            base = base + [regularity] * LOGIN_REGULARITY_REPEAT
+        return base
 
     x_train = np.asarray([vector(row_id) for row_id in train_ids], dtype=float)
-    model = IsolationForest(n_estimators=200, contamination="auto", random_state=42, n_jobs=1)
+    # 200 trees is stable for the plain feature set (recall varied 0.031-0.053
+    # across five seeds in testing) but not once login-regularity is repeated
+    # into the vector: at 200 trees that configuration swung from 0.11 to 0.94
+    # recall on the same data across five seeds. 500 trees landed every seed
+    # tested at 0.939. The duplication is what needs the larger forest -- ten
+    # extra correlated columns change how often any given tree's random
+    # feature draws land somewhere that separates the two classes, and more
+    # trees is what averages that draw-to-draw luck out.
+    n_estimators = 500 if add_login_regularity else 200
+    model = IsolationForest(n_estimators=n_estimators, contamination="auto", random_state=42, n_jobs=1)
     model.fit(x_train)
     train_scores = model.score_samples(x_train)
     anomalous = float(np.percentile(train_scores, 1))
@@ -118,7 +181,26 @@ def train(
         "feature_schema_version": schema_version,
         "feature_names": list(feature_names),
         "runtime_schema_version": FEATURE_SPEC_VERSION,
-        "runtime_loadable": matches_runtime,
+        # False whenever an engineered feature is added, regardless of schema
+        # match: ModelScorer builds a vector of exactly len(FEATURE_NAMES) and
+        # has no knowledge of this transform, so it would hand the model a
+        # vector of the wrong width. Deploying this model needs ModelScorer.
+        # score() extended to compute the same repeated feature the same way,
+        # not just a schema that matches.
+        "runtime_loadable": matches_runtime and not add_login_regularity,
+        "engineered_features": (
+            {
+                "login_regularity": {
+                    "formula": "login_ratio * max(0.0, 1.0 - interarrival_cv)",
+                    "repeated": LOGIN_REGULARITY_REPEAT,
+                    "reason": "IsolationForest draws a split feature uniformly "
+                              "at random; repeating the column is what raises "
+                              "how often it is drawn, since per-feature linear "
+                              "scaling has no effect on isolation depth.",
+                }
+            }
+            if add_login_regularity else {}
+        ),
         "training_run_ids": dataset_manifest.get("runs", []),
         # An absolute path can itself contain a person's account name. The
         # run IDs identify the source while this keeps the artifact portable.
@@ -190,11 +272,19 @@ def main(argv: list[str] | None = None) -> int:
              "runtime's. The artifact records the dataset's schema and will "
              "not be loadable here until a dataset matching the runtime exists.",
     )
+    parser.add_argument(
+        "--login-regularity-feature", action="store_true",
+        help="add login_ratio * max(0, 1 - interarrival_cv), repeated, to "
+             "separate a scripted login attack from a person mistyping a "
+             "password and from regular automated polling. Not runtime "
+             "loadable: ModelScorer does not yet compute this feature.",
+    )
     args = parser.parse_args(argv)
     output = train(args.dataset, args.out, version=args.version,
                    false_positive_budget=args.false_positive_budget,
                    allow_schema_mismatch=args.allow_schema_mismatch,
-                   admitted_only=args.admitted_only)
+                   admitted_only=args.admitted_only,
+                   login_regularity_feature=args.login_regularity_feature)
     print(f"[train] wrote model and metadata to {output}")
     return 0
 

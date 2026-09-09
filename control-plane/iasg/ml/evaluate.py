@@ -20,6 +20,11 @@ import csv
 import json
 from pathlib import Path
 
+# Imported, not reimplemented: if train.py's formula or repeat count ever
+# changes, an evaluator computing its own copy would silently score a model
+# against a vector shape or definition it was not fitted on.
+from iasg.ml.train import _login_regularity
+
 # Below this many rows a false-positive rate is not a measurement. The protocol
 # reports these personas as a count with an interval instead of gating on them:
 # zero failures in fifty rows is consistent with a true rate near six percent.
@@ -48,13 +53,22 @@ def evaluate(
     bundle = joblib.load(artifact / "model.joblib")
     model, medians = bundle["model"], bundle["medians"]
     names = tuple(details["feature_names"])
+    engineered = details.get("engineered_features") or {}
+    regularity = engineered.get("login_regularity")
 
     def vector(row_id):
         row = features[row_id]
-        return [
+        base = [
             medians[name] if row.get(name) in (None, "") else float(row[name])
             for name in names
         ]
+        if regularity:
+            value = _login_regularity(
+                base[names.index("login_ratio")],
+                base[names.index("interarrival_cv")],
+            )
+            base = base + [value] * int(regularity["repeated"])
+        return base
 
     def abstains(row_id) -> bool:
         # The runtime declines to score a window of one or two requests: it has
