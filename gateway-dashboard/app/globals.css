@@ -403,7 +403,14 @@ body {
 
 .field select,
 .field input,
+.field textarea,
 .form input {
+  /* textarea joined this rule after Field.Textarea/Field.List (parts.jsx)
+     rendered as an unstyled white box everywhere outside Settings -- a
+     pre-existing gap, not new: Settings has always had its own
+     .settings-fields textarea override, but nothing gave a bare .field one
+     the same background/border/color the sibling inputs and selects get
+     here, in Adaptive or anywhere else that ever used the multiline case. */
   padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: 2px;
@@ -413,13 +420,24 @@ body {
   font-size: 12px;
 }
 
+.field textarea {
+  font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  line-height: 1.6;
+}
+
 .field select:focus,
+.field input:focus,
+.field textarea:focus,
 .form input:focus {
-  /* No outline: none here any more -- it used to silently defeat any
-     sitewide focus ring on exactly these fields. The accent border stays on
-     any focus (mouse or keyboard); the ring comes from the sitewide
-     :focus-visible rule now, on keyboard focus specifically, same as
-     everywhere else. */
+  /* .field input/textarea were both missing from this rule -- only .field
+     select and .form input were covered, so the ~30 plain number/text
+     inputs in Adaptive's guardrail grid (in a .field.block, not a .form) got
+     no focus treatment beyond the sitewide ring, unlike every select next to
+     them. No outline: none here either, for the same reason as before: it
+     used to silently defeat any sitewide focus ring on exactly these
+     fields. The accent border stays on any focus (mouse or keyboard); the
+     ring comes from the sitewide :focus-visible rule, on keyboard focus
+     specifically, same as everywhere else. */
   border-color: var(--accent);
 }
 
