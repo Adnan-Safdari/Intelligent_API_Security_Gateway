@@ -458,17 +458,20 @@ body {
 .chip-row {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .chip {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   padding: 3px 9px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  /* Was its own one-off 12px -- between .tag's old 2px and .pill's 999px,
+     three different treatments for the same "small label" idea. radius-sm
+     is what the scale's own comment already names for tags and chips. */
+  border-radius: var(--radius-sm);
   background: var(--bg-elev);
   color: var(--text);
   font: inherit;
@@ -1059,7 +1062,7 @@ tbody tr:hover td {
 .tag {
   padding: 0 5px;
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: var(--radius-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-size: 10px;

@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams } from "next/navigation";
 import { PageHead } from "@/app/ui/chrome";
 import { matchesEvent, signalMeta } from "@/app/ui/format";
-import { EventTable, ExportMenu, SegmentedControl } from "@/app/ui/parts";
+import { EventTable, ExportMenu, Loading, SegmentedControl } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -259,7 +259,15 @@ function EventsView() {
 export default function EventsPage() {
   // useSearchParams needs a boundary, or the whole route opts out of prerender.
   return (
-    <Suspense fallback={<article className="card"><p className="empty">Loading…</p></article>}>
+    <Suspense
+      fallback={
+        <article className="card">
+          <p className="empty">
+            <Loading />
+          </p>
+        </article>
+      }
+    >
       <EventsView />
     </Suspense>
   );
