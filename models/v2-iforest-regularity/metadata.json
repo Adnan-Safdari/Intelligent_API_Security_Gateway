@@ -1,0 +1,81 @@
+{
+  "admission_rule": "none",
+  "data_source": "v2",
+  "engineered_features": {
+    "login_regularity": {
+      "formula": "login_ratio * max(0.0, 1.0 - interarrival_cv)",
+      "reason": "IsolationForest draws a split feature uniformly at random; repeating the column is what raises how often it is drawn, since per-feature linear scaling has no effect on isolation depth.",
+      "repeated": 10
+    }
+  },
+  "evaluation": {
+    "false_positive_budget": 0.02,
+    "test": {
+      "attack_detection_rate": 0.3113284433577832,
+      "attack_rows": 1227,
+      "benign_rows": 2860,
+      "false_positive_rate": 0.02062937062937063,
+      "rows": 4087
+    },
+    "threshold_score_samples": -0.6891459236509273,
+    "validation": {
+      "attack_detection_rate": 0.23214285714285715,
+      "attack_rows": 616,
+      "benign_rows": 3221,
+      "false_positive_rate": 0.020180068301769636,
+      "rows": 3837
+    }
+  },
+  "feature_names": [
+    "request_count",
+    "peak_1s_requests",
+    "interarrival_cv",
+    "unique_path_ratio",
+    "dominant_route_ratio",
+    "post_ratio",
+    "login_ratio",
+    "login_failure_ratio",
+    "backend_404_ratio",
+    "backend_5xx_ratio",
+    "mean_request_body_bytes",
+    "p95_upstream_duration_ms"
+  ],
+  "feature_schema_version": "v1",
+  "library": "scikit-learn IsolationForest",
+  "library_version": "1.9.0",
+  "missing_value_handling": "training-partition median by feature",
+  "model_version": "iforest-v2-regularity",
+  "runtime_loadable": false,
+  "runtime_schema_version": "v2",
+  "score_scale": {
+    "anomalous": -0.7718351706842267,
+    "normal": -0.36242508867806567
+  },
+  "trained_at": "2026-09-09T05:48:49.216434+00:00",
+  "training_run_ids": [
+    "run1",
+    "run2",
+    "run3",
+    "run4",
+    "run5",
+    "run6",
+    "run7",
+    "run8",
+    "run9",
+    "run10",
+    "run11",
+    "run12",
+    "run13",
+    "run14",
+    "run15",
+    "run16",
+    "run17",
+    "run18",
+    "run19",
+    "run20",
+    "run21",
+    "run22",
+    "run23",
+    "run24"
+  ]
+}
