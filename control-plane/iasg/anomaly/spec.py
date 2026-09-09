@@ -1,5 +1,5 @@
 """
-Names and constants the v2 feature contract fixes.
+Names and constants the v3 feature contract fixes.
 
 `gateway/docs/anomaly-features.md` is the contract; this module is the part of
 it the code has to agree with literally. Everything here is frozen for the life
@@ -10,7 +10,7 @@ started meaning something else.
 
 from __future__ import annotations
 
-FEATURE_SPEC_VERSION = "v2"
+FEATURE_SPEC_VERSION = "v3"
 
 # Non-overlapping and aligned to :00 UTC.
 WINDOW_SECONDS = 60
@@ -23,6 +23,7 @@ FEATURE_NAMES = (
     "interarrival_cv",
     "unique_path_ratio",
     "dominant_route_ratio",
+    "unmatched_route_ratio",
     "post_ratio",
     "login_ratio",
     "login_failure_ratio",
@@ -33,13 +34,19 @@ FEATURE_NAMES = (
     "endpoint_method_deviation",
 )
 
-# Features 1-7 are computable from arrival alone; 8-12 need a settled response.
+# Features 1-8 are computable from arrival alone; 9-13 need a settled response.
 # Stated as data rather than left implicit in extract(), because the split is
 # what the availability guarantee rests on and it should be readable without
 # following the arithmetic.
-ARRIVAL_FEATURES = FEATURE_NAMES[:7]
-COMPLETION_FEATURES = FEATURE_NAMES[7:12]
-BASELINE_FEATURES = FEATURE_NAMES[12:]
+#
+# unmatched_route_ratio joins the arrival group deliberately: the route
+# template is decided when the request arrives, so a scanner is visible before
+# any response has settled. It sits beside the other two route features rather
+# than being appended, which is what moves the spec from v2 to v3 -- every
+# column after it shifts, and a positional vector cannot be told that silently.
+ARRIVAL_FEATURES = FEATURE_NAMES[:8]
+COMPLETION_FEATURES = FEATURE_NAMES[8:13]
+BASELINE_FEATURES = FEATURE_NAMES[13:]
 
 QUALITY_NAMES = (
     "known_status_count",
