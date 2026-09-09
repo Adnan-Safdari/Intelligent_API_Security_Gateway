@@ -70,12 +70,16 @@ fi
 echo "collect: $runs runs, ${seconds}s of traffic each, $per_persona sessions per persona"
 echo "collect: nothing else may talk to the gateway until this finishes"
 
-# Stopped, not just ignored: it writes policy keys the gateway enforces.
-if [ -n "$("${compose[@]}" ps -q control_plane 2>/dev/null)" ]; then
-  echo "collect: stopping control_plane for the sequence"
-  "${compose[@]}" stop control_plane >/dev/null
-  echo "collect: restart it afterwards with 'docker compose -f infra/docker-compose.yml start control_plane'"
-fi
+# Stopped unconditionally, not "if it happens to be running". An earlier
+# version guarded this on `ps -q control_plane` and skipped the stop whenever
+# the container was down at that instant -- which is exactly the case after a
+# machine restart, and `restart: unless-stopped` then brought it back a minute
+# later, behind the guard. It wrote nine policy keys into the first run before
+# anyone noticed. `stop` on an already-stopped container is a no-op, so there
+# was never a reason to ask first.
+echo "collect: stopping control_plane for the sequence"
+"${compose[@]}" stop control_plane >/dev/null 2>&1 || true
+echo "collect: restart it afterwards with 'docker compose -f infra/docker-compose.yml start control_plane'"
 
 completed=0
 skipped=0
@@ -97,6 +101,10 @@ for n in $(seq 1 "$runs"); do
   # Every run starts from the same enforcement state, or runs are not
   # comparable. The policy keys outlive a run by nearly an hour; the gateway's
   # own reflex blocks are in-memory and 300s, so a restart is what clears them.
+  # Re-asserted every run: a restart policy can revive the agent mid-sequence,
+  # and by the time that shows up in the data the sequence is already spoiled.
+  "${compose[@]}" stop control_plane >/dev/null 2>&1 || true
+
   redis_cli=("${compose[@]}" exec -T redis redis-cli)
   for pattern in 'policy:*' 'campaign:*'; do
     keys="$("${redis_cli[@]}" --scan --pattern "$pattern" 2>/dev/null | tr -d '\r')"

@@ -1,0 +1,40 @@
+{
+  "files": {
+    "evaluation.md": "192f70f4eb4ae56e6a1f190fde40b1e11d27a92a1e96974555b96a4862221824",
+    "features.csv": "3213a131a414b3276743acc2d77a80497dc23b866104148cc3db012fe7896873",
+    "held_out_scenarios.txt": "1ebd0f1b27d55df6a3d120ddb2a472f8a944451b1d632d3666fe441ca7334b92",
+    "medians.json": "4cda7cd4bce2570b90f7e96524315b20e2bca6dd79f148a3d09a3ca70d6fda85",
+    "metadata.csv": "ac9203203b38defe465004025e53abcbd2a3b6452a54e67628cbc708032fa6a8",
+    "quality.csv": "31b704d20b381d2a47866ce6a8c4d1e67bdb7ab4f91acbe32b7e06c68f05bfa6",
+    "rows.jsonl": "5e9e353f6643e8c71b31f4e4a32a497fa008b2974faabf179ec7cdb3e6df6d8b",
+    "splits.csv": "a7161bad63bb90d6d2e6c62b18cd7922072f54841d30bd9f7a7c515af03c9962",
+    "versions.json": "871abde619ab217afe3d5560975f97fc099d024307e76f2efec6fb070d5c99f5"
+  },
+  "rows": 16438,
+  "runs": [
+    "run2",
+    "run3",
+    "run4",
+    "run5",
+    "run6",
+    "run7",
+    "run8",
+    "run9",
+    "run10",
+    "run11",
+    "run12",
+    "run13",
+    "run14",
+    "run15",
+    "run16",
+    "run17",
+    "run18",
+    "run19",
+    "run20",
+    "run21",
+    "run22",
+    "run23",
+    "run24"
+  ],
+  "spec_version": "v2"
+}
