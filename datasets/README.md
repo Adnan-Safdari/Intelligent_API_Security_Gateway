@@ -8,6 +8,13 @@ telemetry by `control-plane/iasg/dataset/build.py`.
 this page and that page disagree, that page wins. This one describes the
 artefacts on disk; that one defines what the numbers in them mean.
 
+**How these datasets are scored is
+[`gateway/docs/anomaly-evaluation.md`](../gateway/docs/anomaly-evaluation.md)** —
+the false-positive budget, the three recall metrics, detection delay, and which
+rows are admitted at all. It lives outside the frozen directories because it is
+revised; each dataset's own `evaluation.md` records what was decided when that
+dataset was built.
+
 ## What one row is
 
 **One resolved client address's activity during one non-overlapping 60-second
@@ -380,12 +387,20 @@ It fixes four measurements, and names what must not be averaged away:
    separately, never pooled. One persona always being flagged is a different
    failure from a uniform low rate, and the average hides it.
 2. **Detection per attack scenario**, per scenario and not pooled.
-3. **Coverage**, with abstentions counted as abstentions. A window that
-   declined to score is not a miss.
+3. **Coverage**, with abstentions counted as abstentions.
 4. **Detection delay**, in windows.
 
 It also records anything unplanned the build encountered, such as windows
 dropped from addresses not in the run manifest.
+
+**Superseded in part.** v2's copy says "a fixed false-positive budget" without a
+number, and "a window that declined to score is not a miss" — true of the
+conditional metric, misleading alone, since an abstaining attack window is not
+detected by this layer either. Both are corrected in the
+[Evaluation Protocol](../gateway/docs/anomaly-evaluation.md), which fixes the
+budget at 1.0% per gated persona and requires coverage, conditional recall and
+operational recall to be reported together. v2's file is left untouched: it is
+hashed in `manifest.json`, and it is the record of what was decided then.
 
 ## `manifest.json`
 
