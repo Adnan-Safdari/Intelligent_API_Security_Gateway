@@ -45,19 +45,27 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
     const map = mapRef.current;
     if (!ready || !leaflet || !map) return;
 
+    // CARTO's basemaps.cartocdn.com used to serve these keyless. It no longer
+    // does -- every tile now comes back watermarked "API KEY REQUIRED" -- and
+    // getting a key means an account this console has no business depending
+    // on. Esri's Canvas basemaps are the replacement: free, no key, and still
+    // a light/dark pair. Note the tile path is {z}/{y}/{x}, not {z}/{x}/{y} --
+    // Esri's REST tile service orders row before column, the opposite of
+    // CARTO's and most others'. Leaflet substitutes {x}/{y} by name, not
+    // position, so writing them in this order is what makes it correct here
+    // rather than a typo to "fix" later.
     const tileUrl =
       theme === "light"
-        ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-        : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+        ? "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+        : "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
 
     if (tilesRef.current) {
       map.removeLayer(tilesRef.current);
     }
     tilesRef.current = leaflet
       .tileLayer(tileUrl, {
-        attribution: "&copy; OpenStreetMap &copy; CARTO",
+        attribution: "&copy; Esri",
         maxZoom: 8,
-        subdomains: "abcd",
       })
       .addTo(map);
   }, [ready, theme]);

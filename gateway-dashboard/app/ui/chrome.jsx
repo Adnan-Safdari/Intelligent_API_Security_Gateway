@@ -49,7 +49,7 @@ const NAV = [
 ];
 
 export function Shell({ children }) {
-  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast } =
+  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast, flashEscalate } =
     useLive();
   const pathname = usePathname();
   const [theme, setTheme] = useState("dark");
@@ -166,6 +166,13 @@ export function Shell({ children }) {
             ×
           </button>
         </div>
+      ) : null}
+
+      {flashEscalate !== null ? (
+        // Keyed so a second escalation while the first flash is still fading
+        // remounts the element and restarts the animation, rather than
+        // reusing a node CSS thinks is already mid-animation.
+        <div key={flashEscalate} className="escalate-flash" aria-hidden="true" />
       ) : null}
 
       <main>{children}</main>
