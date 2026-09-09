@@ -248,6 +248,13 @@ services:
       # and every run silently becomes run1 -- overwriting the previous one.
       RUN_ID: ${RUN_ID:-run1}
       TRAFFIC_SECONDS: ${TRAFFIC_SECONDS:-180}
+      # The seed decides the whole plan. Without it every run in a collection
+      # sequence replays the same one, which adds rows and almost no variety --
+      # and a model fitted on twenty copies of one plan has seen one plan.
+      TRAFFIC_SEED: ${TRAFFIC_SEED:-1}
+      # Sessions per persona. The benign pool holds 90 addresses and there are
+      # 9 personas, so 10 exhausts it exactly and Pool.take raises.
+      TRAFFIC_PER_PERSONA: ${TRAFFIC_PER_PERSONA:-2}
     # redis>=5.0 is quoted because this string is parsed by the container's
     # shell, where > is a redirection: unquoted it installs plain `redis` and
     # writes a file called =5.0 into the bind-mounted repository root.
@@ -262,6 +269,8 @@ services:
         --gateway http://gateway:8082
         --redis redis://redis:6379/0
         --seconds "$${TRAFFIC_SECONDS:-180}"
+        --seed "$${TRAFFIC_SEED:-1}"
+        --per-persona "$${TRAFFIC_PER_PERSONA:-2}"
     # Deliberately does NOT depend_on gateway. `compose run` starts a
     # dependency with the invoking shell's environment, which silently
     # recreated the gateway on the default config -- reverting stream_maxlen
@@ -286,6 +295,11 @@ services:
       PYTHONPATH: /app
       IASG_REDIS_URL: redis://redis:6379/0
       RUN_ID: ${RUN_ID:-run1}
+      # Must outlast TRAFFIC_SECONDS by enough for the last requests to settle:
+      # completions arrive after the final arrival, and a capture that stops at
+      # the same moment the traffic does truncates the last window into
+      # something that looks like a quiet minute. The 300/180 default pair
+      # holds that margin; collect.sh sets both together for longer runs.
       CAPTURE_SECONDS: ${CAPTURE_SECONDS:-300}
     command:
       - sh

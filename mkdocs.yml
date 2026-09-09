@@ -61,9 +61,11 @@ nav:
   - Security Pipeline:
       - Detection Signals: detection-signals.md
       - Policy Enforcement: policy-enforcement.md
+      - Network-Level Blocking: network-level-blocking.md
       - Control Plane: control-plane.md
   - Anomaly Detection:
       - Feature Specification: anomaly-features.md
+      - Evaluation Protocol: anomaly-evaluation.md
   - Modules:
       - Proxy Module: modules/proxy-module.md
       - Signal Test Scripts: modules/signal-tests.md
