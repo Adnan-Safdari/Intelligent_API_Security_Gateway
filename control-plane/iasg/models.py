@@ -381,52 +381,72 @@ class PolicyDecision:
     def expires_at(self) -> datetime:
         return self.issued_at + timedelta(seconds=max(0, self.ttl_seconds))
 
+    def _canonical_dict(self) -> dict:
+        """
+        The decision's fields, action spelled the way the rest of the control
+        plane and every non-Redis consumer expect -- ACTION_TEMP_BLOCK's own
+        value, never the Redis wire spelling.
+
+        This is what a recommendation's Postgres payload is built from. A
+        dashboard reading it back (to render a default, or to validate an
+        approval that didn't override the action) has to see the same
+        spelling its own action vocabulary uses, or a canonical-but-unedited
+        approval fails validation for a reason no one asked it to check.
+        """
+        return {
+            "action": self.action,
+            "policy_id": self.policy_id,
+            "scope": self.scope,
+            "target_identity": self.target_identity or self.ip,
+            "endpoint_scope": (
+                {"method": self.method, "route_template": self.route_template}
+                if self.method or self.route_template else None
+            ),
+            "campaign_id": self.campaign_id,
+            "confidence": round(self.confidence, 3),
+            "risk_score": round(max(0.0, min(100.0, self.risk_score)), 2),
+            "reason": self.reason,
+            "explanation": self.explanation,
+            "source": self.source,
+            "mode": self.mode,
+            "issued_by": self.issued_by,
+            "issued_at": self.issued_at.astimezone(timezone.utc).isoformat(),
+            "expires_at": self.expires_at.astimezone(timezone.utc).isoformat(),
+            "expires_in": self.ttl_seconds,
+            "requests_per_minute": self.requests_per_minute,
+            "baseline_version": self.baseline_version,
+            "config_version": self.config_version,
+            "model_version": self.model_version,
+            "supersedes_policy_id": self.supersedes_policy_id or None,
+        }
+
     def to_json(self) -> str:
         """
         Exactly what gets stored at policy:<ip> in Redis.
 
         The Go gateway will one day read this key and act on it. Keeping the
         shape here means there's a single definition of that contract.
+
+        Wire format only -- do not use this (or to_dict()) for anything that
+        gets read back and compared against the canonical action vocabulary,
+        such as a recommendation's stored payload or the dashboard's approve
+        validation. Use to_dict() for that; it is deliberately not derived
+        from this method.
         """
+        wire = self._canonical_dict()
         # The adaptive contract uses the unambiguous public spelling while
         # legacy agent/manual records keep their historical value. The Go
         # gateway accepts both during the migration.
-        wire_action = self.action
         if self.action == ACTION_TEMP_BLOCK and (
             self.source in ("adaptive", "approved") or self.mode == "manual_override"
         ):
-            wire_action = "temporary_block"
-        return json.dumps(
-            {
-                "action": wire_action,
-                "policy_id": self.policy_id,
-                "scope": self.scope,
-                "target_identity": self.target_identity or self.ip,
-                "endpoint_scope": (
-                    {"method": self.method, "route_template": self.route_template}
-                    if self.method or self.route_template else None
-                ),
-                "campaign_id": self.campaign_id,
-                "confidence": round(self.confidence, 3),
-                "risk_score": round(max(0.0, min(100.0, self.risk_score)), 2),
-                "reason": self.reason,
-                "explanation": self.explanation,
-                "source": self.source,
-                "mode": self.mode,
-                "issued_by": self.issued_by,
-                "issued_at": self.issued_at.astimezone(timezone.utc).isoformat(),
-                "expires_at": self.expires_at.astimezone(timezone.utc).isoformat(),
-                "expires_in": self.ttl_seconds,
-                "requests_per_minute": self.requests_per_minute,
-                "baseline_version": self.baseline_version,
-                "config_version": self.config_version,
-                "model_version": self.model_version,
-                "supersedes_policy_id": self.supersedes_policy_id or None,
-            }
-        )
+            wire["action"] = "temporary_block"
+        return json.dumps(wire)
 
     def to_dict(self) -> dict:
-        return json.loads(self.to_json())
+        """The canonical shape -- see _canonical_dict(). Not the Redis wire
+        format; use to_json() for that."""
+        return self._canonical_dict()
 
     @classmethod
     def from_dict(cls, value: dict) -> "PolicyDecision":

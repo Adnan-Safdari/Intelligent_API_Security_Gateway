@@ -25,7 +25,7 @@ from iasg.adaptive.lifecycle import STATUS_APPROVED, Recommendation
 from iasg.campaigns.repository import CampaignRepository
 from iasg.config import Settings
 from iasg.feedback.memory import FeedbackMemory
-from iasg.models import ACTION_THROTTLE, Campaign, PolicyDecision
+from iasg.models import ACTION_TEMP_BLOCK, ACTION_THROTTLE, Campaign, PolicyDecision
 from iasg.store.memory import MemoryStore
 
 DSN = os.getenv("IASG_TEST_POSTGRES_URL")
@@ -264,3 +264,34 @@ def test_policy_lifecycle_and_audit_are_durable(db):
             (decision.policy_id,),
         )
         assert cur.fetchall() == [("approved", "analyst"), ("active", "control-plane")]
+
+
+def test_stored_recommendation_payload_keeps_the_canonical_action(db):
+    # decision.to_json() rewrites temp_block to "temporary_block" for an
+    # adaptive-sourced decision -- that spelling is the Redis wire contract,
+    # required only at the moment a decision is actually written to
+    # policy:<ip>. The dashboard reads this payload back and validates an
+    # approval against its own ["monitor", "throttle", "temp_block"]
+    # vocabulary; storing the wire spelling here made an unedited approval
+    # of a pending temp_block recommendation fail as "invalid action".
+    now = datetime.now(timezone.utc)
+    decision = PolicyDecision(
+        ip="203.0.113.9", action=ACTION_TEMP_BLOCK, campaign_id="c2",
+        confidence=0.9, ttl_seconds=900, source="adaptive",
+        issued_by="control-plane", issued_at=now,
+    )
+    db.adaptive.save_recommendation(
+        Recommendation(decision, STATUS_APPROVED, now, now)
+    )
+
+    with db._conn.cursor() as cur:
+        cur.execute(
+            "SELECT payload FROM policy_recommendations WHERE policy_id=%s",
+            (decision.policy_id,),
+        )
+        payload = cur.fetchone()[0]
+
+    assert payload["action"] == ACTION_TEMP_BLOCK
+    # The Redis wire format is unaffected -- it still rewrites the action for
+    # exactly this combination of action and source.
+    assert json.loads(decision.to_json())["action"] == "temporary_block"
