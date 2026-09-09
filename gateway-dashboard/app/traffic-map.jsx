@@ -83,7 +83,12 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
     if (site?.lat != null && site?.lon != null) {
       const labPoint = [site.lat, site.lon];
       points.push(labPoint);
-      const labColor = site.alerts > 0 ? "#c44b4b" : "#3a7ca5";
+      // var() strings, not hex -- Leaflet sets these as inline style
+      // properties on the underlying SVG path, and the browser resolves
+      // var() there exactly like it would in a stylesheet. That means a
+      // theme toggle repaints these correctly on its own, with no re-render
+      // needed, unlike a resolved hex baked in once at draw time.
+      const labColor = site.alerts > 0 ? "var(--map-alert)" : "var(--map-site)";
       leaflet
         .circleMarker(labPoint, {
           radius: Math.min(16, 8 + Math.sqrt(site.requests || 1) * 1.4),
@@ -100,7 +105,7 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
       for (const source of publicSources) {
         leaflet
           .polyline([labPoint, [source.lat, source.lon]], {
-            color: source.alerts > 0 ? "#c44b4b" : "#3a7ca5",
+            color: source.alerts > 0 ? "var(--map-alert)" : "var(--map-site)",
             weight: 1,
             opacity: 0.35,
           })
@@ -109,7 +114,7 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
     }
 
     for (const source of publicSources) {
-      const color = source.alerts > 0 ? "#c44b4b" : "#2f6fed";
+      const color = source.alerts > 0 ? "var(--map-alert)" : "var(--map-public)";
       leaflet
         .circleMarker([source.lat, source.lon], {
           radius: Math.min(16, 5 + Math.sqrt(source.requests) * 1.8),

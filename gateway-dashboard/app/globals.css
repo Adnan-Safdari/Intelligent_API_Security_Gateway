@@ -2,39 +2,139 @@
 :root[data-theme="dark"] {
   --bg: #14171c;
   --bg-elev: #1c2128;
+  /* Third tier, so "layered" is a real stack rather than one surface color
+     doing double duty. Nested/hover/pressed surfaces inside a card: table-row
+     hover, a focused input's fill, the active option in a segmented control. */
+  --bg-elev-2: #232a33;
   --bg-head: #191d23;
   --line: #2b323c;
   --text: #e4e8ee;
   --muted: #8a93a0;
-  --accent: #3a7ca5;
-  --good: #2d8a67;
-  --warn: #c4922a;
-  --bad: #c44b4b;
-  --row-alert: rgba(196, 75, 75, 0.1);
+  --accent: #4c7dff;
+  /* The interactive-element companion to --bg-elev-2: active nav background,
+     a selected segmented option, a focused input's fill -- anywhere the
+     accent needs to tint a surface rather than paint text or a border. */
+  --accent-soft: rgba(76, 125, 255, 0.12);
+  --good: #22a876;
+  --warn: #e0a530;
+  --bad: #e5484d;
+  --row-alert: rgba(229, 72, 77, 0.1);
   --row-hover: rgba(255, 255, 255, 0.03);
   --map-bg: #10141a;
-  --shadow: none;
+  /* Dark had no shadow at all before this, undocumented. Elevation here reads
+     through --bg-elev's contrast against --bg plus this faint inset
+     top-highlight -- a shadow alone barely shows on a near-black surface, so
+     the highlight is what actually carries "raised" rather than just "a
+     different grey box". */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.36);
+
+  /* Signal-type colors, one per detector, moved from format.js's SIGNAL_META
+     so both themes get real light-mode contrast rather than the same eight
+     hexes doing service against a near-white background they were never
+     tuned against. Hue is shared with light below; only lightness/saturation
+     differ. */
+  --sig-flood: #c9842a;
+  --sig-sqli: #c43c51;
+  --sig-brute: #7c5cbf;
+  --sig-spray: #9a6bb8;
+  --sig-enum-trav: #2a8f7c;
+  --sig-traversal: #2f7d9a;
+  --sig-enum: #3d8a55;
+  --sig-reputation: #b04a86;
+
+  /* The traffic map's legend dots. --map-site mirrors --accent on purpose --
+     it used to be an independent hex that happened to match --accent's old
+     value verbatim and would have silently drifted out of sync the moment
+     the accent changed, which is exactly what happened when this redesign
+     picked a new one. --map-alert mirrors --bad for the same reason: it is
+     semantically the same "something is wrong here" as everywhere else --bad
+     appears, not a fourth independent red. --map-private mirrors --muted:
+     the two hex values were already within one digit of each other. */
+  --map-public: #2f6fed;
+  --map-site: var(--accent);
+  --map-alert: var(--bad);
+  --map-private: var(--muted);
 }
 
 :root[data-theme="light"] {
   --bg: #eef0f3;
   --bg-elev: #ffffff;
+  --bg-elev-2: #f4f6f8;
   --bg-head: #ffffff;
   --line: #d5dae1;
   --text: #1b2430;
   --muted: #5b6572;
-  --accent: #1f5f86;
+  --accent: #2f5fdb;
+  --accent-soft: rgba(47, 95, 219, 0.08);
   --good: #1c7a56;
   --warn: #9a6f12;
   --bad: #b13232;
   --row-alert: rgba(177, 50, 50, 0.07);
   --row-hover: rgba(20, 30, 40, 0.03);
   --map-bg: #d7e0e8;
-  --shadow: 0 1px 0 rgba(16, 24, 32, 0.04);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 32, 0.05), 0 1px 1px rgba(16, 24, 32, 0.03);
+  --shadow-md: 0 8px 24px rgba(16, 24, 32, 0.12), 0 2px 6px rgba(16, 24, 32, 0.06);
+
+  /* Same hue as dark, darkened in HSL space (not eyeballed) so each holds
+     legible contrast as text/icon color against this theme's near-white
+     surfaces -- the dark values were tuned only against --bg-elev #1c2128
+     and would under-contrast here unchanged. */
+  --sig-flood: #815216;
+  --sig-sqli: #7d2130;
+  --sig-brute: #492e81;
+  --sig-spray: #62387c;
+  --sig-enum-trav: #1d7162;
+  --sig-traversal: #1e5a70;
+  --sig-enum: #2a653c;
+  --sig-reputation: #702b54;
+
+  --map-public: #2354c9;
+  --map-site: var(--accent);
+  --map-alert: var(--bad);
+  --map-private: var(--muted);
+}
+
+:root {
+  /* No spacing scale existed before this -- every margin/padding/gap in this
+     file was a literal px value, 53 distinct ones from 2 to 28px. New values
+     from here on round to one of these; existing ones migrate opportunistically
+     rather than in one sweep, since a like-for-like value swap is safe but
+     re-deriving every rule's spacing from scratch in one pass is not. */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  /* Two tiers, not the six ad hoc values (1/2/3/4/6/12px, plus 999px for
+     fully-round) previously in use with no stated rule for which applied
+     where. */
+  --radius-sm: 8px; /* inputs, buttons, tags, chips, small controls */
+  --radius-md: 10px; /* cards, panels, modals, toolbars */
+  --radius-full: 999px; /* pills, avatars, dots -- unchanged */
 }
 
 * {
   box-sizing: border-box;
+}
+
+/* The one sitewide focus ring. Before this, every interactive element relied
+   on the browser's unstyled default outline -- nothing reset it, nothing
+   customized it either -- except .settings-reset, which had its own
+   one-off :focus-visible in --bad. That exception is gone; a button's own
+   tone shouldn't decide its focus-indicator color, so it now inherits this
+   like everything else. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 html,
@@ -281,7 +381,11 @@ body {
 
 .field select:focus,
 .form input:focus {
-  outline: none;
+  /* No outline: none here any more -- it used to silently defeat any
+     sitewide focus ring on exactly these fields. The accent border stays on
+     any focus (mouse or keyboard); the ring comes from the sitewide
+     :focus-visible rule now, on keyboard focus specifically, same as
+     everywhere else. */
   border-color: var(--accent);
 }
 
@@ -476,7 +580,11 @@ a { color: var(--accent); }
 }
 
 .metrics {
-  grid-template-columns: repeat(4, 1fr);
+  /* auto-fit/minmax, like every other grid in this file (.campaign-grid,
+     .settings-grid, .metrics.narrow) -- a fixed repeat(4,1fr) jumped straight
+     from 4 columns to 1 at the 980px breakpoint with nothing between, the
+     only grid in the sheet that did. */
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .workbench {
@@ -488,10 +596,15 @@ a { color: var(--accent); }
 
 .metric,
 .card {
+  /* No padding of its own: every list inside one supplies it via whichever
+     child class it holds (.signal-list, .policy-list, .fact-list, ...), and
+     the header supplies its own via .card-head. That convention is what lets
+     a card body be a table, a list, or a form without the card itself caring
+     which -- see .fact-list below for where this was first written down. */
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: 3px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
 .metric {
@@ -663,10 +776,10 @@ a { color: var(--accent); }
   vertical-align: middle;
 }
 
-.map-legend .public { background: #2f6fed; }
-.map-legend .site { background: #3a7ca5; }
-.map-legend .alert { background: #c43c51; }
-.map-legend .private { background: #8b95a3; }
+.map-legend .public { background: var(--map-public); }
+.map-legend .site { background: var(--map-site); }
+.map-legend .alert { background: var(--map-alert); }
+.map-legend .private { background: var(--map-private); }
 
 .map-internal {
   right: 10px;
@@ -953,6 +1066,32 @@ tbody tr:hover td {
 .toast.good { border-left-color: var(--good); }
 .toast.bad  { border-left-color: var(--bad); }
 
+/* A standing banner, not a notification: .toast announces something that just
+   happened and dismisses itself; this stays as long as the condition does
+   (a page that failed to load, a setting that needs attention), so it never
+   auto-clears and carries no dismiss button. Modelled on .toast's
+   left-accent-bar shape but tinted with the matching --row-alert-family wash
+   rather than the flat --bg-elev fill, since a banner that sits on screen
+   for a while can afford (and reads better for) more colour than a toast
+   that is gone in six seconds. Was referenced by adaptive/page.jsx's error
+   state as "notice bad" without ever being defined here -- it rendered as
+   plain unstyled text. */
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.notice.good { border-left-color: var(--good); background: color-mix(in srgb, var(--good) 10%, var(--bg-elev)); }
+.notice.warn { border-left-color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--bg-elev)); }
+.notice.bad  { border-left-color: var(--bad);  background: var(--row-alert); }
+
 .toast button {
   margin-left: auto;
   border: 0;
@@ -1030,7 +1169,6 @@ tbody tr:hover td {
 }
 
 .search:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -1084,254 +1222,6 @@ tbody tr:hover td {
   .map-internal {
     display: none;
   }
-}
-
-/* --- sign in, first run, and the account chip ---------------------------- */
-
-.gate {
-  display: grid;
-  place-items: center;
-  min-height: 100vh;
-  padding: 24px;
-}
-
-.gate-card {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  width: 100%;
-  max-width: 380px;
-  padding: 22px;
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  box-shadow: var(--shadow);
-}
-
-.gate-brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.gate-brand strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 650;
-}
-
-.gate-brand small {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.gate-card h1 {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 650;
-}
-
-.gate-card p {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.gate-card input {
-  width: 100%;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-}
-
-.gate-card input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.gate-card .act.primary {
-  padding: 8px 10px;
-  font-size: 13px;
-}
-
-/* One message for every failure, so it never tells an attacker which half of
-   the credentials was right. */
-.gate-error {
-  padding: 7px 9px;
-  border-left: 3px solid var(--bad);
-  background: var(--row-alert);
-  color: var(--text) !important;
-  font-size: 12px;
-}
-
-.whoami {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 9px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  color: var(--text);
-  font-size: 12px;
-}
-
-.whoami em {
-  font-style: normal;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-
-td select {
-  padding: 2px 6px;
-  border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-  font-size: 11.5px;
-}
-
-/* ==========================================================================
-   Investigation, export, and the account menu.
-   Added with the deeper event window, the per-address view, and the header
-   rework. Everything here reuses the existing tokens, so both themes follow.
-   ========================================================================== */
-
-/* --- header buttons ------------------------------------------------------
-   .icon-btn is .theme-btn that can also hold an icon. Kept as its own name
-   because a button holding an SVG needs to centre it, which a text button
-   does not. */
-
-.icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-width: 32px;
-  min-height: 28px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--bg-elev);
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.icon-btn:hover {
-  border-color: var(--accent);
-}
-
-.icon-btn.on {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* --- account menu -------------------------------------------------------- */
-
-.account {
-  position: relative;
-}
-
-.account-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 8px 4px 4px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--bg-elev);
-  color: var(--text);
-  font: inherit;
-  cursor: pointer;
-}
-
-.account-btn:hover,
-.account-btn.open {
-  border-color: var(--accent);
-}
-
-.account-btn .avatar {
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  background: var(--accent);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.account-btn .who {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  line-height: 1.15;
-  font-size: 12px;
-}
-
-.account-btn .who em {
-  color: var(--muted);
-  font-size: 10px;
-  font-style: normal;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.account-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 40;
-  min-width: 160px;
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-}
-
-.account-menu a,
-.account-menu button {
-  padding: 7px 10px;
-  border: 0;
-  border-radius: 3px;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  font-size: 12px;
-  text-align: left;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.account-menu a:hover,
-.account-menu button:hover {
-  background: var(--row-hover);
-  color: var(--accent);
-}
-
-.account-menu hr {
-  margin: 4px 6px;
-  border: 0;
-  border-top: 1px solid var(--line);
-}
-
-.account-menu .danger:hover {
-  color: var(--bad);
 }
 
 /* --- segmented controls (window size, time range) ------------------------ */
@@ -1452,75 +1342,6 @@ td select {
   min-width: 0;
 }
 
-/* --- forms (profile, reset) ---------------------------------------------- */
-
-.stack-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-}
-
-.stack-form label {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.stack-form input {
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  background: var(--bg-head);
-  color: var(--text);
-  font: inherit;
-  font-size: 13px;
-}
-
-.stack-form input:focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.stack-form .hint {
-  color: var(--muted);
-  font-size: 11px;
-}
-
-.stack-form button {
-  align-self: flex-start;
-}
-
-/* --- sessions ------------------------------------------------------------ */
-
-.session-list {
-  list-style: none;
-  margin: 0;
-  padding: 6px 12px 10px;
-}
-
-.session-list li {
-  padding: 8px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-
-.session-list li:last-child {
-  border-bottom: 0;
-}
-
-.session-list li small {
-  color: var(--muted);
-}
-
-.session-list li.current {
-  /* The row you are reading this from, marked without shouting. */
-  border-left: 2px solid var(--accent);
-  padding-left: 8px;
-}
-
 /* --- destructive actions ------------------------------------------------- */
 
 .danger-zone {
@@ -1557,10 +1378,6 @@ td select {
 /* --- narrow screens ------------------------------------------------------ */
 
 @media (max-width: 900px) {
-  .account-btn .who {
-    display: none;
-  }
-
   .toolbar.sub {
     gap: 8px;
   }
@@ -1591,19 +1408,19 @@ td select {
   padding: 22px 24px;
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  box-shadow: var(--shadow);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
 }
 
 .modal-card h2 {
   margin: 0 0 10px;
-  font-size: 1.05rem;
+  font-size: 16px;
 }
 
 .modal-card p {
   margin: 0 0 10px;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 13px;
   line-height: 1.5;
 }
 
@@ -1614,7 +1431,7 @@ td select {
 .modal-label {
   display: block;
   margin: 4px 0 18px;
-  font-size: 0.82rem;
+  font-size: 13px;
   color: var(--text);
 }
 
@@ -1625,14 +1442,18 @@ td select {
   padding: 8px 10px;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text);
   font-family: inherit;
-  font-size: 0.9rem;
+  /* No rem elsewhere in this file -- the page's base font-size is 13px
+     (see html/body above), not the browser's 16px root rem always computes
+     against, so the four rem values this modal used before never actually
+     landed on any of the sheet's declared sizes. Converted to the nearest
+     px value already in use, same as its neighbours above. */
+  font-size: 14px;
 }
 
 .modal-label input:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
@@ -1668,13 +1489,18 @@ td select {
 
 /* Kept on Settings because clearing the console is an administrative action,
    not a navigation control. Its muted red distinguishes it from applying an
-   enforcement change without making it look like an active alert. */
+   enforcement change without making it look like an active alert.
+   Was fully hardcoded (#7a343b/#4a2026/#ffdce0/#61272f/#a34650) rather than
+   derived from --bad, so it looked identical in both themes -- unlike
+   .act.danger a few hundred lines away, which gets this right via
+   color-mix(). Copies that working pattern rather than inventing a second
+   one. */
 .settings-reset {
   padding: 7px 12px;
-  border: 1px solid #7a343b;
-  border-radius: 3px;
-  background: #4a2026;
-  color: #ffdce0;
+  border: 1px solid color-mix(in srgb, var(--bad) 40%, var(--line));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--bad) 14%, var(--bg-elev));
+  color: color-mix(in srgb, var(--bad) 78%, var(--text));
   font: inherit;
   font-size: 12px;
   font-weight: 650;
@@ -1682,13 +1508,8 @@ td select {
 }
 
 .settings-reset:hover {
-  background: #61272f;
-  border-color: #a34650;
-}
-
-.settings-reset:focus-visible {
-  outline: 2px solid var(--bad);
-  outline-offset: 2px;
+  background: color-mix(in srgb, var(--bad) 22%, var(--bg-elev));
+  border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
 }
 
 .settings-bar .unsaved {
@@ -1780,7 +1601,6 @@ td select {
 
 .settings-fields input:focus,
 .settings-fields textarea:focus {
-  outline: none;
   border-color: var(--accent);
 }
 
