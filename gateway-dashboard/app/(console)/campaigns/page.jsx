@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
-import { CampaignCard, ExportMenu, SegmentedControl } from "@/app/ui/parts";
+import { CampaignsIcon } from "@/app/ui/icons";
+import { CampaignCard, EmptyState, ExportMenu, SegmentedControl } from "@/app/ui/parts";
 import { CAMPAIGN_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -114,39 +115,29 @@ export default function CampaignsPage() {
 
       {shown.length === 0 ? (
         <article className="card">
-          <p className="empty">
-            {campaigns.length
-              ? `No ${status} campaigns.`
-              : "No campaigns yet. Run the control plane, or seed evidence with "}
-            {campaigns.length ? null : (
-              <code>python -m tools.seed_evidence --scenario credential-stuffing</code>
-            )}
-          </p>
+          {campaigns.length ? (
+            <EmptyState icon={CampaignsIcon} title={`No ${status} campaigns.`} />
+          ) : (
+            <EmptyState
+              icon={CampaignsIcon}
+              title="No campaigns yet."
+              hint="Run the control plane against real traffic, or seed evidence for a demo — see the dashboard README."
+            />
+          )}
         </article>
       ) : (
         <ul className="campaign-grid">
           {shown.map((c) => (
-            <article
+            <CampaignCard
               key={c.id}
-              className={selected.includes(c.id) ? "card selected" : "card"}
-            >
-              <label className="select-row">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(c.id)}
-                  onChange={() => toggle(c.id)}
-                />
-                select for bulk action
-              </label>
-              <ul className="campaign-list">
-                <CampaignCard
-                  campaign={c}
-                  onInstruct={instruct}
-                  busy={busy}
-                  compact={compact}
-                />
-              </ul>
-            </article>
+              campaign={c}
+              onInstruct={instruct}
+              busy={busy}
+              compact={compact}
+              selectable
+              selected={selected.includes(c.id)}
+              onToggleSelect={() => toggle(c.id)}
+            />
           ))}
         </ul>
       )}

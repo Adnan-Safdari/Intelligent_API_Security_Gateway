@@ -6,7 +6,7 @@ import { PageHead } from "@/app/ui/chrome";
 import {
   ACTION_TONE, actionLabel, clampRiskScore, formatTime, formatTtl, signalMeta,
 } from "@/app/ui/format";
-import { ActionRow, CampaignCard, EventTable, ExportMenu } from "@/app/ui/parts";
+import { ActionRow, CampaignCard, EventTable, ExportMenu, Loading } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -46,7 +46,9 @@ export default function IpPage({ params }) {
   if (loading && !data) {
     return (
       <article className="card">
-        <p className="empty">Loading {ip}…</p>
+        <p className="empty">
+          <Loading label={`Loading ${ip}…`} />
+        </p>
       </article>
     );
   }

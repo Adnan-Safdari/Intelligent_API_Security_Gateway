@@ -504,30 +504,45 @@ body {
 .campaign-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(460px, 1fr));
-  gap: 10px;
+  gap: var(--space-3);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
-.card.selected {
+/* Each grid cell is its own card -- CampaignCard's <li> nests directly under
+   this <ul> with nothing in between. Before this it was double-wrapped: an
+   outer <article class="card"> containing a second, single-item
+   <ul class="campaign-list"> that existed only to give one item the padding
+   a list normally gives many. */
+.campaign-grid > .campaign {
+  padding: var(--space-3);
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.campaign-grid > .campaign.selected {
   border-color: var(--accent);
 }
 
 .select-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: var(--space-2);
+  /* Bleeds to the card's edges rather than sitting inset like the rest of the
+     card's content -- a select-for-bulk-action strip reads as a header, not
+     another line of card content. */
+  margin: calc(-1 * var(--space-3)) calc(-1 * var(--space-3)) var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--line);
-  background: var(--bg-head);
+  background: var(--bg-elev-2);
   color: var(--muted);
   font-size: 11px;
   cursor: pointer;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
 }
-
-.campaign-grid .campaign-list { padding-top: 0; }
-.campaign-grid .campaign { border-bottom: 0; }
 
 .ip-chip {
   padding: 1px 4px;
@@ -609,8 +624,8 @@ a { color: var(--accent); }
 .metrics,
 .workbench {
   display: grid;
-  gap: 10px;
-  margin-top: 10px;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
 }
 
 .metrics {
@@ -708,7 +723,7 @@ a { color: var(--accent); }
 
 .side {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   align-content: start;
 }
 
@@ -716,15 +731,15 @@ a { color: var(--accent); }
 .ip-list {
   list-style: none;
   margin: 0;
-  padding: 6px 12px 10px;
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
 .signal-list li,
 .ip-list li {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
@@ -791,7 +806,7 @@ a { color: var(--accent); }
   border: 1px solid var(--line);
   font-size: 11px;
   color: var(--muted);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .map-legend {
@@ -984,11 +999,11 @@ tbody tr:hover td {
 .policy-list {
   list-style: none;
   margin: 0;
-  padding: 6px 12px 10px;
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
 .campaign {
-  padding: 10px 0;
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -1362,7 +1377,7 @@ tbody tr:hover td {
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -1371,15 +1386,15 @@ tbody tr:hover td {
   margin: 0;
   /* .card carries no padding of its own: every list inside one supplies it,
      the same way .policy-list does. */
-  padding: 6px 12px 10px;
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
 .fact-list li {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 10px;
-  padding: 6px 0;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
   border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
@@ -1707,9 +1722,9 @@ tbody tr:hover td {
 .guardrail-grid .field { min-width: 180px; flex: 1; display: flex; flex-direction: column; gap: 4px; }
 .guardrail-grid textarea { min-height: 64px; resize: vertical; }
 .scope-line { display: block; color: var(--muted); }
-.decision-list, .audit-list { list-style: none; margin: 0; padding: 8px 12px; }
-.decision-list li, .audit-list li { padding: 9px 0; border-bottom: 1px solid var(--line); }
-.decision-list details { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.decision-list, .audit-list { list-style: none; margin: 0; padding: var(--space-2) var(--space-3); }
+.decision-list li, .audit-list li { padding: var(--space-3) 0; border-bottom: 1px solid var(--line); }
+.decision-list details { margin-top: var(--space-2); color: var(--muted); font-size: 12px; }
 .audit-list small { display: block; color: var(--muted); margin-top: 2px; }
 
 /* One-shot notification for a new escalation, not a status light -- the

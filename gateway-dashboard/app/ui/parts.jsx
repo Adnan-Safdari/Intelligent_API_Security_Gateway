@@ -65,9 +65,33 @@ export function ActionRow({ ips, current, busyKey, busy, onInstruct, label = "Ov
   );
 }
 
-export function CampaignCard({ campaign: c, onInstruct, busy, compact }) {
+export function CampaignCard({
+  campaign: c,
+  onInstruct,
+  busy,
+  compact,
+  // Selection is optional: the IP page renders these bare in a list and
+  // never passes them, so it looks exactly as it did before. Only the
+  // Campaigns grid, where each card can be checked for a bulk action, sets
+  // these -- which is also what puts the "selected" class in play, since
+  // .campaign-grid > .campaign.selected is the only place that class means
+  // anything visually.
+  selectable,
+  selected,
+  onToggleSelect,
+}) {
+  const classes = [c.status === "contained" ? "campaign contained" : "campaign"];
+  if (selected) classes.push("selected");
+
   return (
-    <li className={c.status === "contained" ? "campaign contained" : "campaign"}>
+    <li className={classes.join(" ")}>
+      {selectable ? (
+        <label className="select-row">
+          <input type="checkbox" checked={Boolean(selected)} onChange={onToggleSelect} />
+          select for bulk action
+        </label>
+      ) : null}
+
       <div className="campaign-head">
         <strong>
           #{c.id} {c.type}
