@@ -263,6 +263,38 @@ body {
   gap: 6px;
 }
 
+/* Restored here after Phase 1's dead-CSS cleanup deleted it by mistake: it
+   sat physically inside the account/sign-in section's line range in the old
+   file (a "header buttons" sub-section nested between .whoami and .account),
+   not adjacent to it, and the block delete swept it up along with the code
+   actually being removed. Pause/Resume and the theme toggle in chrome.jsx
+   both depend on this class; without it they were plain unstyled buttons. */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  min-height: 28px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elev);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  border-color: var(--accent);
+}
+
+.icon-btn.on {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* The status line moved out of the header when navigation moved in: it is
    about the system, not about where you are in the console. */
 .statusbar {
@@ -340,8 +372,10 @@ body {
 .segmented button:hover { color: var(--text); }
 
 .segmented button.on {
-  background: var(--bg-head);
-  color: var(--text);
+  /* --accent-soft exists for exactly this: a selected control that reads as
+     "chosen" through colour, not just a slightly different grey. */
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .segmented em {
@@ -867,6 +901,57 @@ tbody tr:hover td {
   text-align: center;
 }
 
+/* EmptyState's own look, distinct from .empty: an icon plus a short
+   present-tense statement, for the panels a redesign moved shell-command and
+   env-var setup text out of -- that kind of detail reads as an unfinished dev
+   tool in front of anyone this gets demoed to, and belongs in docs instead. */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-6) var(--space-3);
+  color: var(--muted);
+  text-align: center;
+}
+
+.empty-state svg {
+  opacity: 0.5;
+}
+
+.empty-state p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.empty-state small {
+  max-width: 40ch;
+}
+
+/* Loading's spinner. One rotation, indefinitely, until the component holding
+   it unmounts -- there is no "done" state for a spinner to animate to. */
+.loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.loading .spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loading .spin { animation: none; }
+}
+
 .leaflet-container {
   background: var(--map-bg);
   font-family: inherit;
@@ -1238,36 +1323,10 @@ tbody tr:hover td {
   letter-spacing: 0.05em;
 }
 
-.seg {
-  display: inline-flex;
-  border: 1px solid var(--line);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.seg button {
-  padding: 4px 9px;
-  border: 0;
-  border-right: 1px solid var(--line);
-  background: var(--bg-head);
-  color: var(--muted);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.seg button:last-child {
-  border-right: 0;
-}
-
-.seg button:hover {
-  color: var(--text);
-}
-
-.seg button.on {
-  background: var(--accent);
-  color: #fff;
-}
+/* .seg used to live here -- Events' own copy of .segmented, same idea, built
+   twice with slightly different markup (a <span> wrapper instead of a <div>,
+   a filled-accent "on" state instead of the soft one above). Both call sites
+   now share SegmentedControl (parts.jsx) and this one class. */
 
 .act.on {
   border-color: var(--accent);

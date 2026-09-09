@@ -5,47 +5,34 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLive } from "./store";
+import {
+  AdaptiveIcon,
+  AgentIcon,
+  CampaignsIcon,
+  EscalatedIcon,
+  EventsIcon,
+  HistoryIcon,
+  MoonIcon,
+  OverviewIcon,
+  PauseIcon,
+  PolicyCountIcon,
+  PolicyIcon,
+  RedisIcon,
+  ResumeIcon,
+  SettingsIcon,
+  SunIcon,
+} from "./icons";
 
-/* Inline so the icon cannot arrive after the header it sits in. */
-function SunIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-      <circle cx="12" cy="12" r="4.2" fill="currentColor" />
-      {[0, 45, 90, 135, 180, 225, 270, 315].map((deg) => (
-        <rect
-          key={deg}
-          x="11.2"
-          y="1.4"
-          width="1.6"
-          height="3.4"
-          rx="0.8"
-          fill="currentColor"
-          transform={`rotate(${deg} 12 12)`}
-        />
-      ))}
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
-      <path
-        d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2Z"
-        fill="currentColor"
-      />
-    </svg>
-  );
-}
-
+// One icon per section -- replaces the two hand-rolled sun/moon SVGs that
+// used to live here, and gives nav something other than text-only labels.
 const NAV = [
-  { href: "/", label: "Overview" },
-  { href: "/campaigns", label: "Campaigns" },
-  { href: "/policy", label: "Policy" },
-  { href: "/adaptive", label: "Adaptive" },
-  { href: "/events", label: "Events" },
-  { href: "/history", label: "History" },
-  { href: "/settings", label: "Settings" },
+  { href: "/", label: "Overview", icon: OverviewIcon },
+  { href: "/campaigns", label: "Campaigns", icon: CampaignsIcon },
+  { href: "/policy", label: "Policy", icon: PolicyIcon },
+  { href: "/adaptive", label: "Adaptive", icon: AdaptiveIcon },
+  { href: "/events", label: "Events", icon: EventsIcon },
+  { href: "/history", label: "History", icon: HistoryIcon },
+  { href: "/settings", label: "Settings", icon: SettingsIcon },
 ];
 
 export function Shell({ children }) {
@@ -90,12 +77,14 @@ export function Shell({ children }) {
           {NAV.map((item) => {
             const active =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={active ? "nav-link active" : "nav-link"}
               >
+                <Icon size={15} aria-hidden="true" />
                 {item.label}
                 {badges[item.href] ? <em>{badges[item.href]}</em> : null}
               </Link>
@@ -110,6 +99,7 @@ export function Shell({ children }) {
             onClick={() => setPaused((p) => !p)}
             title="Stop the 2.5s refresh while you read"
           >
+            {paused ? <ResumeIcon size={15} /> : <PauseIcon size={15} />}
             {paused ? "Resume" : "Pause"}
           </button>
 
@@ -120,18 +110,20 @@ export function Shell({ children }) {
             title={theme === "dark" ? "Switch to light" : "Switch to dark"}
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           >
-            {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+            {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
           </button>
 
         </div>
       </header>
 
       <div className="statusbar">
+        <RedisIcon size={13} aria-hidden="true" />
         <span className={`dot ${overview.redis ? "on" : "off"}`} />
         {overview.redis ? "Redis connected" : "Redis unavailable"}
         <span className="sep" />
         {/* Liveness, not activity. A quiet network and a dead agent look
             identical without this, and they mean opposite things. */}
+        <AgentIcon size={13} aria-hidden="true" />
         <span className={`dot ${beat.alive ? (beat.late ? "late" : "on") : "off"}`} />
         {beat.alive
           ? beat.late
@@ -146,13 +138,17 @@ export function Shell({ children }) {
           </>
         ) : null}
         <span className="sep" />
+        <PolicyCountIcon size={13} aria-hidden="true" />
         {policies.length > 0
           ? `${policies.length} policy ${policies.length === 1 ? "key" : "keys"} in force`
           : "Detect-only"}
         {escalations.length ? (
           <>
             <span className="sep" />
-            <span className="risk high">{escalations.length} escalated</span>
+            <span className="risk high">
+              <EscalatedIcon size={13} aria-hidden="true" />
+              {escalations.length} escalated
+            </span>
           </>
         ) : null}
         <span className="grow" />

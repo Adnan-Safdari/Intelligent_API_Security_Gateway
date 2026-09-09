@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
-import { CampaignCard, ExportMenu } from "@/app/ui/parts";
+import { CampaignCard, ExportMenu, SegmentedControl } from "@/app/ui/parts";
 import { CAMPAIGN_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -56,18 +56,15 @@ export default function CampaignsPage() {
       </PageHead>
 
       <div className="toolbar">
-        <div className="segmented">
-          {["all", "active", "contained"].map((key) => (
-            <button
-              key={key}
-              type="button"
-              className={status === key ? "on" : ""}
-              onClick={() => setStatus(key)}
-            >
-              {key} <em>{counts[key]}</em>
-            </button>
-          ))}
-        </div>
+        <SegmentedControl
+          value={status}
+          onChange={setStatus}
+          options={["all", "active", "contained"].map((key) => ({
+            value: key,
+            label: key,
+            count: counts[key],
+          }))}
+        />
 
         <label className="field">
           Sort
