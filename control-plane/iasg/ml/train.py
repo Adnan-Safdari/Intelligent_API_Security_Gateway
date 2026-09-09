@@ -11,7 +11,15 @@ from pathlib import Path
 from iasg.anomaly.spec import FEATURE_NAMES, FEATURE_SPEC_VERSION
 
 
-def train(dataset: str | Path, out: str | Path, *, version: str = "", false_positive_budget: float = 0.02) -> Path:
+def train(
+    dataset: str | Path,
+    out: str | Path,
+    *,
+    version: str = "",
+    false_positive_budget: float = 0.02,
+    allow_schema_mismatch: bool = False,
+    admitted_only: bool = False,
+) -> Path:
     try:
         import joblib
         import numpy as np
@@ -24,13 +32,45 @@ def train(dataset: str | Path, out: str | Path, *, version: str = "", false_posi
     features = _csv_by_id(dataset / "features.csv")
     metadata = _csv_by_id(dataset / "metadata.csv")
     splits = _csv_by_id(dataset / "splits.csv")
+    # The dataset is the authority on its own columns. Reading the schema from
+    # the frozen files rather than from the runtime constant is what lets an
+    # older dataset be trained on at all: the runtime's constant moves when a
+    # feature is added, and a dataset frozen before that still means what it
+    # said. Deployment safety does not rest here -- ModelScorer re-checks the
+    # stamped schema at load time and refuses a model the runtime cannot feed.
     header = tuple(next(csv.reader((dataset / "features.csv").open()))[1:])
-    if header != FEATURE_NAMES:
-        raise ValueError(f"feature header is {header!r}, expected schema {FEATURE_SPEC_VERSION}")
+    matches_runtime = header == FEATURE_NAMES
+    if not matches_runtime and not allow_schema_mismatch:
+        raise ValueError(
+            f"dataset feature header is {header!r}, but this runtime expects "
+            f"schema {FEATURE_SPEC_VERSION} {FEATURE_NAMES!r}. Pass "
+            f"allow_schema_mismatch=True (--allow-schema-mismatch) to train an "
+            f"advisory model on it anyway; the artifact will not be loadable "
+            f"by this runtime."
+        )
+    feature_names = header
+    schema_version = (
+        _json(dataset / "versions.json").get("spec_version")
+        or (FEATURE_SPEC_VERSION if matches_runtime else "unknown")
+    )
+
+    # The protocol's admission rule. A run-edge window is a half-observed
+    # minute: it carries roughly half the requests of a whole one and reads as
+    # quiet, which is the low-and-slow signature. Fitting normal on those
+    # teaches the model that a truncated minute is ordinary, and -- measured on
+    # v2 -- drags the validation threshold below every attack's score range.
+    quality = _csv_by_id(dataset / "quality.csv") if admitted_only else {}
+
+    def admitted(row_id: str) -> bool:
+        if not admitted_only:
+            return True
+        return quality.get(row_id, {}).get("interval_fully_observed") == "True"
 
     train_ids = [
         row_id for row_id, meta in metadata.items()
-        if splits.get(row_id, {}).get("split") == "train" and int(meta.get("label") or 0) == 0
+        if splits.get(row_id, {}).get("split") == "train"
+        and int(meta.get("label") or 0) == 0
+        and admitted(row_id)
     ]
     if len(train_ids) < 3:
         raise ValueError("at least three independently captured clean training windows are required")
@@ -38,14 +78,14 @@ def train(dataset: str | Path, out: str | Path, *, version: str = "", false_posi
         name: float(np.median([
             float(features[row_id][name]) for row_id in train_ids if features[row_id].get(name) not in (None, "")
         ] or [0.0]))
-        for name in FEATURE_NAMES
+        for name in feature_names
     }
 
     def vector(row_id):
         return [
             medians[name] if features[row_id].get(name) in (None, "")
             else float(features[row_id][name])
-            for name in FEATURE_NAMES
+            for name in feature_names
         ]
 
     x_train = np.asarray([vector(row_id) for row_id in train_ids], dtype=float)
@@ -55,8 +95,10 @@ def train(dataset: str | Path, out: str | Path, *, version: str = "", false_posi
     anomalous = float(np.percentile(train_scores, 1))
     normal = float(np.percentile(train_scores, 99))
 
-    val_ids = [row_id for row_id in features if splits.get(row_id, {}).get("split") == "val"]
-    test_ids = [row_id for row_id in features if splits.get(row_id, {}).get("split") == "test"]
+    val_ids = [row_id for row_id in features
+               if splits.get(row_id, {}).get("split") == "val" and admitted(row_id)]
+    test_ids = [row_id for row_id in features
+                if splits.get(row_id, {}).get("split") == "test" and admitted(row_id)]
     threshold = _threshold(model, vector, val_ids, metadata, false_positive_budget, np)
     evaluation = {
         "validation": _evaluate(model, vector, val_ids, metadata, threshold),
@@ -70,8 +112,13 @@ def train(dataset: str | Path, out: str | Path, *, version: str = "", false_posi
     metadata_out = {
         "model_version": model_version,
         "trained_at": trained_at.isoformat(),
-        "feature_schema_version": FEATURE_SPEC_VERSION,
-        "feature_names": list(FEATURE_NAMES),
+        # Stamped from the dataset, not from the runtime. A model fitted on a
+        # v1 dataset says v1 here, so ModelScorer refuses to load it into a v2
+        # runtime instead of feeding it a column it was never fitted on.
+        "feature_schema_version": schema_version,
+        "feature_names": list(feature_names),
+        "runtime_schema_version": FEATURE_SPEC_VERSION,
+        "runtime_loadable": matches_runtime,
         "training_run_ids": dataset_manifest.get("runs", []),
         # An absolute path can itself contain a person's account name. The
         # run IDs identify the source while this keeps the artifact portable.
@@ -79,6 +126,7 @@ def train(dataset: str | Path, out: str | Path, *, version: str = "", false_posi
         "library": "scikit-learn IsolationForest",
         "library_version": sklearn.__version__,
         "missing_value_handling": "training-partition median by feature",
+        "admission_rule": "interval_fully_observed" if admitted_only else "none",
         "score_scale": {"anomalous": anomalous, "normal": normal},
         "evaluation": evaluation,
     }
@@ -131,9 +179,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True)
     parser.add_argument("--version", default="")
     parser.add_argument("--false-positive-budget", type=float, default=0.02)
+    parser.add_argument(
+        "--admitted-only", action="store_true",
+        help="apply the protocol's admission rule: use only fully observed "
+             "windows, dropping run-edge (half-observed) minutes.",
+    )
+    parser.add_argument(
+        "--allow-schema-mismatch", action="store_true",
+        help="train on a dataset whose feature schema differs from this "
+             "runtime's. The artifact records the dataset's schema and will "
+             "not be loadable here until a dataset matching the runtime exists.",
+    )
     args = parser.parse_args(argv)
     output = train(args.dataset, args.out, version=args.version,
-                   false_positive_budget=args.false_positive_budget)
+                   false_positive_budget=args.false_positive_budget,
+                   allow_schema_mismatch=args.allow_schema_mismatch,
+                   admitted_only=args.admitted_only)
     print(f"[train] wrote model and metadata to {output}")
     return 0
 

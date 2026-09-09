@@ -1,0 +1,294 @@
+{
+  "admission_rule": "none",
+  "budget": 0.01,
+  "coverage": {
+    "test": {
+      "all": {
+        "abstained": 273,
+        "coverage": 0.933202838267678,
+        "rows": 4087,
+        "scored": 3814
+      },
+      "attack": {
+        "abstained": 32,
+        "coverage": 0.973920130399348,
+        "rows": 1227,
+        "scored": 1195
+      },
+      "benign": {
+        "abstained": 241,
+        "coverage": 0.9157342657342658,
+        "rows": 2860,
+        "scored": 2619
+      }
+    },
+    "train": {
+      "all": {
+        "abstained": 702,
+        "coverage": 0.9239930705933305,
+        "rows": 9236,
+        "scored": 8534
+      },
+      "attack": {
+        "abstained": 0,
+        "coverage": null,
+        "rows": 0,
+        "scored": 0
+      },
+      "benign": {
+        "abstained": 702,
+        "coverage": 0.9239930705933305,
+        "rows": 9236,
+        "scored": 8534
+      }
+    },
+    "val": {
+      "all": {
+        "abstained": 226,
+        "coverage": 0.9410998175658066,
+        "rows": 3837,
+        "scored": 3611
+      },
+      "attack": {
+        "abstained": 2,
+        "coverage": 0.9967532467532467,
+        "rows": 616,
+        "scored": 614
+      },
+      "benign": {
+        "abstained": 224,
+        "coverage": 0.9304563800062092,
+        "rows": 3221,
+        "scored": 2997
+      }
+    }
+  },
+  "dataset": "v2",
+  "feature_schema_version": "v1",
+  "gate_min_rows": 100,
+  "model_version": "iforest-v2-spec1",
+  "personas": {
+    "browser": {
+      "abstained": 10,
+      "ci95": [
+        0.0,
+        0.011569397511906214
+      ],
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "gated": true,
+      "rows": 327,
+      "scored": 317
+    },
+    "dead_link_visitor": {
+      "abstained": 18,
+      "ci95": [
+        0.0,
+        0.008145973867484715
+      ],
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "gated": true,
+      "rows": 469,
+      "scored": 451
+    },
+    "forgetful_user": {
+      "abstained": 14,
+      "ci95": [
+        0.0050137239846414945,
+        0.03553547468220146
+      ],
+      "false_positive_rate": 0.015384615384615385,
+      "false_positives": 5,
+      "gated": true,
+      "rows": 339,
+      "scored": 325
+    },
+    "idle": {
+      "abstained": 88,
+      "ci95": [
+        null,
+        null
+      ],
+      "false_positive_rate": null,
+      "false_positives": 0,
+      "gated": false,
+      "rows": 88,
+      "scored": 0
+    },
+    "impatient": {
+      "abstained": 16,
+      "ci95": [
+        0.0,
+        0.008021972809557413
+      ],
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "gated": true,
+      "rows": 474,
+      "scored": 458
+    },
+    "mobile_poller": {
+      "abstained": 21,
+      "ci95": [
+        0.0,
+        0.010886537859595345
+      ],
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "gated": true,
+      "rows": 358,
+      "scored": 337
+    },
+    "one_shot": {
+      "abstained": 50,
+      "ci95": [
+        null,
+        null
+      ],
+      "false_positive_rate": null,
+      "false_positives": 0,
+      "gated": false,
+      "rows": 50,
+      "scored": 0
+    },
+    "search_heavy": {
+      "abstained": 10,
+      "ci95": [
+        0.0,
+        0.010759526030573452
+      ],
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "gated": true,
+      "rows": 351,
+      "scored": 341
+    },
+    "shopper": {
+      "abstained": 14,
+      "ci95": [
+        0.0,
+        0.009414072798470454
+      ],
+      "false_positive_rate": 0.0,
+      "false_positives": 0,
+      "gated": true,
+      "rows": 404,
+      "scored": 390
+    }
+  },
+  "pooled": {
+    "attack": {
+      "abstained": 32,
+      "conditional_recall": 0.021757322175732216,
+      "coverage": 0.973920130399348,
+      "detected": 26,
+      "operational_recall": 0.021189894050529748,
+      "rows": 1227,
+      "scored": 1195
+    },
+    "benign": {
+      "abstained": 241,
+      "ci95": [
+        0.0006201693622114767,
+        0.004449592866470218
+      ],
+      "false_positive_rate": 0.0019091256204658267,
+      "false_positives": 5,
+      "gated": true,
+      "rows": 2860,
+      "scored": 2619
+    }
+  },
+  "runtime_loadable": false,
+  "scenarios": {
+    "api_flood": {
+      "abstained": 0,
+      "conditional_recall": 0.0,
+      "coverage": 1.0,
+      "detected": 0,
+      "operational_recall": 0.0,
+      "rows": 99,
+      "scored": 99
+    },
+    "credential_stuffing": {
+      "abstained": 1,
+      "conditional_recall": 0.1,
+      "coverage": 0.9917355371900827,
+      "detected": 12,
+      "operational_recall": 0.09917355371900827,
+      "rows": 121,
+      "scored": 120
+    },
+    "enumeration": {
+      "abstained": 0,
+      "conditional_recall": 0.0,
+      "coverage": 1.0,
+      "detected": 0,
+      "operational_recall": 0.0,
+      "rows": 110,
+      "scored": 110
+    },
+    "low_and_slow_enumeration": {
+      "abstained": 16,
+      "conditional_recall": 0.0,
+      "coverage": 0.9386973180076629,
+      "detected": 0,
+      "operational_recall": 0.0,
+      "rows": 261,
+      "scored": 245
+    },
+    "path_traversal": {
+      "abstained": 1,
+      "conditional_recall": 0.0,
+      "coverage": 0.9946524064171123,
+      "detected": 0,
+      "operational_recall": 0.0,
+      "rows": 187,
+      "scored": 186
+    },
+    "slow_brute_force": {
+      "abstained": 12,
+      "conditional_recall": 0.056,
+      "coverage": 0.9541984732824428,
+      "detected": 14,
+      "operational_recall": 0.05343511450381679,
+      "rows": 262,
+      "scored": 250
+    },
+    "sqli_probe": {
+      "abstained": 2,
+      "conditional_recall": 0.0,
+      "coverage": 0.9893048128342246,
+      "detected": 0,
+      "operational_recall": 0.0,
+      "rows": 187,
+      "scored": 185
+    }
+  },
+  "threshold_score_samples": -0.7527929408479305,
+  "threshold_selection": {
+    "binding_constraint": "forgetful_user",
+    "gated_personas": [
+      "browser",
+      "dead_link_visitor",
+      "forgetful_user",
+      "impatient",
+      "mobile_poller",
+      "search_heavy",
+      "shopper"
+    ],
+    "limits": {
+      "browser": -0.5924141737909036,
+      "dead_link_visitor": -0.5647959151785582,
+      "forgetful_user": -0.7527929408479305,
+      "impatient": -0.612382793459837,
+      "mobile_poller": -0.4934925791450103,
+      "pooled": -0.6999489333305049,
+      "search_heavy": -0.56239754862123,
+      "shopper": -0.6450310558545245
+    },
+    "ungated_personas": [],
+    "validation_benign_rows": 2997
+  }
+}
