@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { PageHead, ResetControl } from "@/app/ui/chrome";
+import { Field } from "@/app/ui/parts";
 import { useLive } from "@/app/ui/store";
 
 /**
@@ -203,19 +204,19 @@ export default function SettingsPage() {
           title="API flooding"
           note="Counts requests per IP in a one-minute window."
         >
-          <Toggle
+          <Field.Toggle
             label="Detector on"
             checked={draft.rate_limit.enabled}
             onChange={(v) => edit("rate_limit", "enabled", v)}
           />
-          <Num
+          <Field.Number
             label="Requests per minute"
             value={draft.rate_limit.requests_per_minute}
             min={1}
             onChange={(v) => edit("rate_limit", "requests_per_minute", v)}
             hint="The count that has to be exceeded before the signal fires."
           />
-          <Toggle
+          <Field.Toggle
             label="Refuse traffic over this rate"
             checked={draft.rate_limit.enforce}
             onChange={(v) => edit("rate_limit", "enforce", v)}
@@ -229,12 +230,12 @@ export default function SettingsPage() {
         </Card>
 
         <Card title="SQL injection" note="Matches signatures in the path, query and body.">
-          <Toggle
+          <Field.Toggle
             label="Detector on"
             checked={draft.attack_detection.enabled}
             onChange={(v) => edit("attack_detection", "enabled", v)}
           />
-          <List
+          <Field.List
             label="Signatures"
             value={draft.attack_detection.sql_patterns || []}
             onChange={(v) => edit("attack_detection", "sql_patterns", v)}
@@ -243,24 +244,24 @@ export default function SettingsPage() {
         </Card>
 
         <Card title="Brute force" note="Counts failed logins per IP on the login paths.">
-          <Toggle
+          <Field.Toggle
             label="Detector on"
             checked={draft.brute_force.enabled}
             onChange={(v) => edit("brute_force", "enabled", v)}
           />
-          <Num
+          <Field.Number
             label="Max failures"
             value={draft.brute_force.max_failures}
             min={1}
             onChange={(v) => edit("brute_force", "max_failures", v)}
           />
-          <Text
+          <Field.Text
             label="Window"
             value={draft.brute_force.window}
             onChange={(v) => edit("brute_force", "window", v)}
             hint='How far back failures are counted, like "60s" or "5m".'
           />
-          <List
+          <Field.List
             label="Login paths"
             value={draft.brute_force.login_paths || []}
             onChange={(v) => edit("brute_force", "login_paths", v)}
@@ -272,17 +273,17 @@ export default function SettingsPage() {
           title="Path traversal and enumeration"
           note="Matches traversal signatures in the path and query, and known-sensitive paths."
         >
-          <Toggle
+          <Field.Toggle
             label="Detector on"
             checked={draft.enumeration_path_traversal.enabled}
             onChange={(v) => edit("enumeration_path_traversal", "enabled", v)}
           />
-          <List
+          <Field.List
             label="Traversal signatures"
             value={draft.enumeration_path_traversal.traversal_patterns || []}
             onChange={(v) => edit("enumeration_path_traversal", "traversal_patterns", v)}
           />
-          <List
+          <Field.List
             label="Enumeration paths"
             value={draft.enumeration_path_traversal.enumeration_patterns || []}
             onChange={(v) => edit("enumeration_path_traversal", "enumeration_patterns", v)}
@@ -293,19 +294,19 @@ export default function SettingsPage() {
           title="Known bad addresses"
           note="The only detector that answers on a first request: it knows the address rather than watching what it does. The feed itself is set in config.yaml — what moves here is whether it counts and how loudly."
         >
-          <Toggle
+          <Field.Toggle
             label="Detector on"
             checked={draft.ip_reputation.enabled}
             onChange={(v) => edit("ip_reputation", "enabled", v)}
           />
-          <Num
+          <Field.Number
             label="Score a listed address carries"
             value={draft.ip_reputation.score}
             min={0}
             max={100}
             onChange={(v) => edit("ip_reputation", "score", v)}
           />
-          <Text
+          <Field.Text
             label="Quiet period after firing"
             value={draft.ip_reputation.cooldown}
             onChange={(v) => edit("ip_reputation", "cooldown", v)}
@@ -318,7 +319,7 @@ export default function SettingsPage() {
           note="The gateway's own blocking, decided per request in nanoseconds. Naming detectors is what arms it — on with nothing named blocks nothing."
           wide
         >
-          <Toggle
+          <Field.Toggle
             label="Blocking on"
             checked={draft.block.enabled}
             onChange={(v) => edit("block", "enabled", v)}
@@ -344,7 +345,7 @@ export default function SettingsPage() {
             </small>
           </div>
 
-          <Num
+          <Field.Number
             label="Minimum score"
             value={draft.block.min_score}
             min={0}
@@ -352,13 +353,13 @@ export default function SettingsPage() {
             onChange={(v) => edit("block", "min_score", v)}
             hint="A floor on top of the detector's own threshold, 0–100. Raise it to make blocking less trigger-happy."
           />
-          <Text
+          <Field.Text
             label="Block duration"
             value={draft.block.duration}
             onChange={(v) => edit("block", "duration", v)}
             hint='How long a block lasts, like "60s". Blocks already running keep the deadline they were given.'
           />
-          <List
+          <Field.List
             label="Never block these"
             value={draft.block.exempt_cidrs || []}
             onChange={(v) => edit("block", "exempt_cidrs", v)}
@@ -370,17 +371,17 @@ export default function SettingsPage() {
           title="Control plane decisions"
           note="Whether the policy keys the agent writes are enforced on live traffic."
         >
-          <Toggle
+          <Field.Toggle
             label="Enforce agent decisions"
             checked={draft.policy.enabled}
             onChange={(v) => edit("policy", "enabled", v)}
           />
-          <Toggle
+          <Field.Toggle
             label="Throttling on"
             checked={draft.throttle.enabled}
             onChange={(v) => edit("throttle", "enabled", v)}
           />
-          <Num
+          <Field.Number
             label="Throttle delay (ms)"
             value={draft.throttle.delay_ms}
             min={0}
@@ -442,63 +443,5 @@ function Card({ title, note, children, wide }) {
       {note ? <p className="card-note">{note}</p> : null}
       <div className="settings-fields">{children}</div>
     </article>
-  );
-}
-
-function Toggle({ label, checked, onChange }) {
-  return (
-    <label className="check toggle">
-      <input type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
-  );
-}
-
-function Num({ label, value, onChange, min, max, hint }) {
-  return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      <input
-        type="number"
-        value={value ?? ""}
-        min={min}
-        max={max}
-        onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
-      />
-      {hint ? <small>{hint}</small> : null}
-    </label>
-  );
-}
-
-function Text({ label, value, onChange, hint }) {
-  return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      <input type="text" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
-      {hint ? <small>{hint}</small> : null}
-    </label>
-  );
-}
-
-// Lists are edited as lines rather than as chips: these are patterns and CIDRs
-// that get pasted in from somewhere else, and a textarea takes a paste whole.
-function List({ label, value, onChange, hint }) {
-  return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      <textarea
-        rows={Math.min(Math.max(value.length + 1, 3), 10)}
-        value={value.join("\n")}
-        onChange={(e) =>
-          onChange(
-            e.target.value
-              .split("\n")
-              .map((line) => line.trim())
-              .filter(Boolean),
-          )
-        }
-      />
-      {hint ? <small>{hint}</small> : null}
-    </label>
   );
 }
