@@ -224,6 +224,10 @@ func TestLowAndSlowDetectorLimitsAreValidated(t *testing.T) {
 	for name, body := range map[string]string{
 		"invalid login threshold": `brute_force:
     max_failures: -1`,
+		"unbounded brute-force clients": `brute_force:
+    max_clients: 100001`,
+		"unbounded brute-force targets": `brute_force:
+    max_targets_per_client: 10001`,
 		"unbounded scanner clients": `unknown_route_scanning:
     max_clients: 100001`,
 		"scanner threshold exceeds retained paths": `unknown_route_scanning:

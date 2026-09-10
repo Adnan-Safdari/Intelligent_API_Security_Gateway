@@ -1,0 +1,18 @@
+{
+  "files": {
+    "evaluation.md": "5b4e63eea4230016c029ff6ae50d61c71655d182ca890a65d1a06e635cde890f",
+    "features.csv": "4963ee42e201cca986d426cee9dbb0265361b30d32f4bf7e5563f5ad2f5778b9",
+    "held_out_scenarios.txt": "0c40e2a84d3b05b2a7e17c2b387fd05462e4db325e40e17c1cfe57ef98c67d7e",
+    "medians.json": "b1cf770415566119bb8fab94e34bb38136d56f6e6163f30d31e82e6b2b48ec0f",
+    "metadata.csv": "25c9973e83cd471bace7d174c4acaa8d13a9d83262df4f68da4d2e9212aa66b2",
+    "quality.csv": "659631c30ed2e7f317a1d85e07cceb0ea78df684aa76fe07b728682caa2faeb5",
+    "rows.jsonl": "59baf4365e5790812ede6f300f742bbf46d2ec27ec0e1c4e0ebeddea3d21f9fc",
+    "splits.csv": "73f218915dd697b4fafd38ba28e23cb78d788a98474004a15ee40b6d606d2bc5",
+    "versions.json": "9466941feedaff88ffd43be39b0357f2c97e43059b80bd9807801ed1df20a953"
+  },
+  "rows": 721,
+  "runs": [
+    "part5-fresh"
+  ],
+  "spec_version": "v3"
+}

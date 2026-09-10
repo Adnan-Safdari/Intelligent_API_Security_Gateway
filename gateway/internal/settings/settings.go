@@ -73,9 +73,11 @@ type AttackDetection struct {
 }
 
 type BruteForce struct {
-	Enabled     bool   `json:"enabled"`
-	MaxFailures int    `json:"max_failures"`
-	Window      string `json:"window"`
+	Enabled             bool   `json:"enabled"`
+	MaxFailures         int    `json:"max_failures"`
+	Window              string `json:"window"`
+	MaxClients          int    `json:"max_clients"`
+	MaxTargetsPerClient int    `json:"max_targets_per_client"`
 }
 
 type UnknownRouteScan struct {
@@ -143,9 +145,11 @@ func FromConfig(c config.EnforcementConfig) Wire {
 			SQLPatterns: c.AttackDetection.SQLPatterns,
 		},
 		BruteForce: BruteForce{
-			Enabled:     c.BruteForce.Enabled,
-			MaxFailures: c.BruteForce.MaxFailures,
-			Window:      durationString(c.BruteForce.Window),
+			Enabled:             c.BruteForce.Enabled,
+			MaxFailures:         c.BruteForce.MaxFailures,
+			Window:              durationString(c.BruteForce.Window),
+			MaxClients:          c.BruteForce.MaxClients,
+			MaxTargetsPerClient: c.BruteForce.MaxTargetsPerClient,
 		},
 		UnknownRouteScan: UnknownRouteScan{
 			Enabled:           c.UnknownRouteScan.Enabled,
@@ -199,6 +203,8 @@ func (w Wire) ToConfig(base config.EnforcementConfig) (config.EnforcementConfig,
 	out.BruteForce.Enabled = w.BruteForce.Enabled
 	out.BruteForce.MaxFailures = w.BruteForce.MaxFailures
 	out.BruteForce.Window = window
+	out.BruteForce.MaxClients = w.BruteForce.MaxClients
+	out.BruteForce.MaxTargetsPerClient = w.BruteForce.MaxTargetsPerClient
 
 	scanWindow, err := parseDuration(w.UnknownRouteScan.Window, "unknown_route_scanning.window")
 	if err != nil {

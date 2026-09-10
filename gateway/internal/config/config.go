@@ -191,9 +191,11 @@ type PolicyConfig struct {
 }
 
 type BruteForceConfig struct {
-	Enabled     bool          `yaml:"enabled"`
-	MaxFailures int           `yaml:"max_failures"` // consecutive invalid credentials before the signal fires
-	Window      time.Duration `yaml:"window"`       // maximum age of a consecutive-failure streak
+	Enabled             bool          `yaml:"enabled"`
+	MaxFailures         int           `yaml:"max_failures"` // consecutive invalid credentials before the signal fires
+	Window              time.Duration `yaml:"window"`       // maximum age of a consecutive-failure streak
+	MaxClients          int           `yaml:"max_clients"`
+	MaxTargetsPerClient int           `yaml:"max_targets_per_client"`
 }
 
 // UnknownRouteScanConfig bounds the detector that notices a client walking
@@ -413,8 +415,14 @@ func ValidatedBruteForce(cfg BruteForceConfig) (BruteForceConfig, error) {
 	if cfg.Window == 0 {
 		cfg.Window = time.Minute
 	}
-	if cfg.MaxFailures < 1 || cfg.MaxFailures > 1_000 || cfg.Window < time.Second || cfg.Window > 24*time.Hour {
-		return BruteForceConfig{}, fmt.Errorf("brute_force.max_failures must be 1..1000 and window must be 1s..24h")
+	if cfg.MaxClients == 0 {
+		cfg.MaxClients = 10_000
+	}
+	if cfg.MaxTargetsPerClient == 0 {
+		cfg.MaxTargetsPerClient = 64
+	}
+	if cfg.MaxFailures < 1 || cfg.MaxFailures > 1_000 || cfg.MaxClients < 1 || cfg.MaxClients > 100_000 || cfg.MaxTargetsPerClient < 1 || cfg.MaxTargetsPerClient > 10_000 || cfg.Window < time.Second || cfg.Window > 24*time.Hour {
+		return BruteForceConfig{}, fmt.Errorf("brute_force requires max_failures 1..1000, max_clients 1..100000, max_targets_per_client 1..10000, and window 1s..24h")
 	}
 	return cfg, nil
 }
