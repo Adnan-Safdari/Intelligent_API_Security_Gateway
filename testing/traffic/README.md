@@ -17,7 +17,21 @@ RUN_ID=run1 docker compose -f infra/docker-compose.yml --profile collect run --r
 
 cd control-plane
 PYTHONPATH=. .venv/bin/python -m iasg.dataset.build --runs ../datasets/raw/run1 --out ../datasets/v1
+# Supply an artifact trained before this run. If no deployed artifact exists,
+# reproduce one from a separate frozen historical dataset -- never this run.
+PYTHONPATH=. .venv/bin/python -m iasg.ml.train \
+  --dataset ../datasets/v4 --out ../models/fresh-validation-v4 \
+  --version fresh-validation-v4
+PYTHONPATH=. .venv/bin/python -m iasg.ml.validate \
+  --dataset ../datasets/v1 --artifact ../models/fresh-validation-v4 \
+  --out ../datasets/v1/fresh-validation.json
 ```
+
+`iasg.ml.validate` compares deterministic detector evidence, the advisory
+Isolation Forest at the artifact's already-fixed validation threshold, and
+their combined visibility. It also reports only attack-minutes that the gateway
+neither detected nor already refused, so a policy/reflex refusal is never
+misreported as a detector miss. It does not train or tune a model.
 
 It runs **inside** the compose network deliberately. Docker Desktop rewrites a
 host request's source address, so from the host every persona collapses into one

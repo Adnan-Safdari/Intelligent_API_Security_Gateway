@@ -11,7 +11,7 @@ func base() config.EnforcementConfig {
 	return config.EnforcementConfig{
 		RateLimit: config.RateLimitConfig{Enabled: true, RequestsPerMinute: 100, Burst: 20},
 		BruteForce: config.BruteForceConfig{
-			Enabled: true, MaxFailures: 5, Window: time.Minute,
+			Enabled: true, MaxFailures: 5, Window: time.Minute, MaxClients: 10_000, MaxTargetsPerClient: 64,
 		},
 		UnknownRouteScan: config.UnknownRouteScanConfig{
 			Enabled: true, DistinctPaths: 8, Window: 5 * time.Minute, MaxClients: 10_000, MaxPathsPerClient: 64,
@@ -37,8 +37,8 @@ func TestRoundTripKeepsValues(t *testing.T) {
 	if out.RateLimit.RequestsPerMinute != 100 {
 		t.Errorf("requests_per_minute = %d, want 100", out.RateLimit.RequestsPerMinute)
 	}
-	if out.BruteForce.Window != time.Minute {
-		t.Errorf("window = %s, want 1m", out.BruteForce.Window)
+	if out.BruteForce.Window != time.Minute || out.BruteForce.MaxClients != 10_000 || out.BruteForce.MaxTargetsPerClient != 64 {
+		t.Errorf("brute-force settings = %+v, want 1m/10000/64", out.BruteForce)
 	}
 	if out.UnknownRouteScan.DistinctPaths != 8 || out.UnknownRouteScan.Window != 5*time.Minute {
 		t.Errorf("unknown route scanning settings = %+v", out.UnknownRouteScan)

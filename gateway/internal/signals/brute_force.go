@@ -13,9 +13,11 @@ import (
 )
 
 type bruteTunables struct {
-	enabled     bool
-	maxFailures int
-	window      time.Duration
+	enabled             bool
+	maxFailures         int
+	window              time.Duration
+	maxClients          int
+	maxTargetsPerClient int
 }
 
 type loginOutcomeRule struct {
@@ -86,7 +88,34 @@ func (d *BruteForceDetector) Apply(cfg config.BruteForceConfig) {
 	if cfg.Window <= 0 {
 		cfg.Window = time.Minute
 	}
-	d.tun.Store(&bruteTunables{enabled: cfg.Enabled, maxFailures: cfg.MaxFailures, window: cfg.Window})
+	if cfg.MaxClients <= 0 {
+		cfg.MaxClients = 10_000
+	}
+	if cfg.MaxTargetsPerClient <= 0 {
+		cfg.MaxTargetsPerClient = 64
+	}
+	tun := &bruteTunables{
+		enabled:             cfg.Enabled,
+		maxFailures:         cfg.MaxFailures,
+		window:              cfg.Window,
+		maxClients:          cfg.MaxClients,
+		maxTargetsPerClient: cfg.MaxTargetsPerClient,
+	}
+	d.tun.Store(tun)
+
+	// A live settings change must not leave the old, larger allocation behind.
+	// Losing the stalest streak is safer than letting an account spray retain
+	// arbitrary client and target strings until its original expiry.
+	d.mu.Lock()
+	for len(d.clients) > tun.maxClients {
+		dropOldestBruteForceClient(d.clients)
+	}
+	for _, byTarget := range d.clients {
+		for len(byTarget) > tun.maxTargetsPerClient {
+			dropOldestBruteForceTarget(byTarget)
+		}
+	}
+	d.mu.Unlock()
 }
 
 func (d *BruteForceDetector) Middleware(next http.Handler) http.Handler {
@@ -129,11 +158,20 @@ func (d *BruteForceDetector) recordFailure(ip, route, target string, now time.Ti
 	d.mu.Lock()
 	byTarget := d.clients[ip]
 	if byTarget == nil {
+		if len(d.clients) >= tun.maxClients {
+			// Address spraying must not turn failed logins into an unbounded map.
+			dropOldestBruteForceClient(d.clients)
+		}
 		byTarget = make(map[string]*loginStreak)
 		d.clients[ip] = byTarget
 	}
 	streak := byTarget[key]
 	if streak == nil || now.Sub(streak.lastFailure) > tun.window {
+		if streak == nil && len(byTarget) >= tun.maxTargetsPerClient {
+			// Account names are attacker input too. Retain recency, not every
+			// guessed identity, so one client cannot fill process memory.
+			dropOldestBruteForceTarget(byTarget)
+		}
 		streak = &loginStreak{route: route, target: target}
 		byTarget[key] = streak
 	}
@@ -170,6 +208,34 @@ func streakKey(route, target string) string {
 		target = "<unknown>"
 	}
 	return route + "\x00" + target
+}
+
+func dropOldestBruteForceClient(clients map[string]map[string]*loginStreak) {
+	var oldestIP string
+	var oldest time.Time
+	for ip, byTarget := range clients {
+		for _, streak := range byTarget {
+			if oldestIP == "" || streak.lastSeen.Before(oldest) {
+				oldestIP, oldest = ip, streak.lastSeen
+			}
+		}
+	}
+	if oldestIP != "" {
+		delete(clients, oldestIP)
+	}
+}
+
+func dropOldestBruteForceTarget(byTarget map[string]*loginStreak) {
+	var oldestKey string
+	var oldest time.Time
+	for key, streak := range byTarget {
+		if oldestKey == "" || streak.lastSeen.Before(oldest) {
+			oldestKey, oldest = key, streak.lastSeen
+		}
+	}
+	if oldestKey != "" {
+		delete(byTarget, oldestKey)
+	}
 }
 
 func (d *BruteForceDetector) Metrics(ip string) Evidence {

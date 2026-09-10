@@ -168,6 +168,8 @@ enforcement:
     enabled: true
     max_failures: 5 # consecutive invalid credentials for one client + target
     window: 60s     # a gap longer than this starts a new streak
+    max_clients: 10000
+    max_targets_per_client: 64
 
   # Multiple distinct raw paths classified as <unmatched>, never a count of
   # backend 404 responses. The retained state is bounded on both dimensions.

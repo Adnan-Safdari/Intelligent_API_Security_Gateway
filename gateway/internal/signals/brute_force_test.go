@@ -21,8 +21,23 @@ func loginMatch(method, path string) string {
 
 func newBruteForceTestDetector() *BruteForceDetector {
 	return NewBruteForceDetector(config.BruteForceConfig{
-		Enabled: true, MaxFailures: 5, Window: time.Minute,
+		Enabled: true, MaxFailures: 5, Window: time.Minute, MaxClients: 10, MaxTargetsPerClient: 10,
 	}, loginOutcomes, loginMatch)
+}
+
+func TestBruteForceConsecutiveFailuresEmitEvidence(t *testing.T) {
+	const ip = "203.0.113.44"
+	detector := newBruteForceTestDetector()
+	handler := detector.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+
+	for i := 0; i < 5; i++ {
+		probe(handler, http.MethodPost, "/api/login", ip, `{"username":"alice"}`)
+	}
+	if ev := detector.Metrics(ip); !ev.ThresholdCross || ev.AttackType != SignalBruteForce || ev.Int("consecutiveFailures") != 5 {
+		t.Fatalf("five invalid credentials did not emit brute-force evidence: %+v", ev)
+	}
 }
 
 func TestBruteForceConfiguredSuccessResetsOnlyItsTarget(t *testing.T) {
@@ -79,6 +94,27 @@ func TestBruteForceUsesOnlyConfiguredBackendOutcomes(t *testing.T) {
 	}
 }
 
+func TestBruteForceGatewayRefusalDoesNotContaminateStreak(t *testing.T) {
+	const ip = "203.0.113.49"
+	detector := newBruteForceTestDetector()
+	status := http.StatusUnauthorized
+	handler := detector.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(status)
+	}))
+
+	for i := 0; i < 4; i++ {
+		probe(handler, http.MethodPost, "/api/login", ip, `{"username":"alice"}`)
+	}
+	// A policy/reflex refusal did not reach the backend, so it is not a
+	// configured credential outcome and cannot turn four bad passwords into
+	// a five-failure streak.
+	status = http.StatusForbidden
+	probe(handler, http.MethodPost, "/api/login", ip, `{"username":"alice"}`)
+	if ev := detector.Metrics(ip); ev.ThresholdCross || ev.Int("consecutiveFailures") != 4 {
+		t.Fatalf("gateway refusal changed the credential streak: %+v", ev)
+	}
+}
+
 func TestBruteForceExpiredStreakFallsOutOfWindow(t *testing.T) {
 	const ip = "203.0.113.47"
 	detector := newBruteForceTestDetector()
@@ -88,6 +124,39 @@ func TestBruteForceExpiredStreakFallsOutOfWindow(t *testing.T) {
 	ev := detector.Metrics(ip)
 	if ev.Int("consecutiveFailures") != 0 || ev.ThresholdCross || ev.Score != 0 {
 		t.Fatalf("expired streak remained active: %+v", ev)
+	}
+}
+
+func TestBruteForceStateIsBoundedAndCleanedUp(t *testing.T) {
+	detector := NewBruteForceDetector(config.BruteForceConfig{
+		Enabled: true, MaxFailures: 5, Window: time.Minute, MaxClients: 2, MaxTargetsPerClient: 2,
+	}, loginOutcomes, loginMatch)
+	tun := detector.settings()
+	now := time.Now()
+
+	for _, target := range []string{"alice", "bob", "carol"} {
+		detector.recordFailure("203.0.113.50", "/api/login", target, now.Add(time.Duration(len(target))*time.Millisecond), tun)
+	}
+	detector.recordFailure("203.0.113.51", "/api/login", "alice", now, tun)
+	detector.recordFailure("203.0.113.52", "/api/login", "alice", now.Add(time.Second), tun)
+
+	detector.mu.Lock()
+	clients := len(detector.clients)
+	targets := len(detector.clients["203.0.113.50"])
+	detector.mu.Unlock()
+	if clients != 2 || targets != 2 {
+		t.Fatalf("brute-force state is not bounded: clients=%d targets=%d", clients, targets)
+	}
+
+	detector.recordFailure("203.0.113.53", "/api/login", "old", now.Add(-2*time.Minute), tun)
+	if ev := detector.Metrics("203.0.113.53"); ev.Int("consecutiveFailures") != 0 {
+		t.Fatalf("expired streak remained observable: %+v", ev)
+	}
+	detector.mu.Lock()
+	_, retained := detector.clients["203.0.113.53"]
+	detector.mu.Unlock()
+	if retained {
+		t.Fatal("expired client state was not cleaned up")
 	}
 }
 
