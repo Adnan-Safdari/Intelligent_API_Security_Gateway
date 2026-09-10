@@ -48,8 +48,9 @@ export default function OverviewPage() {
 
   return (
     <>
-      <section className="metrics">
+      <section className="metrics metrics-hero-row">
         <Metric
+          size="hero"
           label="Requests"
           value={stats.requests}
           detail={stats.derived ? "visible window" : "since gateway start"}
@@ -57,28 +58,30 @@ export default function OverviewPage() {
           max={histMax}
           href="/events"
         />
-        <Metric
-          label="Alerts"
-          value={stats.alerts}
-          detail={`${alertRate}% of requests`}
-          href="/events?alerts=1"
-        />
-        <Metric
-          label="Under policy"
-          value={policies.length}
-          detail={`${active} active ${active === 1 ? "campaign" : "campaigns"}`}
-          href="/policy"
-        />
-        <Metric
-          label="Unique IPs"
-          value={sources.length}
-          detail={`${sources.filter((s) => s.private).length} private`}
-          href="/events"
-        />
+        <div className="metrics-rail">
+          <Metric
+            label="Alerts"
+            value={stats.alerts}
+            detail={`${alertRate}% of requests`}
+            href="/events?alerts=1"
+          />
+          <Metric
+            label="Under policy"
+            value={policies.length}
+            detail={`${active} active ${active === 1 ? "campaign" : "campaigns"}`}
+            href="/policy"
+          />
+          <Metric
+            label="Unique IPs"
+            value={sources.length}
+            detail={`${sources.filter((s) => s.private).length} private`}
+            href="/events"
+          />
+        </div>
       </section>
 
       <section className="workbench">
-        <article className="card map-card">
+        <article className="card map-card panel-primary">
           <div className="card-head">
             <h2>Request origin map</h2>
             <span>

@@ -309,9 +309,10 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
   );
 }
 
-export function PageHead({ title, children }) {
+export function PageHead({ title, eyebrow, children }) {
   return (
     <div className="page-head">
+      {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
       <h1>{title}</h1>
       <p>{children}</p>
     </div>

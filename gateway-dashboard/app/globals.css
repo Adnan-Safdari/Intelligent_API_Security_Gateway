@@ -10,11 +10,11 @@
   --line: #2b323c;
   --text: #e4e8ee;
   --muted: #8a93a0;
-  --accent: #4c7dff;
+  --accent: #8b6cf2;
   /* The interactive-element companion to --bg-elev-2: active nav background,
      a selected segmented option, a focused input's fill -- anywhere the
      accent needs to tint a surface rather than paint text or a border. */
-  --accent-soft: rgba(76, 125, 255, 0.12);
+  --accent-soft: rgba(139, 108, 242, 0.12);
   --good: #22a876;
   --warn: #e0a530;
   --bad: #e5484d;
@@ -36,8 +36,12 @@
      differ. */
   --sig-flood: #c9842a;
   --sig-sqli: #c43c51;
-  --sig-brute: #7c5cbf;
-  --sig-spray: #9a6bb8;
+  /* Brute force and password spraying used to sit in the violet/purple band
+     -- fine when the accent was blue, a direct collision now that --accent
+     lives there instead. Moved to rust and orchid, spaced off the accent's
+     hue (~254°) and off each other and --sig-reputation (~325°). */
+  --sig-brute: #ca452b;
+  --sig-spray: #b054b0;
   --sig-enum-trav: #2a8f7c;
   --sig-traversal: #2f7d9a;
   --sig-enum: #3d8a55;
@@ -51,7 +55,10 @@
      semantically the same "something is wrong here" as everywhere else --bad
      appears, not a fourth independent red. --map-private mirrors --muted:
      the two hex values were already within one digit of each other. */
-  --map-public: #2f6fed;
+  /* Now that --accent has moved off blue, blue is free for --map-public --
+     a clean sky blue instead of the old flat, accent-adjacent navy that used
+     to make the two map dots hard to tell apart. */
+  --map-public: #38bdf8;
   --map-site: var(--accent);
   --map-alert: var(--bad);
   --map-private: var(--muted);
@@ -65,8 +72,8 @@
   --line: #d5dae1;
   --text: #1b2430;
   --muted: #5b6572;
-  --accent: #2f5fdb;
-  --accent-soft: rgba(47, 95, 219, 0.08);
+  --accent: #6d4fd1;
+  --accent-soft: rgba(109, 79, 209, 0.08);
   --good: #1c7a56;
   --warn: #9a6f12;
   --bad: #b13232;
@@ -82,14 +89,14 @@
      and would under-contrast here unchanged. */
   --sig-flood: #815216;
   --sig-sqli: #7d2130;
-  --sig-brute: #492e81;
-  --sig-spray: #62387c;
+  --sig-brute: #822816;
+  --sig-spray: #713071;
   --sig-enum-trav: #1d7162;
   --sig-traversal: #1e5a70;
   --sig-enum: #2a653c;
   --sig-reputation: #702b54;
 
-  --map-public: #2354c9;
+  --map-public: #0284c7;
   --map-site: var(--accent);
   --map-alert: var(--bad);
   --map-private: var(--muted);
@@ -115,6 +122,22 @@
   --radius-sm: 8px; /* inputs, buttons, tags, chips, small controls */
   --radius-md: 10px; /* cards, panels, modals, toolbars */
   --radius-full: 999px; /* pills, avatars, dots -- unchanged */
+
+  /* Before this, body text (13px) and .page-head h1 (17px) were nearly the
+     same size -- nothing signalled "this is a headline number" vs. "this is
+     a label" anywhere in the app. Sizes only; weight is separate below since
+     the two vary independently (a card head is bigger AND no bolder than
+     body text, a hero number is both). */
+  --text-2xs: 10px; /* uppercase table/stat labels */
+  --text-xs: 11px; /* captions, secondary lines */
+  --text-sm: 12px; /* buttons, controls */
+  --text-base: 13px; /* body default, unchanged */
+  --text-md: 15px; /* card-head h2 */
+  --text-lg: 22px; /* page-head h1, secondary metric numbers */
+  --text-xl: 28px; /* section-level emphasis */
+  --text-2xl: 40px; /* the one hero metric number */
+
+  --weight-bold: 780; /* hero numbers, page title -- existing 400/500/650 unchanged */
 }
 
 * {
@@ -160,11 +183,21 @@ body {
   padding: 12px 16px 28px;
 }
 
+/* Every page renders a flat fragment of top-level sections straight into
+   main -- before this rule, the only gap between them was whatever margin
+   that one section's own class happened to carry (most had none), so pages
+   with several bare sections in a row (Adaptive worst of all) read as
+   sections touching rather than a page with rhythm. One rule, zero JSX
+   changes, fixes all 8 pages at once. */
+main > * + * {
+  margin-top: var(--space-5);
+}
+
 .top {
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 8px 0 10px;
+  padding: var(--space-3) 0;
 }
 
 .brand {
@@ -176,14 +209,14 @@ body {
 .logo {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  background: var(--accent);
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, white));
   color: #fff;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.06em;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .brand strong {
@@ -240,9 +273,9 @@ body {
 }
 
 .nav-link.active {
-  color: var(--text);
-  background: var(--bg-elev);
-  border-color: var(--line);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 /* A count on the tab, so you can see there is something to look at without
@@ -308,13 +341,17 @@ body {
 }
 
 .page-head {
-  margin: 14px 0 10px;
+  margin: var(--space-6) 0 var(--space-3);
+}
+
+.page-head .eyebrow {
+  margin: 0 0 4px;
 }
 
 .page-head h1 {
   margin: 0;
-  font-size: 17px;
-  font-weight: 650;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.01em;
 }
 
@@ -542,6 +579,13 @@ body {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.campaign-grid > .campaign:hover {
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .campaign-grid > .campaign.selected {
@@ -603,9 +647,17 @@ tr.dim td { opacity: 0.6; }
   padding: 10px 12px;
   color: inherit;
   text-decoration: none;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
 }
 
-.metric.linked:hover { border-color: var(--accent); }
+/* Only cards you can act on get the lift -- a display-only list (Signals,
+   fact-list, policy-list) staying flat is what makes an interactive one
+   read as interactive, rather than diluting the effect everywhere. */
+.metric.linked:hover {
+  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
 
 a { color: var(--accent); }
 .card-head a { font-size: 11px; }
@@ -646,7 +698,11 @@ a { color: var(--accent); }
 .workbench {
   display: grid;
   gap: var(--space-3);
-  margin-top: var(--space-3);
+  /* No margin-top here on purpose: a class selector would out-specificity
+     (and silently defeat) the sitewide `main > * + *` section-rhythm rule
+     above, which is exactly what happened here before this was noticed --
+     .metrics/.workbench are section-level, so they take the standard rhythm
+     like every other top-level section rather than their own smaller one. */
 }
 
 .metrics {
@@ -655,6 +711,54 @@ a { color: var(--accent); }
      from 4 columns to 1 at the 980px breakpoint with nothing between, the
      only grid in the sheet that did. */
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* Overview's stat row used to be 4 identically-weighted tiles -- nothing told
+   you which number mattered. Requests (the richest tile: it already carries
+   the sparkline) becomes a real hero; the other three drop to a compact rail
+   beside it. */
+.metrics-hero-row {
+  grid-template-columns: minmax(320px, 1.3fr) minmax(280px, 1fr);
+  align-items: stretch;
+}
+
+.metrics-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+}
+
+.metric-hero {
+  padding: var(--space-5);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--accent) 10%, var(--bg-elev)),
+    var(--bg-elev) 70%
+  );
+  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+
+.metric-hero p {
+  font-size: var(--text-xs);
+}
+
+.metric-hero strong {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
+}
+
+.metric-hero .spark {
+  height: 40px;
+  gap: 3px;
+}
+
+.metric-hero .spark span {
+  background: linear-gradient(
+    180deg,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 40%, transparent)
+  );
+  opacity: 1;
 }
 
 .workbench {
@@ -726,7 +830,7 @@ a { color: var(--accent); }
 
 .card-head h2 {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 650;
 }
 
@@ -760,7 +864,9 @@ a { color: var(--accent); }
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  padding: var(--space-2) 0;
+  /* Was --space-2 (8px) -- tight text in an otherwise-wide box. Rows breathe
+     now instead of reading as compressed text in oversized panels. */
+  padding: var(--space-3) 0;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
 }
@@ -793,10 +899,17 @@ a { color: var(--accent); }
   font-variant-numeric: tabular-nums;
 }
 
+/* The one card per page that's the actual reason you're here -- Overview's
+   map, Policy's in-force table -- gets a touch of brand color and used to
+   get the exact same treatment as a bulleted side list. Reusable rather than
+   map-specific since the "one dominant panel" pattern repeats per page. */
+.panel-primary {
+  border-top: 2px solid var(--accent);
+}
+
 .map-card {
   display: flex;
   flex-direction: column;
-  min-height: 460px;
 }
 
 .map-wrap {
@@ -806,11 +919,16 @@ a { color: var(--accent); }
   isolation: isolate;
   z-index: 0;
   flex: 1;
-  min-height: 400px;
+  min-height: clamp(420px, 46vh, 640px);
 }
 
 .map-canvas {
-  height: 400px;
+  /* Leaflet reads the container's actual rendered size at mount, so this is
+     the value that matters -- .map-wrap's min-height above is a fallback if
+     the canvas itself ever isn't the one constraining height. Was a fixed
+     400px regardless of viewport; a security console with a big monitor
+     should let its flagship panel actually use the extra room. */
+  height: clamp(420px, 46vh, 640px);
   background: var(--map-bg);
 }
 
@@ -1301,7 +1419,8 @@ tbody tr:hover td {
 
 @media (max-width: 980px) {
   .metrics,
-  .workbench {
+  .workbench,
+  .metrics-hero-row {
     grid-template-columns: 1fr;
   }
 
@@ -1575,7 +1694,7 @@ tbody tr:hover td {
   padding: 10px 14px;
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .settings-bar .grow {
@@ -1741,7 +1860,7 @@ tbody tr:hover td {
    operator does not mistake learning settings for permission to enforce. */
 .mode-overview { margin-bottom: 14px; }
 .mode-banner { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--space-3); padding: 12px; background: var(--bg-head); border-bottom: 1px solid var(--line); }
-.mode-banner h2 { margin: 2px 0; font-size: 18px; }
+.mode-banner h2 { margin: 2px 0; font-size: var(--text-xl); font-weight: var(--weight-bold); }
 .mode-banner p { margin: 0; color: var(--muted); }
 .eyebrow { color: var(--accent) !important; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .mode-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px; border: 0; }

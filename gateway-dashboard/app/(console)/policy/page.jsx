@@ -53,7 +53,7 @@ export default function PolicyPage() {
       </p>
 
       <section className="workbench">
-        <article className="card">
+        <article className="card panel-primary">
           <div className="card-head">
             <h2>In force</h2>
             <ExportMenu rows={rows} columns={POLICY_COLUMNS} prefix="policy" />
