@@ -42,6 +42,7 @@ type Wire struct {
 	RateLimit         RateLimit         `json:"rate_limit"`
 	AttackDetection   AttackDetection   `json:"attack_detection"`
 	BruteForce        BruteForce        `json:"brute_force"`
+	UnknownRouteScan  UnknownRouteScan  `json:"unknown_route_scanning"`
 	Enumeration       Enumeration       `json:"enumeration_path_traversal"`
 	IPReputation      IPReputation      `json:"ip_reputation"`
 	Throttle          Throttle          `json:"throttle"`
@@ -72,10 +73,17 @@ type AttackDetection struct {
 }
 
 type BruteForce struct {
-	Enabled     bool     `json:"enabled"`
-	MaxFailures int      `json:"max_failures"`
-	Window      string   `json:"window"`
-	LoginPaths  []string `json:"login_paths"`
+	Enabled     bool   `json:"enabled"`
+	MaxFailures int    `json:"max_failures"`
+	Window      string `json:"window"`
+}
+
+type UnknownRouteScan struct {
+	Enabled           bool   `json:"enabled"`
+	DistinctPaths     int    `json:"distinct_paths"`
+	Window            string `json:"window"`
+	MaxClients        int    `json:"max_clients"`
+	MaxPathsPerClient int    `json:"max_paths_per_client"`
 }
 
 // IPReputation carries only what may move at runtime. feed_path, feed_url and
@@ -138,7 +146,13 @@ func FromConfig(c config.EnforcementConfig) Wire {
 			Enabled:     c.BruteForce.Enabled,
 			MaxFailures: c.BruteForce.MaxFailures,
 			Window:      durationString(c.BruteForce.Window),
-			LoginPaths:  c.BruteForce.LoginPaths,
+		},
+		UnknownRouteScan: UnknownRouteScan{
+			Enabled:           c.UnknownRouteScan.Enabled,
+			DistinctPaths:     c.UnknownRouteScan.DistinctPaths,
+			Window:            durationString(c.UnknownRouteScan.Window),
+			MaxClients:        c.UnknownRouteScan.MaxClients,
+			MaxPathsPerClient: c.UnknownRouteScan.MaxPathsPerClient,
 		},
 		IPReputation: IPReputation{
 			Enabled:  c.IPReputation.Enabled,
@@ -185,7 +199,25 @@ func (w Wire) ToConfig(base config.EnforcementConfig) (config.EnforcementConfig,
 	out.BruteForce.Enabled = w.BruteForce.Enabled
 	out.BruteForce.MaxFailures = w.BruteForce.MaxFailures
 	out.BruteForce.Window = window
-	out.BruteForce.LoginPaths = w.BruteForce.LoginPaths
+
+	scanWindow, err := parseDuration(w.UnknownRouteScan.Window, "unknown_route_scanning.window")
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
+	out.UnknownRouteScan.Enabled = w.UnknownRouteScan.Enabled
+	out.UnknownRouteScan.DistinctPaths = w.UnknownRouteScan.DistinctPaths
+	out.UnknownRouteScan.Window = scanWindow
+	out.UnknownRouteScan.MaxClients = w.UnknownRouteScan.MaxClients
+	out.UnknownRouteScan.MaxPathsPerClient = w.UnknownRouteScan.MaxPathsPerClient
+
+	out.BruteForce, err = config.ValidatedBruteForce(out.BruteForce)
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
+	out.UnknownRouteScan, err = config.ValidatedUnknownRouteScan(out.UnknownRouteScan)
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
 
 	out.Enumeration.Enabled = w.Enumeration.Enabled
 	out.Enumeration.TraversalPatterns = w.Enumeration.TraversalPatterns

@@ -219,3 +219,21 @@ func TestMissingRoutesBlockIsNotAnError(t *testing.T) {
 		t.Errorf("Routes.Templates = %v, want empty", cfg.Routes.Templates)
 	}
 }
+
+func TestLowAndSlowDetectorLimitsAreValidated(t *testing.T) {
+	for name, body := range map[string]string{
+		"invalid login threshold": `brute_force:
+    max_failures: -1`,
+		"unbounded scanner clients": `unknown_route_scanning:
+    max_clients: 100001`,
+		"scanner threshold exceeds retained paths": `unknown_route_scanning:
+    distinct_paths: 9
+    max_paths_per_client: 8`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, minimal+"\nenforcement:\n  "+body+"\n")); err == nil {
+				t.Fatal("unsafe low-and-slow detector limits were accepted")
+			}
+		})
+	}
+}

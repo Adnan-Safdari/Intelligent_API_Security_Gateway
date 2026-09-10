@@ -1,41 +1,7 @@
-/*
-	Brute Force Attack Detection Signal
-		- Watches login endpoints only (e.g. /api/login)
-		- Counts FAILED login attempts (401/403 responses) per IP
-		- Too many failures inside a time window -> security alert + metrics
-		- A successful login resets the counter for that IP
-		- DOES NOT BLOCK. Every request is forwarded to the backend.
-
-
-	Core Idea
-		“ Flooding is about HOW MANY requests an IP sends.
-		Brute force is about HOW MANY TIMES an IP FAILS to log in. ”
-
-		So unlike the flood detector we cannot decide by looking at the
-		request alone — we need to know how the backend responded.
-		The middleware wraps the ResponseWriter in a small recorder,
-		lets the request go through to the backend, and then checks
-		the status code that came back.
-
-	Password spraying vs classic brute force
-		- Classic brute force : one username, many passwords
-		- Password spraying   : many usernames, one password
-		We also track how many DISTINCT emails an IP has tried, so the
-		alert can tell the two apart.
-
-	Detection only — no enforcement (team decision)
-		Detectors produce EVIDENCE; the centralized decision engine produces
-		POLICY. This detector therefore never returns 403/429 on its own.
-		It records evidence and exposes it through Metrics(ip), which the
-		future risk-scoring / decision engine will consume alongside the
-		other signals to make one combined Allow / Throttle / Block call.
-*/
-
 package signals
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -46,92 +12,239 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 )
 
-func (bd *BruteForceDetector) Name() string { return SignalBruteForce }
-
-// bruteForceClient tracks the recent login failures for a single IP.
-type bruteForceClient struct {
-	Failures   []time.Time         // timestamps of failed login attempts inside the window
-	Identities map[string]struct{} // distinct login identities this IP has tried (spraying indicator)
-}
-
-// BruteForceDetector tracks failed login attempts per IP.
-// Login endpoints are a tiny fraction of total traffic, so a single
-// map + mutex is enough here (no sharding needed like the flood detector).
-// bruteTunables is what the console can move at runtime, swapped whole so a
-// request never sees a new threshold against an old window.
 type bruteTunables struct {
-	maxFailures int             // failures inside the window before the signal fires
-	window      time.Duration   // sliding window for counting failures
-	loginPaths  map[string]bool // exact request paths that count as "login"
 	enabled     bool
+	maxFailures int
+	window      time.Duration
 }
 
+type loginOutcomeRule struct {
+	success map[int]struct{}
+	invalid map[int]struct{}
+}
+
+type loginStreak struct {
+	route       string
+	target      string
+	consecutive int
+	lastFailure time.Time
+	lastSeen    time.Time
+}
+
+// BruteForceDetector records consecutive configured backend credential
+// failures. It owns no status-code folklore: a 401 means wrong credentials
+// only for the login route that configuration says it does.
 type BruteForceDetector struct {
-	tun atomic.Pointer[bruteTunables]
-
+	tun     atomic.Pointer[bruteTunables]
+	match   func(method, path string) string
+	rules   map[string]loginOutcomeRule
 	mu      sync.Mutex
-	clients map[string]*bruteForceClient
+	clients map[string]map[string]*loginStreak
 }
 
-func (bd *BruteForceDetector) settings() bruteTunables { return *bd.tun.Load() }
+func NewBruteForceDetector(cfg config.BruteForceConfig, outcomes []config.AuthOutcomeConfig, match func(string, string) string) *BruteForceDetector {
+	d := &BruteForceDetector{
+		match:   match,
+		rules:   loginOutcomeRules(outcomes),
+		clients: make(map[string]map[string]*loginStreak),
+	}
+	d.Apply(cfg)
+	go d.startCleanupTimer()
+	return d
+}
 
-// Apply swaps in new settings. Recorded failures are kept: someone part-way
-// through guessing a password should not be handed a fresh allowance because
-// the window was edited.
-func (bd *BruteForceDetector) Apply(cfg config.BruteForceConfig) {
+func loginOutcomeRules(entries []config.AuthOutcomeConfig) map[string]loginOutcomeRule {
+	rules := make(map[string]loginOutcomeRule, len(entries))
+	for _, entry := range entries {
+		if len(entry.InvalidCredentials) == 0 {
+			continue
+		}
+		rule := loginOutcomeRule{success: make(map[int]struct{}), invalid: make(map[int]struct{})}
+		for _, status := range entry.Success {
+			rule.success[status] = struct{}{}
+		}
+		for _, status := range entry.InvalidCredentials {
+			rule.invalid[status] = struct{}{}
+		}
+		rules[routeKey(entry.Method, entry.Template)] = rule
+	}
+	return rules
+}
+
+func routeKey(method, route string) string {
+	return strings.ToUpper(method) + " " + route
+}
+
+func (d *BruteForceDetector) Name() string { return SignalBruteForce }
+
+func (d *BruteForceDetector) settings() bruteTunables { return *d.tun.Load() }
+
+func (d *BruteForceDetector) Apply(cfg config.BruteForceConfig) {
 	if cfg.MaxFailures <= 0 {
 		cfg.MaxFailures = 5
 	}
 	if cfg.Window <= 0 {
 		cfg.Window = time.Minute
 	}
-	if len(cfg.LoginPaths) == 0 {
-		cfg.LoginPaths = []string{"/api/login"}
-	}
-	paths := make(map[string]bool, len(cfg.LoginPaths))
-	for _, p := range cfg.LoginPaths {
-		paths[p] = true
-	}
-	bd.tun.Store(&bruteTunables{
-		enabled:     cfg.Enabled,
-		maxFailures: cfg.MaxFailures,
-		window:      cfg.Window,
-		loginPaths:  paths,
+	d.tun.Store(&bruteTunables{enabled: cfg.Enabled, maxFailures: cfg.MaxFailures, window: cfg.Window})
+}
+
+func (d *BruteForceDetector) Middleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tun := d.settings()
+		route, rule, login := d.loginRule(r)
+		if !tun.enabled || !login {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// This is below BodyLimitMiddleware in the gateway chain. The target is
+		// optional enrichment, but it must not become a new unbounded body read.
+		target := extractIdentity(r)
+		rec := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(rec, r)
+
+		now := time.Now()
+		if _, invalid := rule.invalid[rec.status]; invalid {
+			d.recordFailure(netutil.ClientIP(r), route, target, now, tun)
+			return
+		}
+		if _, success := rule.success[rec.status]; success {
+			d.recordSuccess(netutil.ClientIP(r), route, target)
+		}
 	})
 }
 
-// NewBruteForceDetector creates a brute force detector from configuration.
-func NewBruteForceDetector(cfg config.BruteForceConfig) *BruteForceDetector {
-	bd := &BruteForceDetector{clients: make(map[string]*bruteForceClient)}
-	// Apply supplies the defaults, so there is one place that decides what an
-	// empty config block means.
-	bd.Apply(cfg)
-
-	// Started unconditionally: the detector can be switched on from the console
-	// later, and a sweeper that only exists when it booted enabled would let
-	// the client map grow without bound from that point on.
-	go bd.startCleanupTimer()
-	return bd
+func (d *BruteForceDetector) loginRule(r *http.Request) (string, loginOutcomeRule, bool) {
+	if d.match == nil {
+		return "", loginOutcomeRule{}, false
+	}
+	route := d.match(r.Method, r.URL.Path)
+	rule, ok := d.rules[routeKey(r.Method, route)]
+	return route, rule, ok
 }
 
-// startCleanupTimer removes IPs that have gone quiet so the map does not grow forever.
-func (bd *BruteForceDetector) startCleanupTimer() {
-	ticker := time.NewTicker(1 * time.Minute)
-	for range ticker.C {
-		now := time.Now()
-		bd.mu.Lock()
-		for ip, client := range bd.clients {
-			if len(client.Failures) == 0 ||
-				now.Sub(client.Failures[len(client.Failures)-1]) > bd.settings().window {
-				delete(bd.clients, ip)
+func (d *BruteForceDetector) recordFailure(ip, route, target string, now time.Time, tun bruteTunables) {
+	key := streakKey(route, target)
+	d.mu.Lock()
+	byTarget := d.clients[ip]
+	if byTarget == nil {
+		byTarget = make(map[string]*loginStreak)
+		d.clients[ip] = byTarget
+	}
+	streak := byTarget[key]
+	if streak == nil || now.Sub(streak.lastFailure) > tun.window {
+		streak = &loginStreak{route: route, target: target}
+		byTarget[key] = streak
+	}
+	streak.consecutive++
+	streak.lastFailure, streak.lastSeen = now, now
+	d.mu.Unlock()
+}
+
+func (d *BruteForceDetector) recordSuccess(ip, route, target string) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	byTarget := d.clients[ip]
+	if byTarget == nil {
+		return
+	}
+	if target != "" {
+		delete(byTarget, streakKey(route, target))
+	} else {
+		// A success without an identity can clear this login route, but must not
+		// hide failures against another route by clearing the whole client.
+		for key, streak := range byTarget {
+			if streak.route == route {
+				delete(byTarget, key)
 			}
 		}
-		bd.mu.Unlock()
+	}
+	if len(byTarget) == 0 {
+		delete(d.clients, ip)
 	}
 }
 
-// statusRecorder wraps a ResponseWriter so we can see which status
-// code the backend replied with after the proxy has handled the request.
+func streakKey(route, target string) string {
+	if target == "" {
+		target = "<unknown>"
+	}
+	return route + "\x00" + target
+}
+
+func (d *BruteForceDetector) Metrics(ip string) Evidence {
+	tun := d.settings()
+	ev := Evidence{Signal: SignalBruteForce, Details: map[string]any{
+		"consecutiveFailures": 0,
+		"failedLogins":        0,
+		"maxFailures":         tun.maxFailures,
+		"window":              tun.window.String(),
+		"route":               "",
+		"target":              "",
+	}}
+	if !tun.enabled {
+		return ev
+	}
+
+	now := time.Now()
+	d.mu.Lock()
+	byTarget := d.clients[ip]
+	var strongest *loginStreak
+	for key, streak := range byTarget {
+		if now.Sub(streak.lastFailure) > tun.window {
+			delete(byTarget, key)
+			continue
+		}
+		if strongest == nil || streak.consecutive > strongest.consecutive {
+			strongest = streak
+		}
+	}
+	var strongestValue loginStreak
+	if strongest != nil {
+		strongestValue = *strongest
+	}
+	if len(byTarget) == 0 {
+		delete(d.clients, ip)
+	}
+	d.mu.Unlock()
+	if strongest == nil {
+		return ev
+	}
+
+	ev.Details["consecutiveFailures"] = strongestValue.consecutive
+	// Retained for evidence consumers that display the old name; it is now a
+	// streak, never a total count across unrelated login targets.
+	ev.Details["failedLogins"] = strongestValue.consecutive
+	ev.Details["route"] = strongestValue.route
+	ev.Details["target"] = strongestValue.target
+	ev.Score = ratioScore(strongestValue.consecutive, tun.maxFailures)
+	ev.Details["severity"] = evidenceSeverity(ev.Score)
+	ev.ThresholdCross = strongestValue.consecutive >= tun.maxFailures
+	if ev.ThresholdCross {
+		ev.AttackType = SignalBruteForce
+	}
+	return ev
+}
+
+func (d *BruteForceDetector) startCleanupTimer() {
+	ticker := time.NewTicker(time.Minute)
+	for now := range ticker.C {
+		tun := d.settings()
+		d.mu.Lock()
+		for ip, byTarget := range d.clients {
+			for key, streak := range byTarget {
+				if now.Sub(streak.lastSeen) > tun.window {
+					delete(byTarget, key)
+				}
+			}
+			if len(byTarget) == 0 {
+				delete(d.clients, ip)
+			}
+		}
+		d.mu.Unlock()
+	}
+}
+
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
@@ -142,151 +255,19 @@ func (sr *statusRecorder) WriteHeader(code int) {
 	sr.ResponseWriter.WriteHeader(code)
 }
 
-// Flush keeps streaming support intact — the reverse proxy relies on it.
+func (sr *statusRecorder) Write(body []byte) (int, error) {
+	if sr.status == 0 {
+		sr.status = http.StatusOK
+	}
+	return sr.ResponseWriter.Write(body)
+}
+
 func (sr *statusRecorder) Flush() {
 	if f, ok := sr.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
 }
 
-// Middleware inspects login traffic for brute force patterns.
-// It always forwards the request; enforcement belongs to the decision engine.
-func (bd *BruteForceDetector) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Only login endpoints matter — everything else passes straight through
-		tun := bd.settings()
-		if !tun.enabled || !tun.loginPaths[r.URL.Path] {
-			next.ServeHTTP(w, r)
-			return
-		}
-
-		ip := netutil.ClientIP(r)
-
-		// Best-effort: pull the attempted email out of the JSON body
-		// so we can tell brute force from password spraying
-		identity := extractIdentity(r)
-
-		// Forward the request, but record what the backend answered
-		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-		next.ServeHTTP(rec, r)
-
-		switch {
-		case rec.status == http.StatusUnauthorized || rec.status == http.StatusForbidden:
-			bd.recordFailure(ip, identity, r)
-		case rec.status >= 200 && rec.status < 300:
-			// Successful login clears the slate for this IP
-			bd.reset(ip)
-		}
-	})
-}
-
-// recordFailure adds a failed attempt and raises an alert once the
-// threshold is crossed. The request itself has already been forwarded.
-func (bd *BruteForceDetector) recordFailure(ip, identity string, r *http.Request) {
-	now := time.Now()
-	tun := bd.settings()
-
-	bd.mu.Lock()
-	client, exists := bd.clients[ip]
-	if !exists {
-		client = &bruteForceClient{Identities: make(map[string]struct{})}
-		bd.clients[ip] = client
-	}
-
-	// Drop failures that have aged out of the sliding window
-	cutoff := now.Add(-tun.window)
-	firstValid := len(client.Failures)
-	for i, t := range client.Failures {
-		if t.After(cutoff) {
-			firstValid = i
-			break
-		}
-	}
-	client.Failures = client.Failures[firstValid:]
-
-	client.Failures = append(client.Failures, now)
-	if identity != "" {
-		client.Identities[identity] = struct{}{}
-	}
-
-	failureCount := len(client.Failures)
-	distinctEmails := len(client.Identities)
-	bd.mu.Unlock()
-
-	if failureCount >= tun.maxFailures {
-		bd.logAlert(ip, r, failureCount, distinctEmails, tun.maxFailures)
-	}
-}
-
-// Metrics returns brute-force evidence for an IP. Safe to call concurrently.
-func (bd *BruteForceDetector) Metrics(ip string) Evidence {
-	tun := bd.settings()
-
-	bd.mu.Lock()
-	defer bd.mu.Unlock()
-
-	ev := Evidence{
-		Signal: SignalBruteForce,
-		Details: map[string]any{
-			"failedLogins":  0,
-			"distinctUsers": 0,
-			"maxFailures":   tun.maxFailures,
-			"window":        tun.window.String(),
-		},
-	}
-
-	client, exists := bd.clients[ip]
-	if !exists {
-		return ev
-	}
-
-	cutoff := time.Now().Add(-tun.window)
-	failures := 0
-	for _, t := range client.Failures {
-		if t.After(cutoff) {
-			failures++
-		}
-	}
-	distinct := len(client.Identities)
-	crossed := failures >= tun.maxFailures
-
-	ev.Details["failedLogins"] = failures
-	ev.Details["distinctUsers"] = distinct
-	ev.Score = bruteForceScore(failures, tun.maxFailures, distinct)
-	ev.ThresholdCross = crossed
-	if crossed {
-		ev.AttackType = classifyAttack(distinct)
-	}
-	return ev
-}
-
-func bruteForceScore(failures, maxFailures, distinctEmails int) int {
-	score := ratioScore(failures, maxFailures)
-	if failures >= maxFailures && distinctEmails > 3 {
-		score = clampScore(score + 10)
-	}
-	return score
-}
-
-// reset clears the failure history for an IP (called after a successful login).
-func (bd *BruteForceDetector) reset(ip string) {
-	bd.mu.Lock()
-	delete(bd.clients, ip)
-	bd.mu.Unlock()
-}
-
-// classifyAttack labels the attack shape: many distinct accounts from one IP
-// looks like spraying, hammering a single account is classic brute force.
-func classifyAttack(distinctEmails int) string {
-	if distinctEmails > 3 {
-		return "password_spraying"
-	}
-	return "brute_force"
-}
-
-// extractEmail reads the request body (and restores it for the next handler)
-// and returns the "email" field if the body is JSON. Failures are fine —
-// this is only used to enrich the alert.
 func extractIdentity(r *http.Request) string {
 	bodyBytes, err := readAndRestoreBody(r)
 	if err != nil || len(bodyBytes) == 0 {
@@ -303,46 +284,4 @@ func extractIdentity(r *http.Request) string {
 		return email
 	}
 	return strings.TrimSpace(payload.Username)
-}
-
-// logAlert prints a high-visibility security alert to the console.
-func (bd *BruteForceDetector) logAlert(ip string, r *http.Request, failures, distinctEmails, maxFailures int) {
-	severity := "LOW"
-	if failures >= maxFailures*5 {
-		severity = "HIGH"
-	} else if failures >= maxFailures*2 {
-		severity = "MEDIUM"
-	}
-
-	attackType := "BRUTE FORCE (single account)"
-	if classifyAttack(distinctEmails) == "password_spraying" {
-		attackType = "PASSWORD SPRAYING (multiple accounts)"
-	}
-
-	fmt.Printf(`
-			========================================
-			SECURITY ALERT: BRUTE FORCE DETECTED
-			----------------------------------------
-			IP Address     : %s
-			Endpoint       : %s
-			Failed Logins  : %d
-			Distinct Users : %d
-			Attack Type    : %s
-			Time Window    : %s
-			User-Agent     : %s
-			Severity       : %s
-			Timestamp      : %s
-			ACTION         : DETECTED (ALLOWING REQUEST)
-			========================================
-			`,
-		ip,
-		r.URL.Path,
-		failures,
-		distinctEmails,
-		attackType,
-		bd.settings().window,
-		r.Header.Get("User-Agent"),
-		severity,
-		time.Now().Format(time.RFC3339),
-	)
 }

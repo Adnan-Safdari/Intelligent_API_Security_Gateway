@@ -89,23 +89,28 @@ func TestChainStopsAtShortCircuit(t *testing.T) {
 	}
 }
 
-// Brute force can only be recorded after the backend replies. The observer
-// must therefore wrap the detector: on the return path the detector records
-// the 401 before the observer takes its snapshot and arms the reflex.
-func TestBruteForceReflexBlocksTheRequestAfterTheTenthFailure(t *testing.T) {
+// Login failures are learned only after the backend replies. They are evidence
+// for the control plane, never a gateway reflex authority.
+func TestBruteForceEvidenceNeverArmsTheGatewayReflex(t *testing.T) {
 	const attacker = "203.0.113.44"
 
 	brute := signals.NewBruteForceDetector(config.BruteForceConfig{
 		Enabled:     true,
 		MaxFailures: 5,
 		Window:      time.Minute,
-		LoginPaths:  []string{"/api/login"},
+	}, []config.AuthOutcomeConfig{{
+		Method: "POST", Template: "/api/login", Success: []int{http.StatusOK}, InvalidCredentials: []int{http.StatusUnauthorized},
+	}}, func(method, path string) string {
+		if method == http.MethodPost && path == "/api/login" {
+			return "/api/login"
+		}
+		return "<unmatched>"
 	})
 	collector := signals.NewCollector(brute)
 	reflex, err := enforcement.New(enforcement.Config{
 		Enabled:     true,
 		Duration:    time.Minute,
-		Signals:     []string{signals.SignalBruteForce},
+		Signals:     []string{signals.SignalFlood},
 		MinScore:    80,
 		ExemptCIDRs: []string{},
 	})
@@ -157,16 +162,16 @@ func TestBruteForceReflexBlocksTheRequestAfterTheTenthFailure(t *testing.T) {
 	if ev.Int("failedLogins") < 10 || ev.Score < 80 || !ev.ThresholdCross {
 		t.Fatalf("ten failures = %+v, want at least ten, score >= 80, and fired", ev)
 	}
-	if _, found := reflex.Lookup(attacker); !found {
-		t.Fatal("reflex was not armed after the response-aware brute-force evidence")
+	if _, found := reflex.Lookup(attacker); found {
+		t.Fatal("consecutive login evidence armed a gateway reflex block")
 	}
 
-	blocked := bruteForceRequest(handler, http.MethodGet, "/api/products", attacker)
-	if blocked.Code != http.StatusForbidden {
-		t.Fatalf("request after reflex block = %d, want 403", blocked.Code)
+	allowed := bruteForceRequest(handler, http.MethodGet, "/api/products", attacker)
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("request after login evidence = %d, want backend 200", allowed.Code)
 	}
-	if backendCalls != 10 {
-		t.Fatalf("backend calls = %d, want the ten login attempts only", backendCalls)
+	if backendCalls != 11 {
+		t.Fatalf("backend calls = %d, want ten login attempts plus the later request", backendCalls)
 	}
 }
 

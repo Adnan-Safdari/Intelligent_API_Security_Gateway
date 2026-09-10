@@ -33,6 +33,7 @@ const SECTIONS = [
   "rate_limit",
   "attack_detection",
   "brute_force",
+	"unknown_route_scanning",
   "enumeration_path_traversal",
   "ip_reputation",
   "throttle",
@@ -44,8 +45,7 @@ const SECTIONS = [
 // nothing, which looks identical to a typo, so it is refused.
 const KNOWN_SIGNALS = [
   "api_flooding",
-  "brute_force",
-  "sql_injection",
+	"sql_injection",
   "path_traversal",
   "enumeration_path_traversal",
   "ip_reputation",
@@ -180,6 +180,16 @@ function validate(s) {
   const window = s.brute_force?.window;
   if (window !== undefined && !isDuration(window)) {
     return `brute_force.window: ${JSON.stringify(window)} is not a duration like "60s" or "5m"`;
+  }
+
+  const scan = s.unknown_route_scanning;
+  if (scan) {
+    if (!Number.isInteger(scan.distinct_paths) || scan.distinct_paths < 2 ||
+        !Number.isInteger(scan.max_paths_per_client) || scan.max_paths_per_client < scan.distinct_paths || scan.max_paths_per_client > 10000 ||
+        !Number.isInteger(scan.max_clients) || scan.max_clients < 1 || scan.max_clients > 100000) {
+      return "unknown_route_scanning limits must keep distinct paths within bounded client and path capacity";
+    }
+    if (!isDuration(scan.window)) return `unknown_route_scanning.window: ${JSON.stringify(scan.window)} is not a duration like "5m"`;
   }
 
   const duration = s.block?.duration;

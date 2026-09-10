@@ -10,6 +10,7 @@ from iasg.models import (
     DETECTOR_ENUMERATION,
     DETECTOR_FLOOD,
     DETECTOR_TRAVERSAL,
+    DETECTOR_UNKNOWN_ROUTE_SCAN,
     Evidence,
 )
 
@@ -98,6 +99,28 @@ def test_seeder_telemetry_round_trips():
     assert len(got) == 1
     assert got[0].detector == DETECTOR_BRUTE_FORCE
     assert got[0].details["failedLogins"] == 9
+
+
+def test_unknown_route_scan_maps_to_reconnaissance_evidence():
+    event = {
+        "ts": "2026-08-14T10:00:00Z",
+        "ip": "203.0.113.6",
+        "method": "GET",
+        "path": "/admin",
+        "fired": ["unknown_route_scanning"],
+        "signals": [{
+            "signal": "unknown_route_scanning",
+            "score": 60,
+            "thresholdCross": True,
+            "attackType": "unknown_route_scanning",
+            "details": {"distinctPaths": 8, "window": "5m0s"},
+        }],
+    }
+
+    got = Evidence.from_stream_entry("4-0", {"event": json.dumps(event)})
+    assert len(got) == 1
+    assert got[0].detector == DETECTOR_UNKNOWN_ROUTE_SCAN
+    assert got[0].details["distinctPaths"] == 8
 
 
 def test_flat_fields_still_parse():

@@ -218,9 +218,9 @@ func TestEnabledAloneNeverArmsTheReflex(t *testing.T) {
 	}
 }
 
-func TestRecommendedSignalsAreTheWindowedOnes(t *testing.T) {
-	// A single request carrying "UNION" is a judgement call, and judgement is
-	// the control plane's job. Repetition is not.
+func TestRecommendedSignalsExcludeAdvisoryDetectors(t *testing.T) {
+	// These detectors describe behaviour over time, but their output still has
+	// to be correlated and safety-checked by the policy writer before enforcing.
 	r := armed(t, func(c *Config) { c.Signals = RecommendedSignals })
 
 	r.Observe("203.0.113.31", snap(signals.SignalSQLi, 100, true))
@@ -229,7 +229,15 @@ func TestRecommendedSignalsAreTheWindowedOnes(t *testing.T) {
 	}
 
 	r.Observe("203.0.113.32", snap(signals.SignalBruteForce, 100, true))
-	if _, found := r.Lookup("203.0.113.32"); !found {
-		t.Error("brute force is missing from the recommended list")
+	if _, found := r.Lookup("203.0.113.32"); found {
+		t.Error("consecutive login failures bypassed the control-plane policy writer")
+	}
+}
+
+func TestAdvisorySignalsCannotArmTheReflex(t *testing.T) {
+	for _, signal := range []string{signals.SignalBruteForce, signals.SignalRouteScan} {
+		if _, err := New(Config{Enabled: true, Signals: []string{signal}}); err == nil {
+			t.Errorf("%s was allowed to create direct enforcement", signal)
+		}
 	}
 }

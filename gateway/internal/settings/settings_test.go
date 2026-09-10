@@ -12,7 +12,9 @@ func base() config.EnforcementConfig {
 		RateLimit: config.RateLimitConfig{Enabled: true, RequestsPerMinute: 100, Burst: 20},
 		BruteForce: config.BruteForceConfig{
 			Enabled: true, MaxFailures: 5, Window: time.Minute,
-			LoginPaths: []string{"/api/login"},
+		},
+		UnknownRouteScan: config.UnknownRouteScanConfig{
+			Enabled: true, DistinctPaths: 8, Window: 5 * time.Minute, MaxClients: 10_000, MaxPathsPerClient: 64,
 		},
 		Block: config.BlockConfig{
 			Enabled: true, Duration: 60 * time.Second, MinScore: 50,
@@ -37,6 +39,9 @@ func TestRoundTripKeepsValues(t *testing.T) {
 	}
 	if out.BruteForce.Window != time.Minute {
 		t.Errorf("window = %s, want 1m", out.BruteForce.Window)
+	}
+	if out.UnknownRouteScan.DistinctPaths != 8 || out.UnknownRouteScan.Window != 5*time.Minute {
+		t.Errorf("unknown route scanning settings = %+v", out.UnknownRouteScan)
 	}
 	if out.Block.Duration != 60*time.Second {
 		t.Errorf("duration = %s, want 60s", out.Block.Duration)

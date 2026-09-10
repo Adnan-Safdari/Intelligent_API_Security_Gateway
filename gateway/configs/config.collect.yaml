@@ -162,13 +162,21 @@ enforcement:
       - "UNION SELECT"
       - " OR 1=1"
   
-  # Brute force login detection (detect + emit metrics only; no blocking)
+  # Consecutive configured invalid-login outcomes (detect + emit evidence only).
+  # Login endpoints and status meanings live in routes.auth_outcomes above.
   brute_force:
     enabled: true
-    max_failures: 5 # failed logins inside the window before the signal fires
-    window: 60s     # sliding window for counting failures
-    login_paths:
-      - "/api/login"
+    max_failures: 5 # consecutive invalid credentials for one client + target
+    window: 60s     # a gap longer than this starts a new streak
+
+  # Multiple distinct raw paths classified as <unmatched>, never a count of
+  # backend 404 responses. The retained state is bounded on both dimensions.
+  unknown_route_scanning:
+    enabled: true
+    distinct_paths: 8
+    window: 5m
+    max_clients: 10000
+    max_paths_per_client: 64
 
   # Path traversal + forced-browsing enumeration (detect + emit metrics only)
   enumeration_path_traversal:
@@ -238,7 +246,6 @@ enforcement:
 
     signals:
       - api_flooding
-      - brute_force
 
     min_score: 80
 

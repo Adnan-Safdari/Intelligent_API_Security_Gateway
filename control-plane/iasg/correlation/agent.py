@@ -18,6 +18,7 @@ from iasg.models import (
     DETECTOR_REPUTATION,
     DETECTOR_SQLI,
     DETECTOR_TRAVERSAL,
+    DETECTOR_UNKNOWN_ROUTE_SCAN,
     SEVERITY_HIGH,
     SEVERITY_LOW,
     SEVERITY_MEDIUM,
@@ -195,7 +196,7 @@ class CorrelationAgent:
             return "Distributed Flood" if multi_ip else "API Flooding"
         if detector == DETECTOR_SQLI:
             return "SQL Injection Probing"
-        if detector in (DETECTOR_TRAVERSAL, DETECTOR_ENUMERATION):
+        if detector in (DETECTOR_TRAVERSAL, DETECTOR_ENUMERATION, DETECTOR_UNKNOWN_ROUTE_SCAN):
             return "Reconnaissance"
         if detector == DETECTOR_REPUTATION:
             return "Known Bad Address"

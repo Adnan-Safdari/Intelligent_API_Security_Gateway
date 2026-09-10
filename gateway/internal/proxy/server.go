@@ -70,6 +70,9 @@ type Config struct {
 	// BruteForce holds brute force login detection settings.
 	BruteForce config.BruteForceConfig
 
+	// UnknownRouteScan holds bounded route-scanning detector settings.
+	UnknownRouteScan config.UnknownRouteScanConfig
+
 	// Enumeration holds path-traversal and forced-browsing detection settings.
 	Enumeration config.EnumerationConfig
 
@@ -129,8 +132,8 @@ func NewServer(cfg Config) *Server {
 //  4. Policy enforcer — optional; blocked IPs never reach detectors
 //  5. Body-size cap, then redacted telemetry body capture
 //  6. Reflex observer — optional; records gateway-side blocks after the
-//     flood / SQLi / traversal / brute force detectors and observes after
-//     they unwind, applying from the caller's next request
+//     detectors unwind, applying from the caller's next request. Advisory
+//     low-and-slow detectors remain evidence-only.
 //  7. Reverse proxy
 //
 // Returns:
@@ -141,10 +144,9 @@ func (s *Server) Start() error {
 	// Create a reverse proxy that forwards requests to the configured backend URL
 	proxy := NewReverseProxy(s.config)
 
-	// Create the flood detector signal engine
+	// Create detectors that do not depend on the compiled route table.
 	floodDetector := signals.NewFloodDetector(s.config.RateLimit)
 	sqliDetector := signals.NewSQLiDetector(signals.SQLiDetectorConfigFrom(s.config.AttackDetection))
-	bruteForceDetector := signals.NewBruteForceDetector(s.config.BruteForce)
 	traversalEnumDetector := signals.NewTraversalEnumDetector(s.config.Enumeration)
 
 	// The reputation feed is loaded before the chain is built. A list that will
@@ -165,10 +167,6 @@ func (s *Server) Start() error {
 	}
 	reputationDetector := signals.NewReputationDetector(reputationFeed, s.config.IPReputation)
 
-	s.collector = signals.NewCollector(
-		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, reputationDetector,
-	)
-
 	sinks := newTelemetrySinks(s.config.Redis)
 	defer sinks.Close()
 
@@ -186,6 +184,18 @@ func (s *Server) Start() error {
 		return err
 	}
 	auth := telemetry.NewAuthOutcomes(authRulesFrom(s.config.Routes.AuthOutcomes))
+	var routeMatch func(string, string) string
+	if len(s.config.Routes.Templates) > 0 {
+		routeMatch = routes.Match
+	}
+	bruteForceDetector := signals.NewBruteForceDetector(
+		s.config.BruteForce, s.config.Routes.AuthOutcomes, routeMatch,
+	)
+	unknownRouteScanDetector := signals.NewUnknownRouteScanDetector(s.config.UnknownRouteScan, routeMatch)
+
+	s.collector = signals.NewCollector(
+		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, unknownRouteScanDetector, reputationDetector,
+	)
 
 	// The gateway's own reflex, and the enforcer that acts on both it and the
 	// control plane's decisions.
@@ -212,6 +222,7 @@ func (s *Server) Start() error {
 		flood:      floodDetector,
 		sqli:       sqliDetector,
 		brute:      bruteForceDetector,
+		routeScan:  unknownRouteScanDetector,
 		traversal:  traversalEnumDetector,
 		reputation: reputationDetector,
 		reflex:     reflex,
@@ -271,6 +282,7 @@ func (s *Server) Start() error {
 			// every gateway-side block takes effect on the next request.
 			reputationDetector.Middleware,
 			floodDetector.Middleware,
+			unknownRouteScanDetector.Middleware,
 			sqliDetector.Middleware,
 			traversalEnumDetector.Middleware,
 			bruteForceDetector.Middleware,
@@ -440,6 +452,7 @@ func (c Config) Enforcement() config.EnforcementConfig {
 		RateLimit:         c.RateLimit,
 		AttackDetection:   c.AttackDetection,
 		BruteForce:        c.BruteForce,
+		UnknownRouteScan:  c.UnknownRouteScan,
 		Enumeration:       c.Enumeration,
 		IPReputation:      c.IPReputation,
 		Throttle:          c.Throttle,

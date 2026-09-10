@@ -14,7 +14,6 @@ import { useLive } from "@/app/ui/store";
 
 const SIGNALS = [
   { name: "api_flooding", label: "API flooding" },
-  { name: "brute_force", label: "Brute force" },
   { name: "sql_injection", label: "SQL injection" },
   { name: "path_traversal", label: "Path traversal" },
   { name: "ip_reputation", label: "Known bad address" },
@@ -242,14 +241,14 @@ export default function SettingsPage() {
           />
         </Card>
 
-        <Card title="Brute force" note="Counts failed logins per IP on the login paths.">
+        <Card title="Consecutive failed logins" note="Counts configured backend invalid-credential outcomes per client and login target. Login routes and status meanings are structural settings in config.yaml.">
           <Toggle
             label="Detector on"
             checked={draft.brute_force.enabled}
             onChange={(v) => edit("brute_force", "enabled", v)}
           />
           <Num
-            label="Max failures"
+            label="Consecutive failures"
             value={draft.brute_force.max_failures}
             min={1}
             onChange={(v) => edit("brute_force", "max_failures", v)}
@@ -258,13 +257,41 @@ export default function SettingsPage() {
             label="Window"
             value={draft.brute_force.window}
             onChange={(v) => edit("brute_force", "window", v)}
-            hint='How far back failures are counted, like "60s" or "5m".'
+            hint='A gap longer than this starts a new streak, like "60s" or "5m".'
           />
-          <List
-            label="Login paths"
-            value={draft.brute_force.login_paths || []}
-            onChange={(v) => edit("brute_force", "login_paths", v)}
-            hint="Exact paths treated as a login attempt. One per line."
+        </Card>
+
+        <Card title="Unknown-route scanning" note="Counts distinct raw paths classified as &lt;unmatched&gt; by the configured route table. Backend 404s on known routes and repeated dead links do not count.">
+          <Toggle
+            label="Detector on"
+            checked={draft.unknown_route_scanning.enabled}
+            onChange={(v) => edit("unknown_route_scanning", "enabled", v)}
+          />
+          <Num
+            label="Distinct paths"
+            value={draft.unknown_route_scanning.distinct_paths}
+            min={2}
+            onChange={(v) => edit("unknown_route_scanning", "distinct_paths", v)}
+          />
+          <Text
+            label="Window"
+            value={draft.unknown_route_scanning.window}
+            onChange={(v) => edit("unknown_route_scanning", "window", v)}
+            hint='How long distinct unmatched paths remain associated, like "5m".'
+          />
+          <Num
+            label="Maximum clients"
+            value={draft.unknown_route_scanning.max_clients}
+            min={1}
+            max={100000}
+            onChange={(v) => edit("unknown_route_scanning", "max_clients", v)}
+          />
+          <Num
+            label="Maximum paths per client"
+            value={draft.unknown_route_scanning.max_paths_per_client}
+            min={2}
+            max={10000}
+            onChange={(v) => edit("unknown_route_scanning", "max_paths_per_client", v)}
           />
         </Card>
 
