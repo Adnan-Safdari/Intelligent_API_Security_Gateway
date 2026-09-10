@@ -52,21 +52,68 @@ the latest observation but are excluded from the sample.
 The 0–100 risk score is a configured weighted sum of deterministic evidence,
 endpoint deviation, campaign facts, and ML anomaly. Every stored recommendation
 contains the raw component, configured weight, weighted points, final score,
-and guardrail result.
+and guardrail result. The score is bounded to 0–100 and clamped at every
+component; policy confidence is a second, separately-derived 0–1 number (see
+[Advisory ML signals](#advisory-ml-signals) below) — the two are never
+combined into one figure.
 
-Policy confidence is separate. It is derived only from deterministic gateway
-evidence and campaign correlation. The Isolation Forest anomaly score is never
-called confidence and cannot enforce by itself. An ML-only anomaly is saved as
-monitor advice. ML-assisted blocking additionally requires a strong anomaly,
-repeated deterministic evidence, and the configured confidence floor.
+Every number behind that score falls into one of four kinds. Telling them
+apart is what keeps the configuration surface small: a value only becomes a
+setting once an operator could sensibly want it different, and there are far
+fewer of those than there are numbers in the code.
 
+> A value is **configurable policy** if it answers *"what should we do about
+> it?"*. It stays **fixed** if it answers *"what is happening?"* — detection
+> and campaign correlation are definitional, not policy — or if it **bounds
+> the worst case**: a rail an operator must not be able to unbolt.
+
+### Fixed safety guardrails
+
+Cannot be configured away, by design. These hold regardless of what
+`adaptive.json` says:
+
+| Rail | Where | What it prevents |
+| --- | --- | --- |
+| No deterministic evidence → Monitor, unconditionally | `adaptive/risk.py` `_guard` | A statistical surprise (ML, behaviour) can never be sole authority to act |
+| Detector points configured to zero → Monitor | `adaptive/risk.py` `_guard` | Zeroing out `detector_points` cannot be used to silently disable the floor above |
+| Reputation excluded from deterministic evidence | `adaptive/risk.py` `calculate_risk` | A list membership is a prior, not an observed event; it can firm up a decision but never originate one |
+| Two detectors firing on one request count once | `adaptive/risk.py` `calculate_risk` | De-duplicated by `stream_id`, so evidence volume can't be inflated by request, only by distinct observation |
+| `maximum_policy_duration_seconds` binds every write, including human overrides | `policy/writer.py`, `feedback/overrides.py` | An analyst's `escalate` cannot stand longer than the configured ceiling — see below |
+| Allowlist outranks everything, including a human | `policy/simulation.py` | A declared range is the more considered of two decisions, not the agent overruling a person |
+| No private/reserved/loopback address, no policy without a TTL, per-cycle write cap, dry-run | `policy/writer.py` | Bounds the blast radius of one bad cycle regardless of configuration |
+| The validation bounds themselves (below) | `adaptive/config.py` `validate()` | An operator sets a value *within* a bound, never past it — the bound is not itself a setting |
+
+`feedback/overrides.py`'s TTL resolution is worth calling out by name: a
+console override without an explicit duration used to fall back to a
+module-level constant that could exceed `maximum_policy_duration_seconds` —
+an `escalate` override, in particular, defaulted to twice the ceiling, and
+nothing downstream re-checked it because the ceiling check only ran for
+agent-issued decisions. Every override's TTL — explicit or defaulted — is now
+resolved against `AdaptiveConfig.guardrails` and capped at the same ceiling
+the agent itself cannot exceed.
+
+### Configurable policy limits
+
+What to do, how hard, and for how long — the actual `AdaptiveConfig` surface.
 All defaults and bounds are in
-`control-plane/configs/adaptive.json.example`. Set `IASG_ADAPTIVE_CONFIG` to
-that path (or JSON text) for a non-Postgres launch. With Postgres enabled, the
-dashboard stores the validated live configuration in `adaptive_settings` and
-the control plane reads it at the start of every cycle.
+`control-plane/configs/adaptive.json.example`, whose three top-level blocks
+(`baseline`, `risk`, `guardrails`) map onto these categories as: `baseline` is
+category 3 below, `risk` and `guardrails` are this one, and `risk.ml_weight`
+specifically is category 4. Set `IASG_ADAPTIVE_CONFIG` to that path (or JSON
+text) for a non-Postgres launch. With Postgres enabled, the dashboard stores
+the validated live configuration in `adaptive_settings` and the control plane
+reads it at the start of every cycle.
 
-The server and Python loader enforce the same safety envelope:
+The dashboard's settings form exposes most of this surface, but not all of
+it — `risk.detector_points`, `risk.severity_multipliers`,
+`repeated_evidence_increment`, the two confidence weights, and
+`guardrails.analyst_escalation_*` are env/SQL-only today, changeable through
+`IASG_ADAPTIVE_CONFIG` or a direct update to `adaptive_settings` but not from
+the console.
+
+The server and Python loader enforce the same validated bounds — the
+mechanism by which a configurable value cannot be pushed past a fixed
+ceiling:
 
 | Setting group | Validated bounds |
 | --- | --- |
@@ -84,6 +131,80 @@ The server and Python loader enforce the same safety envelope:
 Unknown fields are rejected instead of being silently ignored. Settings edits
 use an optimistic version check, so one analyst cannot overwrite another
 analyst's newer configuration from a stale page.
+
+This is also the gateway's own configurable-limits lane, on the other side of
+the Redis boundary — `policy-enforcement.md`'s Configuration section owns rate
+limits, block durations, and detector thresholds for the Go process itself,
+which never reads `AdaptiveConfig` or Postgres directly.
+
+### Learned adaptive baselines
+
+Per-endpoint `median + mad_multiplier × MAD`, described in
+[Baselines](#baselines) above. The distinguishing property: a learned value is
+never trusted raw. It is always clamped by a *fixed* rail
+(`minimum_threshold_rpm`/`maximum_threshold_rpm`), gated by `warmup_windows`
+before it can authorize anything, and admitted only from windows that were
+`safe_to_learn` — complete, detector-clean, and allowed. Hysteresis and
+cooldown then bound how fast a trusted value may itself move. Nothing here
+is advisory the way ML is: once `baseline_ready=true`, a behavioural
+deviation is deterministic-adjacent input to the score, just a slower-moving
+one than gateway evidence.
+
+### Advisory ML signals
+
+The Isolation Forest anomaly score is bounded, separate from confidence, and
+**structurally** unable to originate enforcement — not just capped by a small
+default weight. Three independent things enforce this, not one:
+
+1. No deterministic evidence → Monitor (fixed guardrail table, above) — even
+   at `ml_weight: 1.0` and a maximal anomaly score, the action cannot pass
+   Monitor. `control-plane/tests/test_adaptive_enforcement.py::test_even_an_adversarial_ml_weight_cannot_buy_an_action`
+   proves this at the least favourable configuration ML could be given, not
+   just the 5%-weight default.
+2. Policy confidence is derived only from deterministic evidence and campaign
+   correlation — the ML score never appears in that expression, so an
+   ML-inflated risk score cannot inflate the confidence that gates it.
+3. A model-assisted **block** additionally requires the anomaly itself to
+   clear `strong_ml_anomaly` (0.80 by default): if ML was necessary to cross
+   the block line, ML must itself be strong, not merely present.
+
+That third guard is deliberately asymmetric, and worth stating plainly rather
+than letting "ML is advisory" imply more than the code enforces: the
+strong-anomaly check exists only on the path to a **block**. On the path to a
+**throttle**, ML's points can be the exact margin that carries a score across
+the throttle line with no equivalent check — ML still cannot act alone
+(guardrail 1 above still applies), but it can be *decisive* for a throttle in
+a way it cannot be for a block.
+`test_ml_can_be_the_margin_into_throttle_but_not_into_block` in the same file
+pins this: identical evidence and campaign facts score 41 (Monitor) without
+ML and 46 (Throttle) with it, and nothing on the throttle branch asks whether
+ML was load-bearing for that difference.
+
+No model is currently deployable (see `anomaly-model-results.md`, "Why
+neither model can be deployed") — this section describes a wired-but-dormant
+path, not a live one. See `anomaly-features.md`'s "Score authority" for the
+feature-level half of this contract (what the model is trained on, and why
+enforcement decisions are excluded from its training data).
+
+### What clears the reflex's floor, alone
+
+The gateway's own `min_score` (80 by default) determines whether a single
+detector's evidence can arm the reflex without correlation. Not every
+detector can:
+
+| Detector, at maximum confidence | Score | Clears `min_score: 80` alone? |
+| --- | --- | --- |
+| Path traversal | 80 | Yes — exactly at the floor |
+| Reputation (listed address) | 80 | Yes — exactly at the floor, by deliberate design (see `ip_reputation.go`) |
+| SQL injection, ≥2 patterns matched | 85–100 | Yes |
+| SQL injection, exactly one strong pattern | 70 | No |
+| Enumeration alone (no traversal) | 50 | No |
+| API flood, brute force | up to 100 (ratio-based) | Only above 2× the configured threshold |
+
+This table exists nowhere else, and the interaction is load-bearing: a
+single weak SQLi match or a bare enumeration hit is deliberately insufficient
+on its own, by construction of the score band rather than by a documented
+rule. Raising or lowering `min_score` shifts every row in this table at once.
 
 ## Modes
 
@@ -197,3 +318,14 @@ docker compose -f infra/docker-compose.yml logs -f control_plane
 The Admin reset clears history with `XTRIM` and preserves consumer groups. It
 deliberately does not lift active enforcement; use the Policy page's explicit
 delete action or wait for TTL expiry before repeating the same identities.
+
+## Code references
+
+- `control-plane/iasg/adaptive/config.py` — `AdaptiveConfig` and `validate()`, the configurable-limits schema and its bounds
+- `control-plane/iasg/adaptive/risk.py` — `calculate_risk`, `_guard`, `_candidate`: the fixed guardrails and the score/confidence split
+- `control-plane/iasg/adaptive/baseline.py` — the learned-baseline path: warm-up, hysteresis, cooldown
+- `control-plane/iasg/ml/scorer.py` — `ModelScorer`, the advisory ML boundary at load and score time
+- `control-plane/iasg/feedback/overrides.py` — `_resolve_ttl`, where a human override's duration is capped at the same ceiling as an agent decision
+- `control-plane/iasg/policy/writer.py` — the last guardrail check before anything reaches Redis
+- `control-plane/tests/test_adaptive_enforcement.py` — the properties in "Advisory ML signals" as executable tests
+- `control-plane/iasg/policy/agent.py` — a superseded action ladder (confidence thresholds, throttle rungs, campaign-size escalation) that duplicates `AdaptiveConfig` field-for-field. `PolicyAgent.decide()` and `reputation_bias()` have no production caller; nothing on the enforcement path in `runner.py` reaches them. Kept for its test coverage and for embedders that may still construct it directly — its constants are not live policy and should not be read as such.

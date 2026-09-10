@@ -134,6 +134,57 @@ def test_ml_anomaly_alone_can_only_monitor_and_is_not_confidence():
     assert "not policy confidence" in result.explanation["ml"]["note"]
 
 
+def test_even_an_adversarial_ml_weight_cannot_buy_an_action():
+    """
+    The 5% default ml_weight is a default, not the invariant. The invariant is
+    risk.py:192 -- deterministic_count == 0 returns Monitor unconditionally,
+    before weights are ever consulted. Proven here at ml_weight=1.0, the most
+    favourable configuration ML could be given.
+    """
+    config = dataclasses.replace(
+        AdaptiveConfig(),
+        risk=dataclasses.replace(
+            AdaptiveConfig().risk,
+            deterministic_weight=0.0, behavioural_weight=0.0,
+            campaign_weight=0.0, ml_weight=1.0,
+        ),
+    ).validate()
+
+    result = calculate_risk(
+        config, None, [],
+        anomaly=AnomalyObservation(True, 1.0, "iforest-test", "v2"),
+    )
+
+    assert result.score == 100.0, "ML alone can still fill the score"
+    assert result.action == ACTION_MONITOR, "but score alone never authorises an action"
+
+
+def test_ml_can_be_the_margin_into_throttle_but_not_into_block():
+    """
+    _guard's strong-anomaly counterfactual (risk.py:211-219) exists only on
+    the ACTION_TEMP_BLOCK branch. Below, deterministic and campaign evidence
+    alone total 41 -- one point under the 45-point throttle line -- and the
+    model's advisory 5 points are what carry it across. The throttle branch
+    (risk.py:221-227) never asks whether ML was load-bearing for that, so ML
+    still cannot act alone but it *can* decide a throttle in a way it could
+    not have decided a block. This pins that asymmetry rather than letting
+    "ML is advisory" imply something the code does not actually enforce.
+    """
+    row = Evidence(
+        timestamp=NOW, ip="203.0.113.5", endpoint="/api/login", method="POST",
+        detector="bruteforce", severity="low",
+    )
+    strong_anomaly = AnomalyObservation(True, 1.0, "iforest-test", "v2")
+
+    with_ml = calculate_risk(AdaptiveConfig(), campaign(0.7), [row], anomaly=strong_anomaly)
+    without_ml = calculate_risk(AdaptiveConfig(), campaign(0.7), [row], anomaly=AnomalyObservation())
+
+    assert without_ml.score == 41.0
+    assert without_ml.action == ACTION_MONITOR, "below the throttle line without ML"
+    assert with_ml.score == 46.0
+    assert with_ml.action == ACTION_THROTTLE, "ML supplied the margin, unguarded on this branch"
+
+
 def test_two_signals_on_one_request_are_not_two_blocking_observations():
     rows = [
         dataclasses.replace(row, stream_id="same-request")

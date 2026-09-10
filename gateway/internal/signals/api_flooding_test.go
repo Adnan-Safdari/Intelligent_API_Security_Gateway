@@ -48,6 +48,45 @@ func TestFloodAlertsOnceOverThreshold(t *testing.T) {
 	}
 }
 
+// Flood's score used to come from its own copy of ratioScore's curve, with a
+// hand-shifted threshold at the call site. That shift moved the 2x/5x bands
+// along with the boundary it was meant to fix, silently dropping a flood at
+// exactly 2x the threshold below the reflex's min_score. This pins the bands
+// against ratioScore directly so a future refactor can't reintroduce that.
+func TestFloodScoreMatchesRatioScoreAboveThreshold(t *testing.T) {
+	det := floodDetector(5)
+	handler := det.Middleware(okBackend())
+	const ip = "203.0.113.9"
+	for i := 0; i < 10; i++ {
+		probe(handler, http.MethodGet, "/api/products", ip, "")
+	}
+
+	got := det.Metrics(ip).Score
+	if want := ratioScore(10, 5); got != want {
+		t.Fatalf("score = %d, want ratioScore(10, 5) = %d", got, want)
+	}
+	if got != 80 {
+		t.Fatalf("score = %d, want 80 -- exactly the reflex's min_score at 2x threshold", got)
+	}
+}
+
+func TestFloodScoreStaysCleanAtExactThreshold(t *testing.T) {
+	det := floodDetector(5)
+	handler := det.Middleware(okBackend())
+	const ip = "203.0.113.10"
+	for i := 0; i < 5; i++ {
+		probe(handler, http.MethodGet, "/api/products", ip, "")
+	}
+
+	ev := det.Metrics(ip)
+	if ev.ThresholdCross {
+		t.Fatal("count == threshold should not have crossed")
+	}
+	if ev.Score != 30 {
+		t.Fatalf("score at count == threshold = %d, want 30 (still the clean side)", ev.Score)
+	}
+}
+
 // The team's decision is detect-only. If that ever changes, this test should
 // be the thing that fails and forces the conversation.
 func TestFloodNeverBlocks(t *testing.T) {

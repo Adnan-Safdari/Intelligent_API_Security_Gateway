@@ -74,6 +74,12 @@ inserting an `escalate` key tests `403` but does not run Python's alert workflow
 
 ## Configuration
 
+This is the Go gateway's own configurable-limits surface — rate limits,
+timeouts, and the Redis policy lookup. It never reads `AdaptiveConfig` or
+Postgres directly; `adaptive-policy.md`'s "Configurable policy limits" is the
+control-plane side of that same category, on the other side of the `policy:`
+Redis keys.
+
 Merge these settings into the existing configuration; preserve local tuning.
 
 ```yaml

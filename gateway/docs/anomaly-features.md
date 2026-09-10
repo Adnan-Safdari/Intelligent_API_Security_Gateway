@@ -378,6 +378,12 @@ case on purpose.
 
 ## Score authority
 
+See `adaptive-policy.md`'s "Advisory ML signals" for the full enforcement-side
+account of this boundary — the three independent guards, the throttle/block
+asymmetry, and the tests that pin them. This section covers the feature-level
+half: what the model is trained on and why enforcement facts are excluded
+from that.
+
 The anomaly score contributes only its configured, bounded portion of the
 0–100 risk score (5 points by default). It **never originates enforcement**:
 without deterministic gateway evidence the selected action is always Monitor.

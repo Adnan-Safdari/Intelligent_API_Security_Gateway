@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from iasg.adaptive.config import AdaptiveConfig
 from iasg.campaigns.repository import CONTINUATION_WINDOW, CampaignRepository
 from iasg.models import Campaign
 from iasg.store.memory import MemoryStore
@@ -178,6 +179,27 @@ def test_a_block_expiring_still_counts_as_the_same_campaign():
     from iasg.policy.agent import TTL
 
     assert CONTINUATION_WINDOW.total_seconds() > max(TTL.values())
+
+
+def test_raising_the_policy_ceiling_widens_the_continuation_window():
+    """
+    CONTINUATION_WINDOW's own stated invariant is "longer than the longest
+    policy TTL". maximum_policy_duration_seconds can be configured up to 24h,
+    well past the fixed 2h default -- apply_config is what keeps the promise
+    true instead of letting a raised ceiling silently outlast the window.
+    """
+    r = repo()
+    config = AdaptiveConfig.from_mapping(
+        {"guardrails": {"maximum_policy_duration_seconds": 21_600}}  # 6h
+    )
+    r.apply_config(config)
+    r.merge([campaign(["203.0.113.5"])])
+
+    # 8h later: past the fixed 2h default, inside the derived 24h window.
+    later = NOW + timedelta(hours=8)
+    (other,) = r.merge([campaign(["198.51.100.60"], last_seen=later)])
+
+    assert other.campaign_id == "1", "the 6h ceiling should have widened the window to 24h"
 
 
 # --- shared addresses still win ---
