@@ -1,5 +1,12 @@
 import "./globals.css";
-import "leaflet/dist/leaflet.css";
+import { Archivo } from "next/font/google";
+
+const archivo = Archivo({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  variable: "--font-archivo",
+  display: "swap",
+});
 
 export const metadata = {
   title: "IASG · Operations",
@@ -8,7 +15,7 @@ export const metadata = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
+    <html lang="en" data-theme="dark" suppressHydrationWarning className={archivo.variable}>
       <head>
         <script
           dangerouslySetInnerHTML={{
@@ -16,8 +23,6 @@ export default function RootLayout({ children }) {
           }}
         />
       </head>
-      {/* Login and setup live outside the console shell: they have no session
-          to poll with, and no navigation to offer. */}
       <body>{children}</body>
     </html>
   );

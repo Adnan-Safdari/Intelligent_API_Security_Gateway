@@ -1,105 +1,125 @@
+/* Token values below are ported from the "IASG Operations" Claude Design
+   mockup (claude.ai/design project d7a4b87a), read via DesignSync. Names
+   stay this file's own (--bg-elev not --surface, --muted not --dim, etc.)
+   rather than the mockup's -- renaming ~100 call sites sitewide for a pure
+   label change carried real risk of a missed one silently reverting to an
+   old color, for zero visual difference. Only genuinely new concepts
+   (--line-2, --faint, --accent-ink) are new tokens. */
 :root,
 :root[data-theme="dark"] {
-  --bg: #14171c;
-  --bg-elev: #1c2128;
+  --bg: #0e0e11;
+  --bg-elev: #16161a;
   /* Third tier, so "layered" is a real stack rather than one surface color
      doing double duty. Nested/hover/pressed surfaces inside a card: table-row
      hover, a focused input's fill, the active option in a segmented control. */
-  --bg-elev-2: #232a33;
-  --bg-head: #191d23;
-  --line: #2b323c;
-  --text: #e4e8ee;
-  --muted: #8a93a0;
+  --bg-elev-2: #1c1c22;
+  --bg-head: #16161a;
+  --line: #26262e;
+  /* A second, stronger divider for places one hairline isn't enough weight:
+     table header rules, the line under a sticky header. */
+  --line-2: #34343e;
+  --text: #f4f3f2;
+  --muted: #9c9ba6;
+  /* A third, quietest text tone below --muted -- captions, kicker labels,
+     "—" placeholders. */
+  --faint: #6c6b76;
   --accent: #8b6cf2;
+  /* Text/icon color painted ON a solid --accent fill (nav count badge, the
+     primary button's label) -- needs its own token because it's the
+     opposite of --text, not a tint of it. */
+  --accent-ink: #0e0e11;
   /* The interactive-element companion to --bg-elev-2: active nav background,
      a selected segmented option, a focused input's fill -- anywhere the
      accent needs to tint a surface rather than paint text or a border. */
-  --accent-soft: rgba(139, 108, 242, 0.12);
-  --good: #22a876;
-  --warn: #e0a530;
-  --bad: #e5484d;
-  --row-alert: rgba(229, 72, 77, 0.1);
+  --accent-soft: rgba(139, 108, 242, 0.15);
+  --good: #2fd48f;
+  --warn: #f5a623;
+  --bad: #ff5a5f;
+  --row-alert: rgba(255, 90, 95, 0.14);
   --row-hover: rgba(255, 255, 255, 0.03);
-  --map-bg: #10141a;
-  /* Dark had no shadow at all before this, undocumented. Elevation here reads
-     through --bg-elev's contrast against --bg plus this faint inset
-     top-highlight -- a shadow alone barely shows on a near-black surface, so
-     the highlight is what actually carries "raised" rather than just "a
-     different grey box". */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.36);
+  --map-bg: #1c1c22;
+  --shadow-sm: 0 -1px 0 rgba(255, 255, 255, 0.05), 0 14px 30px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 -1px 0 rgba(255, 255, 255, 0.08), 0 20px 44px rgba(0, 0, 0, 0.62);
 
   /* Signal-type colors, one per detector, moved from format.js's SIGNAL_META
      so both themes get real light-mode contrast rather than the same eight
      hexes doing service against a near-white background they were never
      tuned against. Hue is shared with light below; only lightness/saturation
      differ. */
-  --sig-flood: #c9842a;
-  --sig-sqli: #c43c51;
-  /* Brute force and password spraying used to sit in the violet/purple band
-     -- fine when the accent was blue, a direct collision now that --accent
-     lives there instead. Moved to rust and orchid, spaced off the accent's
-     hue (~254°) and off each other and --sig-reputation (~325°). */
-  --sig-brute: #ca452b;
-  --sig-spray: #b054b0;
-  --sig-enum-trav: #2a8f7c;
-  --sig-traversal: #2f7d9a;
-  --sig-enum: #3d8a55;
-  --sig-reputation: #b04a86;
+  --sig-flood: #35a7ff;
+  --sig-sqli: #ff5d8f;
+  --sig-brute: #ffab3d;
+  --sig-spray: #ff7043;
+  --sig-enum-trav: #35b3a0;
+  --sig-traversal: #3f97b8;
+  --sig-enum: #2fd48f;
+  --sig-reputation: #8a97a8;
 
-  /* The traffic map's legend dots. --map-site mirrors --accent on purpose --
-     it used to be an independent hex that happened to match --accent's old
-     value verbatim and would have silently drifted out of sync the moment
-     the accent changed, which is exactly what happened when this redesign
-     picked a new one. --map-alert mirrors --bad for the same reason: it is
-     semantically the same "something is wrong here" as everywhere else --bad
-     appears, not a fourth independent red. --map-private mirrors --muted:
-     the two hex values were already within one digit of each other. */
-  /* Now that --accent has moved off blue, blue is free for --map-public --
-     a clean sky blue instead of the old flat, accent-adjacent navy that used
-     to make the two map dots hard to tell apart. */
-  --map-public: #38bdf8;
-  --map-site: var(--accent);
-  --map-alert: var(--bad);
-  --map-private: var(--muted);
+  /* The traffic map's legend dots. --map-public/--map-site/--map-alert/
+     --map-private are the mockup's own map palette (its --map-own renamed
+     --map-site to match this file's existing vocabulary), not derived from
+     --accent/--bad the way an earlier pass here did -- the mockup
+     deliberately keeps the map's "us" dot teal rather than accent-violet. */
+  --map-public: #7f8ba3;
+  --map-site: #2fd4b0;
+  --map-alert: #ff5a5f;
+  --map-private: #4a4a56;
+
+  /* The vector map itself -- country fill/border and the graticule
+     underlay. Distinct from --map-bg (the canvas behind everything) and
+     from --line/--bg-elev (UI chrome), since the map reads at its own
+     contrast. The handoff's own --map-land (#1e1e26) sat only 2-4 units
+     from --map-bg (#1c1c22) per channel -- correct to the spec's numbers,
+     but the two were nearly indistinguishable on screen; lightened here so
+     the landmasses actually read against the canvas. */
+  --map-land: #2c2c36;
+  --map-border: #40404e;
+  --map-grid: #232329;
 }
 
 :root[data-theme="light"] {
-  --bg: #eef0f3;
+  --bg: #f3f2f2;
   --bg-elev: #ffffff;
-  --bg-elev-2: #f4f6f8;
+  --bg-elev-2: #faf9f8;
   --bg-head: #ffffff;
-  --line: #d5dae1;
-  --text: #1b2430;
-  --muted: #5b6572;
+  --line: #e3e1df;
+  --line-2: #cdcbc8;
+  --text: #201e1d;
+  --muted: #6b6a68;
+  --faint: #95928f;
   --accent: #6d4fd1;
-  --accent-soft: rgba(109, 79, 209, 0.08);
-  --good: #1c7a56;
-  --warn: #9a6f12;
-  --bad: #b13232;
-  --row-alert: rgba(177, 50, 50, 0.07);
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(109, 79, 209, 0.1);
+  --good: #0f8a5c;
+  --warn: #a4680b;
+  --bad: #cf2b26;
+  --row-alert: rgba(207, 43, 38, 0.09);
   --row-hover: rgba(20, 30, 40, 0.03);
-  --map-bg: #d7e0e8;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 32, 0.05), 0 1px 1px rgba(16, 24, 32, 0.03);
-  --shadow-md: 0 8px 24px rgba(16, 24, 32, 0.12), 0 2px 6px rgba(16, 24, 32, 0.06);
+  --map-bg: #faf9f8;
+  --shadow-sm: 0 1px 2px rgba(32, 30, 29, 0.09), 0 10px 24px rgba(32, 30, 29, 0.07);
+  --shadow-md: 0 2px 4px rgba(32, 30, 29, 0.1), 0 18px 38px rgba(32, 30, 29, 0.12);
 
   /* Same hue as dark, darkened in HSL space (not eyeballed) so each holds
      legible contrast as text/icon color against this theme's near-white
      surfaces -- the dark values were tuned only against --bg-elev #1c2128
      and would under-contrast here unchanged. */
-  --sig-flood: #815216;
-  --sig-sqli: #7d2130;
-  --sig-brute: #822816;
-  --sig-spray: #713071;
+  --sig-flood: #1273c4;
+  --sig-sqli: #c02d68;
+  --sig-brute: #a4680b;
+  --sig-spray: #c04a20;
   --sig-enum-trav: #1d7162;
   --sig-traversal: #1e5a70;
-  --sig-enum: #2a653c;
-  --sig-reputation: #702b54;
+  --sig-enum: #0f8a5c;
+  --sig-reputation: #5e6b7a;
 
-  --map-public: #0284c7;
-  --map-site: var(--accent);
-  --map-alert: var(--bad);
-  --map-private: var(--muted);
+  --map-public: #68778c;
+  --map-site: #0d9a83;
+  --map-alert: #cf2b26;
+  --map-private: #b4b1ad;
+
+  --map-land: #d9d6d1;
+  --map-border: #b3afa9;
+  --map-grid: #e7e5e1;
 }
 
 :root {
@@ -112,32 +132,36 @@
   --space-2: 8px;
   --space-3: 12px;
   --space-4: 16px;
-  --space-5: 24px;
+  --space-5: 30px;
   --space-6: 32px;
   --space-7: 48px;
 
-  /* Two tiers, not the six ad hoc values (1/2/3/4/6/12px, plus 999px for
-     fully-round) previously in use with no stated rule for which applied
-     where. */
-  --radius-sm: 8px; /* inputs, buttons, tags, chips, small controls */
-  --radius-md: 10px; /* cards, panels, modals, toolbars */
-  --radius-full: 999px; /* pills, avatars, dots -- unchanged */
+  /* The mockup uses zero radius everywhere -- every button/card/input/tag is
+     a sharp rectangle. Two tokens stay (rather than deleting them and
+     hardcoding 0 at each call site) so a future direction change is one
+     line, not a re-sweep. --radius-full is unchanged: the mockup's map
+     legend dots are still true circles even though its status dots and its
+     toggle switch are square -- the one deliberate circular exception. */
+  --radius-sm: 0; /* inputs, buttons, tags, chips, small controls */
+  --radius-md: 0; /* cards, panels, modals, toolbars */
+  --radius-full: 999px; /* the map legend's circular swatches -- the one exception */
 
-  /* Before this, body text (13px) and .page-head h1 (17px) were nearly the
-     same size -- nothing signalled "this is a headline number" vs. "this is
-     a label" anywhere in the app. Sizes only; weight is separate below since
-     the two vary independently (a card head is bigger AND no bolder than
-     body text, a hero number is both). */
+  /* Sizes pulled from the mockup's own scale (its h1/card-h2/stat-number/
+     hero values), not invented. Weight is separate below since the two vary
+     independently (a card head is bigger AND no bolder than body text). */
   --text-2xs: 10px; /* uppercase table/stat labels */
   --text-xs: 11px; /* captions, secondary lines */
   --text-sm: 12px; /* buttons, controls */
   --text-base: 13px; /* body default, unchanged */
-  --text-md: 15px; /* card-head h2 */
-  --text-lg: 22px; /* page-head h1, secondary metric numbers */
-  --text-xl: 28px; /* section-level emphasis */
-  --text-2xl: 40px; /* the one hero metric number */
+  --text-md: 17px; /* card-head h2 -- mockup's dominant card-title size */
+  --text-lg: 34px; /* page-head h1 -- mockup's exact value */
+  --text-xl: 26px; /* section-level emphasis (e.g. Adaptive's mode banner -- not in the mockup, kept between card-head and page h1) */
+  --text-2xl: 27px; /* stat-tile numbers (Overview, Policy) -- mockup's exact value */
 
-  --weight-bold: 780; /* hero numbers, page title -- existing 400/500/650 unchanged */
+  /* Archivo is loaded at 400/500/600/700/800 (app/layout.js) -- 800 is a
+     real weight now, not synthetic bolding, so this must land on a loaded
+     value. */
+  --weight-bold: 800; /* hero/stat numbers, page title, card titles */
 }
 
 * {
@@ -166,21 +190,20 @@ body {
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-family: var(--font-archivo), "Segoe UI", system-ui, -apple-system, sans-serif;
   font-size: 13px;
   line-height: 1.45;
 }
 
+/* The design handoff's page container: a fixed 1560px, not fluid -- the
+   header and status strip are full-bleed bands (their own background runs
+   edge to edge) with this same 1560px cap applied to their inner content,
+   so the whole chrome reads as one consistent column width rather than a
+   boxed app floating in a wider viewport. */
 .app {
-  /* Fluid, not fixed: 1440px left a visible dead band down both sides on
-     anything wider than a small laptop screen -- 144px per side on a 16"
-     MacBook. Scales with the viewport up to a point past which a security
-     console reads better with the extra width as breathing room than as
-     content, since every grid inside is already fluid (fr/auto-fit) and
-     reflows into it for free. */
-  max-width: min(1800px, calc(100vw - 48px));
+  max-width: 1560px;
   margin: 0 auto;
-  padding: 12px 16px 28px;
+  padding: 34px 28px 72px;
 }
 
 /* Every page renders a flat fragment of top-level sections straight into
@@ -194,38 +217,50 @@ main > * + * {
 }
 
 .top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: var(--space-3) 0;
+  align-items: stretch;
+  gap: 32px;
+  background: var(--bg-head);
+  border-bottom: 2px solid var(--line);
+  padding: 0 28px;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
+  padding: 14px 0;
 }
 
 .logo {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 55%, white));
-  color: #fff;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  border-radius: var(--radius-sm);
+  width: 22px;
+  height: 22px;
+  background: var(--accent);
 }
 
-.brand strong {
-  display: block;
-  font-size: 14px;
-  font-weight: 650;
+.logo-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-ink);
 }
 
-.brand small,
+.brand-text {
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.brand-text .brand-sub {
+  color: var(--muted);
+  font-weight: 600;
+}
+
 .top-meta,
 .empty,
 .card-head span,
@@ -233,10 +268,6 @@ main > * + * {
 .pct,
 .map-internal span {
   color: var(--muted);
-}
-
-.brand small {
-  font-size: 11px;
 }
 
 .top-meta {
@@ -251,38 +282,39 @@ main > * + * {
 
 .nav {
   display: flex;
+  align-items: stretch;
   gap: 2px;
-  margin-left: 18px;
+  margin-right: auto;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 11px;
-  border: 1px solid transparent;
-  border-radius: 3px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
   color: var(--muted);
   text-decoration: none;
-  font-size: 12.5px;
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .nav-link:hover {
   color: var(--text);
-  background: var(--row-hover);
 }
 
 .nav-link.active {
   color: var(--accent);
-  background: var(--accent-soft);
-  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  border-bottom-color: var(--accent);
 }
 
 /* A count on the tab, so you can see there is something to look at without
    opening the page. */
 .nav-link em {
   padding: 0 5px;
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--accent);
   color: #fff;
   font-style: normal;
@@ -290,10 +322,84 @@ main > * + * {
   font-variant-numeric: tabular-nums;
 }
 
-.top-actions {
-  margin-left: auto;
+.header-tools {
   display: flex;
-  gap: 6px;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+}
+
+.live-group {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+}
+
+.live-group button {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  background: none;
+  border: 0;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.live-group button:hover {
+  color: var(--text);
+}
+
+.live-group .refresh-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  padding: 0;
+  border-left: 1px solid var(--line);
+}
+
+.live-group .refresh-btn:hover {
+  color: var(--accent);
+}
+
+.live-dot {
+  width: 6px;
+  height: 6px;
+  background: var(--bad);
+}
+
+.live-dot.on {
+  background: var(--good);
+  animation: iasg-blink 2s infinite;
+}
+
+.live-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.refreshed-label {
+  min-width: 96px;
+  font-size: 11px;
+  color: var(--faint);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.host-label {
+  font-size: 11.5px;
+  color: var(--faint);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+@keyframes iasg-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
 }
 
 /* Restored here after Phase 1's dead-CSS cleanup deleted it by mistake: it
@@ -331,36 +437,63 @@ main > * + * {
 /* The status line moved out of the header when navigation moved in: it is
    about the system, not about where you are in the console. */
 .statusbar {
+  background: var(--bg-head);
+  border-bottom: 1px solid var(--line);
+}
+
+.statusbar-inner {
+  max-width: 1560px;
+  margin: 0 auto;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
-  padding: 6px 2px;
-  border-bottom: 1px solid var(--line);
+  padding: 8px 28px;
   color: var(--muted);
   font-size: 11.5px;
 }
 
 .page-head {
-  margin: var(--space-6) 0 var(--space-3);
+  margin: 0 0 var(--space-5);
+}
+
+.page-head-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .page-head .eyebrow {
-  margin: 0 0 4px;
+  margin: 0 0 9px;
+  letter-spacing: 0.14em;
 }
 
 .page-head h1 {
   margin: 0;
   font-size: var(--text-lg);
   font-weight: var(--weight-bold);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
 }
 
 .page-head p {
-  margin: 4px 0 0;
-  max-width: 78ch;
+  margin: 9px 0 0;
+  max-width: 64ch;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13.5px;
   line-height: 1.5;
+}
+
+.page-head p:empty {
+  display: none;
 }
 
 .page-foot {
@@ -380,13 +513,13 @@ main > * + * {
   padding: 8px 10px;
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .segmented {
   display: flex;
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -441,20 +574,21 @@ main > * + * {
 .field select,
 .field input,
 .field textarea,
-.form input {
+.form input,
+.toolbar select {
   /* textarea joined this rule after Field.Textarea/Field.List (parts.jsx)
      rendered as an unstyled white box everywhere outside Settings -- a
      pre-existing gap, not new: Settings has always had its own
      .settings-fields textarea override, but nothing gave a bare .field one
      the same background/border/color the sibling inputs and selects get
      here, in Adaptive or anywhere else that ever used the multiline case. */
-  padding: 4px 8px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--bg);
+  border-radius: 0;
+  background: var(--bg-elev-2);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-base);
 }
 
 .field textarea {
@@ -465,7 +599,8 @@ main > * + * {
 .field select:focus,
 .field input:focus,
 .field textarea:focus,
-.form input:focus {
+.form input:focus,
+.toolbar select:focus {
   /* .field input/textarea were both missing from this rule -- only .field
      select and .form input were covered, so the ~30 plain number/text
      inputs in Adaptive's guardrail grid (in a .field.block, not a .form) got
@@ -496,7 +631,13 @@ main > * + * {
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
+}
+
+/* Nested inside .toolbar.sub (Events' window/since row), the chip row is
+   the right-aligned cluster the design puts there, not a block of its own
+   between rows -- see the toolbar's own margin note above. */
+.toolbar .chip-row {
+  margin-left: auto;
 }
 
 .chip {
@@ -535,14 +676,16 @@ main > * + * {
 
 .act.primary {
   padding: var(--space-2) var(--space-3);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
-  font-size: 12px;
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: var(--text-sm);
 }
 
 .act.primary:hover:not(:disabled) {
-  background: var(--accent);
-  color: #fff;
+  background: color-mix(in srgb, var(--accent) 85%, black);
+  border-color: color-mix(in srgb, var(--accent) 85%, black);
 }
 
 .form-note {
@@ -613,7 +756,7 @@ main > * + * {
   padding: 1px 4px;
   background: var(--bg-head);
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: 0;
   font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 11px;
   color: var(--text);
@@ -644,19 +787,17 @@ tr.dim td { opacity: 0.6; }
 
 .metric.linked {
   display: block;
-  padding: 10px 12px;
   color: inherit;
   text-decoration: none;
-  transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s;
+  transition: background 0.15s;
 }
 
-/* Only cards you can act on get the lift -- a display-only list (Signals,
-   fact-list, policy-list) staying flat is what makes an interactive one
-   read as interactive, rather than diluting the effect everywhere. */
+/* A background tint, not a lift -- .metric cells share one border with
+   their row neighbors now (no individual card to lift out of), so a
+   shadow/transform here would look like the cell breaking out of the strip
+   rather than reading as interactive. */
 .metric.linked:hover {
-  border-color: color-mix(in srgb, var(--accent) 25%, var(--line));
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  background: var(--row-hover);
 }
 
 a { color: var(--accent); }
@@ -668,10 +809,11 @@ a { color: var(--accent); }
   background: var(--line);
 }
 
+/* Square, not round -- the mockup's status dots carry no border-radius (only
+   the map legend's dots are circles, set explicitly there). */
 .dot {
   width: 7px;
   height: 7px;
-  border-radius: 50%;
   background: var(--bad);
 }
 
@@ -681,17 +823,21 @@ a { color: var(--accent); }
 
 .theme-btn {
   border: 1px solid var(--line);
-  background: var(--bg-elev);
+  background: none;
   color: var(--text);
-  padding: 6px 10px;
+  padding: 6px 11px;
   font: inherit;
-  font-size: 12px;
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   cursor: pointer;
-  border-radius: 3px;
+  border-radius: 0;
 }
 
 .theme-btn:hover {
   border-color: var(--accent);
+  color: var(--accent);
 }
 
 .metrics,
@@ -711,6 +857,12 @@ a { color: var(--accent); }
      from 4 columns to 1 at the 980px breakpoint with nothing between, the
      only grid in the sheet that did. */
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  /* No gap -- .metric's own border-right is the divider now, not a gap
+     between separately-bordered cards. */
+  gap: 0;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-sm);
 }
 
 /* Overview's second row, below the full-width map: Signals and Top IPs
@@ -730,7 +882,6 @@ a { color: var(--accent); }
   align-items: start;
 }
 
-.metric,
 .card {
   /* No padding of its own: every list inside one supplies it via whichever
      child class it holds (.signal-list, .policy-list, .fact-list, ...), and
@@ -743,8 +894,16 @@ a { color: var(--accent); }
   box-shadow: var(--shadow-sm);
 }
 
+/* A stat row is one bordered strip with internal dividers, not several
+   separately-bordered cards -- the mockup's pattern. .metric no longer owns
+   its own border/shadow; .metrics (the row) does, once. */
 .metric {
-  padding: 10px 12px;
+  padding: 17px 20px;
+  border-right: 1px solid var(--line);
+}
+
+.metric:last-child {
+  border-right: 0;
 }
 
 .metric p {
@@ -758,25 +917,54 @@ a { color: var(--accent); }
 .metric strong {
   display: block;
   margin: 4px 0 2px;
-  font-size: 24px;
-  font-weight: 650;
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-bold);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 
-.spark {
+.metric strong.high { color: var(--bad); }
+.metric strong.mid { color: var(--warn); }
+
+.metric-value-row {
   display: flex;
-  align-items: flex-end;
-  gap: 2px;
-  height: 26px;
-  margin: 6px 0 4px;
+  align-items: baseline;
+  gap: 9px;
+  margin: 4px 0 2px;
 }
 
-.spark span {
-  flex: 1;
-  background: var(--accent);
-  opacity: 0.7;
-  min-height: 2px;
+.metric-value-row strong {
+  margin: 0;
+}
+
+.metric-badge {
+  padding: 2px 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--bg-elev-2);
+}
+
+.metric-badge.high {
+  color: var(--bad);
+  background: var(--row-alert);
+}
+
+.metric-badge.mid {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+}
+
+.metric-with-spark {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.spark-svg {
+  flex: none;
+  overflow: visible;
 }
 
 .card-head {
@@ -787,13 +975,14 @@ a { color: var(--accent); }
   padding: 8px 12px;
   background: var(--bg-head);
   border-bottom: 1px solid var(--line);
-  border-radius: 3px 3px 0 0;
+  border-radius: 0;
 }
 
 .card-head h2 {
   margin: 0;
   font-size: var(--text-md);
-  font-weight: 650;
+  font-weight: var(--weight-bold);
+  letter-spacing: -0.015em;
 }
 
 .card-head span {
@@ -841,7 +1030,7 @@ a { color: var(--accent); }
 .swatch {
   width: 8px;
   height: 8px;
-  border-radius: 1px;
+  border-radius: 0;
 }
 
 .grow {
@@ -861,12 +1050,139 @@ a { color: var(--accent); }
   font-variant-numeric: tabular-nums;
 }
 
+/* Detected signal types (Overview) -- each row carries its own proportional
+   bar underneath, ported from the mockup rather than the plain count list
+   this used to be. */
+.signal-bars {
+  list-style: none;
+  margin: 0;
+  padding: 6px 20px 16px;
+}
+
+.signal-bars li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.signal-bars li:last-child {
+  border-bottom: 0;
+}
+
+.signal-bar-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.signal-bar-top .swatch {
+  width: 3px;
+  height: 15px;
+  border-radius: 0;
+}
+
+.signal-bar-top a {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.signal-bar-top a:hover {
+  text-decoration: underline;
+}
+
+.signal-bar-top b {
+  margin-left: auto;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.signal-bar-top b span {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.signal-bar-track {
+  height: 4px;
+  margin-top: 6px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+}
+
+.signal-bar-track span {
+  display: block;
+  height: 100%;
+}
+
+/* Top offending IPs (Overview) -- address + place on the left, a risk score
+   column, and a block action, one row per source. */
+.ip-grid {
+  padding: 0 20px 14px;
+}
+
+.ip-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 13px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.ip-row:last-child {
+  border-bottom: 0;
+}
+
+.ip-row-addr {
+  min-width: 0;
+}
+
+.ip-row-addr .meta {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.ip-row-risk {
+  text-align: right;
+}
+
+.ip-row-risk strong {
+  display: block;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.ip-row-risk strong.high { color: var(--bad); }
+.ip-row-risk strong.mid { color: var(--warn); }
+.ip-row-risk strong.low { color: var(--good); }
+
+.ip-block-btn {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ip-row-risk small {
+  display: block;
+  margin-top: 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
 /* The one card per page that's the actual reason you're here -- Overview's
    map, Policy's in-force table -- gets a touch of brand color and used to
    get the exact same treatment as a bulleted side list. Reusable rather than
    map-specific since the "one dominant panel" pattern repeats per page. */
 .panel-primary {
-  border-top: 2px solid var(--accent);
+  border-top: 3px solid var(--accent);
 }
 
 .map-card {
@@ -874,10 +1190,75 @@ a { color: var(--accent); }
   flex-direction: column;
 }
 
+.map-head {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.map-legend {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.map-legend span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+
+.map-legend i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+/* The alerting-source legend dot pulses, echoing the alert markers on the
+   map itself -- ported from the mockup's decorative map-alert animation. */
+.map-legend .alert {
+  position: relative;
+}
+
+.map-legend .alert::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: 50%;
+  border: 1px solid var(--map-alert);
+  animation: map-alert-pulse 2.2s infinite;
+}
+
+@keyframes map-alert-pulse {
+  0% { transform: scale(1); opacity: 0.9; }
+  70%, 100% { transform: scale(2.6); opacity: 0; }
+}
+
+.map-foot {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  flex-wrap: wrap;
+  padding: 13px 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.map-foot strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.map-foot a {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .map-wrap {
   position: relative;
-  /* Leaflet layers use large z-index values (up to 1000). Contain those
-     values here so page-level dialogs remain above the map. */
   isolation: isolate;
   z-index: 0;
   flex: 1;
@@ -885,12 +1266,9 @@ a { color: var(--accent); }
 }
 
 .map-canvas {
-  /* Leaflet reads the container's actual rendered size at mount, so this is
+  /* traffic-map.jsx measures this element with a ResizeObserver, so this is
      the value that matters -- .map-wrap's min-height above is a fallback if
-     the canvas itself ever isn't the one constraining height. Was a fixed
-     400px regardless of viewport; now that it's the page's one full-width
-     hero rather than sharing a row with a side column, it gets even more
-     of a big monitor's extra room than before. */
+     the canvas itself ever isn't the one constraining height. */
   height: clamp(440px, 58vh, 760px);
   background: var(--map-bg);
 }
@@ -901,38 +1279,18 @@ a { color: var(--accent); }
   color: var(--muted);
 }
 
-.map-legend,
+/* .map-legend now lives in the card header (see above, near .map-head) --
+   this used to also style an on-map overlay legend with the same class,
+   which collided with it the same way .toggle/.check.toggle once did (see
+   the note by .switch): the lower rule's properties silently applied to
+   both. That overlay JSX is gone; .map-internal (the Local/Docker box) is
+   the only thing here now. */
 .map-internal {
   position: absolute;
   background: var(--bg-elev);
   border: 1px solid var(--line);
   font-size: 11px;
   color: var(--muted);
-  border-radius: var(--radius-sm);
-}
-
-.map-legend {
-  left: 10px;
-  bottom: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 6px 8px;
-  z-index: 500;
-}
-
-.map-legend .dot {
-  display: inline-block;
-  margin-right: 4px;
-  vertical-align: middle;
-}
-
-.map-legend .public { background: var(--map-public); }
-.map-legend .site { background: var(--map-site); }
-.map-legend .alert { background: var(--map-alert); }
-.map-legend .private { background: var(--map-private); }
-
-.map-internal {
   right: 10px;
   top: 10px;
   width: 220px;
@@ -1012,6 +1370,81 @@ tbody tr:hover td {
 .risk.mid { color: var(--warn); }
 .risk.low { color: var(--good); }
 
+.faint {
+  color: var(--faint);
+}
+
+/* Events table: status/risk/signal/action treatments, ported from the
+   design handoff's exact spec rather than reusing the shared .risk/
+   ACTION_TONE convention Policy and Campaigns already carry (see the note
+   by EVENT_ACTION_TONE in parts.jsx for why Action needs its own tones). */
+.status-chip {
+  display: inline-block;
+  padding: 2px 7px;
+  font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.status-chip.ok { color: var(--good); background: color-mix(in srgb, var(--good) 13%, transparent); }
+.status-chip.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.status-chip.bad { color: var(--bad); background: var(--row-alert); }
+
+.risk-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.risk-cell .risk {
+  width: 22px;
+}
+
+.risk-meter {
+  display: block;
+  width: 44px;
+  height: 4px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--line);
+}
+
+.risk-meter-fill {
+  display: block;
+  height: 100%;
+}
+
+.risk-meter-fill.high { background: var(--bad); }
+.risk-meter-fill.mid { background: var(--warn); }
+.risk-meter-fill.low { background: var(--good); }
+
+.sig-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sig-tag {
+  padding: 2px 7px;
+  border: 1px solid;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.event-action {
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.event-action.bad { color: var(--bad); }
+.event-action.warn { color: var(--warn); }
+.event-action.dim { color: var(--muted); }
+.event-action.ok { color: var(--good); }
+
 .empty {
   margin: 0;
   padding: 18px 12px;
@@ -1061,6 +1494,10 @@ tbody tr:hover td {
   animation: spin 0.9s linear infinite;
 }
 
+.refresh-btn.spinning svg {
+  animation: spin 0.85s linear;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -1069,30 +1506,56 @@ tbody tr:hover td {
   .loading .spin { animation: none; }
 }
 
-.leaflet-container {
+/* The world map -- flat vector countries + graticule via d3-geo, matching
+   the design handoff's own recipe (see traffic-map.jsx), not a tiled
+   photographic basemap. Colors are the map-specific tokens, not --line/
+   --bg-elev, since a map reads at a different contrast than UI chrome. */
+.world-map-svg {
+  display: block;
   background: var(--map-bg);
-  font-family: inherit;
-  border-radius: 0 0 3px 3px;
 }
 
-.leaflet-popup-content-wrapper,
-.leaflet-popup-tip {
-  background: var(--bg-elev);
-  color: var(--text);
-  border-radius: 3px;
-  box-shadow: none;
+.world-map-land {
+  fill: var(--map-land);
+  stroke: var(--map-border);
+  stroke-width: 0.75;
+  stroke-opacity: 0.9;
 }
 
-.leaflet-bar a {
-  background: var(--bg-elev);
-  color: var(--text);
-  border-bottom-color: var(--line);
+.world-map-grid {
+  fill: none;
+  stroke: var(--map-grid);
+  stroke-width: 0.5;
+  stroke-opacity: 0.6;
 }
 
-.leaflet-control-attribution {
-  background: var(--bg-elev) !important;
-  color: var(--muted);
-  font-size: 10px;
+.world-map-dot {
+  cursor: pointer;
+  transition: r 0.15s ease;
+}
+
+.world-map-dot:hover {
+  r: 6;
+}
+
+/* The alerting-source pulse, ported from the mockup's world-map.js: an
+   unfilled ring that grows and fades behind the solid dot, one per
+   alerting source, each offset (see pulseDelay in traffic-map.jsx) so a
+   page with several doesn't pulse in lockstep. */
+.world-map-pulse {
+  fill: none;
+  stroke-width: 1.5;
+  pointer-events: none;
+  animation: world-map-pulse 2.6s infinite;
+}
+
+@keyframes world-map-pulse {
+  0% { r: 4; opacity: 0.95; }
+  70%, 100% { r: 13; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .world-map-pulse { animation: none; opacity: 0; }
 }
 
 /* --- control plane ------------------------------------------------------ */
@@ -1195,7 +1658,7 @@ tbody tr:hover td {
   padding: 1px 4px;
   background: var(--bg-head);
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: 0;
   font-family: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
   font-size: 11px;
 }
@@ -1260,7 +1723,7 @@ tbody tr:hover td {
   padding: 8px 12px;
   border: 1px solid var(--line);
   border-left-width: 3px;
-  border-radius: 3px;
+  border-radius: 0;
   background: var(--bg-elev);
   font-size: 12px;
 }
@@ -1323,17 +1786,17 @@ tbody tr:hover td {
 .act {
   padding: 3px 8px;
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--bg-head);
   color: var(--text);
   font: inherit;
-  font-size: 11px;
+  font-weight: 600;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 
 .act:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--line-2);
 }
 
 .act:disabled {
@@ -1353,6 +1816,45 @@ tbody tr:hover td {
   font-size: 10px;
 }
 
+/* A square track + sliding knob, not a rounded iOS-style switch -- the
+   mockup's toggle is as sharp-cornered as everything else in it. Used by
+   Field.Toggle (parts.jsx) for every detector on/off control on Settings.
+   Named .switch, not .toggle: an earlier version of Field.Toggle rendered a
+   checkbox-label pair with class "check toggle", and a same-name .toggle
+   rule here won on any property .settings-fields .check.toggle didn't
+   itself set (width/height/padding/display weren't, so they leaked through
+   and broke that checkbox until this was caught by screenshot). Field.Toggle
+   is a real button[role=switch] now, so that collision can't recur, but the
+   name stays clear of it on principle. */
+.switch {
+  appearance: none;
+  width: 38px;
+  height: 20px;
+  padding: 2px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+  background: transparent;
+  border: 1px solid var(--line-2);
+  cursor: pointer;
+}
+
+.switch.on {
+  justify-content: flex-end;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.switch .knob {
+  width: 14px;
+  height: 14px;
+  background: var(--faint);
+}
+
+.switch.on .knob {
+  background: var(--accent-ink);
+}
+
 .head-controls {
   display: flex;
   align-items: center;
@@ -1361,13 +1863,13 @@ tbody tr:hover td {
 
 .search {
   width: 190px;
-  padding: 4px 8px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
-  border-radius: 2px;
-  background: var(--bg);
+  border-radius: 0;
+  background: var(--bg-elev-2);
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--text-base);
 }
 
 .search:focus {
@@ -1378,6 +1880,12 @@ tbody tr:hover td {
   color: var(--muted);
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
 @media (max-width: 980px) {
@@ -1411,10 +1919,6 @@ tbody tr:hover td {
 
   .campaign-grid {
     grid-template-columns: 1fr;
-  }
-
-  .statusbar {
-    flex-wrap: wrap;
   }
 
   .top-meta {
@@ -1761,7 +2265,7 @@ tbody tr:hover td {
 .settings-fields textarea {
   padding: 6px 8px;
   border: 1px solid var(--line);
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--bg);
   color: var(--text);
   font: inherit;
@@ -1780,7 +2284,7 @@ tbody tr:hover td {
   border-color: var(--accent);
 }
 
-.settings-fields .check.toggle {
+.settings-fields .check {
   color: var(--text);
   font-size: 12px;
   gap: 8px;
@@ -1827,7 +2331,7 @@ tbody tr:hover td {
 .eyebrow { color: var(--accent) !important; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .mode-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px; border: 0; }
 .mode-cards legend { padding: 0; color: var(--muted); font-size: 12px; }
-.mode-card { display: flex; flex-direction: column; gap: 6px; min-height: 132px; padding: 12px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; color: var(--muted); background: var(--bg-elev); }
+.mode-card { display: flex; flex-direction: column; gap: 6px; min-height: 132px; padding: 12px; border: 1px solid var(--line); border-radius: 0; cursor: pointer; color: var(--muted); background: var(--bg-elev); }
 .mode-card:hover { border-color: var(--accent); }
 .mode-card.selected { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); color: var(--text); }
 .mode-card input { accent-color: var(--accent); }
@@ -1844,7 +2348,7 @@ tbody tr:hover td {
 .advanced-settings[open] > summary { border-bottom: 1px solid var(--line); background: var(--bg-head); }
 .advanced-settings > .section-note, .advanced-settings > .act { margin-left: 12px; margin-right: 12px; }
 .advanced-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; padding: 12px; }
-.advanced-groups > section { border: 1px solid var(--line); border-radius: 5px; }
+.advanced-groups > section { border: 1px solid var(--line); border-radius: 0; }
 .advanced-groups h3 { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .guardrail-grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 12px; }
 .guardrail-grid .field { min-width: 180px; flex: 1; display: flex; flex-direction: column; gap: 4px; }

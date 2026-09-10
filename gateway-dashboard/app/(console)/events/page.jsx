@@ -3,7 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { PageHead } from "@/app/ui/chrome";
-import { matchesEvent, signalMeta } from "@/app/ui/format";
+import { matchesEvent, signalMeta, SIGNAL_OPTIONS } from "@/app/ui/format";
 import { EventTable, ExportMenu, Loading, SegmentedControl } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
@@ -23,8 +23,20 @@ const RANGES = [
 ];
 
 function EventsView() {
-  const { busy, instruct, paused } = useLive();
+  const { busy, instruct, paused, setPaused, sources } = useLive();
   const params = useSearchParams();
+
+  // Reuses the same geo lookups the map already paid for -- Overview's poll
+  // only geocodes the sources currently visible there, so a row outside that
+  // set falls back to "--", same as every other place this console admits
+  // it's showing a window rather than everything the gateway has ever seen.
+  const geoByIp = useMemo(() => {
+    const map = {};
+    for (const s of sources) {
+      map[s.ip] = s.private ? "Private network" : [s.city, s.country].filter(Boolean).join(", ");
+    }
+    return map;
+  }, [sources]);
 
   const [query, setQuery] = useState(params.get("q") || "");
   const [alertsOnly, setAlertsOnly] = useState(params.get("alerts") === "1");
@@ -119,7 +131,23 @@ function EventsView() {
 
   return (
     <>
-      <PageHead title="Events">
+      <PageHead
+        eyebrow="Raw traffic"
+        title="Events"
+        actions={
+          <>
+            <button
+              type="button"
+              className="act"
+              onClick={() => setPaused((p) => !p)}
+              title="Stop the 2.5s refresh while you read"
+            >
+              {paused ? "Resume stream" : "Pause stream"}
+            </button>
+            <ExportMenu rows={shown} columns={EVENT_COLUMNS} prefix="events" />
+          </>
+        }
+      >
         The raw stream the gateway publishes, newest first. This is evidence, not
         conclusions — the correlation happens on the Campaigns page.
       </PageHead>
@@ -132,6 +160,17 @@ function EventsView() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <select
+          value={SIGNAL_OPTIONS.includes(query) ? query : ""}
+          onChange={(e) => setQuery(e.target.value)}
+        >
+          <option value="">All signals</option>
+          {SIGNAL_OPTIONS.map((label) => (
+            <option key={label} value={label}>
+              {label}
+            </option>
+          ))}
+        </select>
         <label className="check">
           <input
             type="checkbox"
@@ -154,7 +193,6 @@ function EventsView() {
           </button>
         ) : null}
         <span className="grow" />
-        <ExportMenu rows={shown} columns={EVENT_COLUMNS} prefix="events" />
         {ips.length && ips.length <= 25 ? (
           <button
             type="button"
@@ -166,6 +204,21 @@ function EventsView() {
             {busy === "filtered:temp_block" ? "…" : `block ${ips.length} in view`}
           </button>
         ) : null}
+        <span className="live-indicator">
+          <span className={`live-dot ${!live ? "" : "on"}`} />
+          <span className="count">
+            {shown.length.toLocaleString()}/{rows.length.toLocaleString()} shown
+            {total ? ` · ${total.toLocaleString()} retained` : ""}
+            {loading ? " · loading…" : ""}
+            {!live && !loading
+              ? frozen
+                ? " · frozen"
+                : paused
+                  ? " · paused"
+                  : " · paused while paging"
+              : ""}
+          </span>
+        </span>
       </div>
 
       <div className="toolbar sub">
@@ -196,44 +249,32 @@ function EventsView() {
           {frozen ? "frozen" : "freeze"}
         </button>
 
-        <span className="grow" />
-        <span className="count">
-          {shown.length.toLocaleString()}/{rows.length.toLocaleString()} shown
-          {total ? ` · ${total.toLocaleString()} retained` : ""}
-          {loading ? " · loading…" : ""}
-          {!live && !loading
-            ? frozen
-              ? " · frozen"
-              : paused
-                ? " · paused"
-                : " · paused while paging"
-            : ""}
-        </span>
+        {signals.length ? (
+          <div className="chip-row">
+            {signals.map(([name, count]) => {
+              const meta = signalMeta(name);
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  className="chip"
+                  onClick={() => setQuery(meta.label)}
+                >
+                  <span className="swatch" style={{ background: meta.color }} />
+                  {meta.label} <em>{count}</em>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
-
-      {signals.length ? (
-        <div className="chip-row">
-          {signals.map(([name, count]) => {
-            const meta = signalMeta(name);
-            return (
-              <button
-                key={name}
-                type="button"
-                className="chip"
-                onClick={() => setQuery(meta.label)}
-              >
-                <span className="swatch" style={{ background: meta.color }} />
-                {meta.label} <em>{count}</em>
-              </button>
-            );
-          })}
-        </div>
-      ) : null}
 
       <article className="card table-card">
         <EventTable
           events={shown}
           showSerialNumber
+          showGeo
+          geoByIp={geoByIp}
           empty={
             rows.length
               ? "No events match this filter."

@@ -38,6 +38,7 @@ export {
   Plus as AddIcon,
   Pause as PauseIcon,
   Play as ResumeIcon,
+  RotateCw as RefreshIcon,
 
   // Theme toggle, replacing the two hand-rolled SVGs that used to live in
   // chrome.jsx -- same concept, one fewer bespoke implementation.
