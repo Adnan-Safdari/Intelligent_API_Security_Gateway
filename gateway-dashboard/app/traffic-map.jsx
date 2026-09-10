@@ -45,19 +45,27 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
     const map = mapRef.current;
     if (!ready || !leaflet || !map) return;
 
+    // CARTO's basemaps.cartocdn.com used to serve these keyless. It no longer
+    // does -- every tile now comes back watermarked "API KEY REQUIRED" -- and
+    // getting a key means an account this console has no business depending
+    // on. Esri's Canvas basemaps are the replacement: free, no key, and still
+    // a light/dark pair. Note the tile path is {z}/{y}/{x}, not {z}/{x}/{y} --
+    // Esri's REST tile service orders row before column, the opposite of
+    // CARTO's and most others'. Leaflet substitutes {x}/{y} by name, not
+    // position, so writing them in this order is what makes it correct here
+    // rather than a typo to "fix" later.
     const tileUrl =
       theme === "light"
-        ? "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-        : "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png";
+        ? "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+        : "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
 
     if (tilesRef.current) {
       map.removeLayer(tilesRef.current);
     }
     tilesRef.current = leaflet
       .tileLayer(tileUrl, {
-        attribution: "&copy; OpenStreetMap &copy; CARTO",
+        attribution: "&copy; Esri",
         maxZoom: 8,
-        subdomains: "abcd",
       })
       .addTo(map);
   }, [ready, theme]);
@@ -75,7 +83,12 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
     if (site?.lat != null && site?.lon != null) {
       const labPoint = [site.lat, site.lon];
       points.push(labPoint);
-      const labColor = site.alerts > 0 ? "#c44b4b" : "#3a7ca5";
+      // var() strings, not hex -- Leaflet sets these as inline style
+      // properties on the underlying SVG path, and the browser resolves
+      // var() there exactly like it would in a stylesheet. That means a
+      // theme toggle repaints these correctly on its own, with no re-render
+      // needed, unlike a resolved hex baked in once at draw time.
+      const labColor = site.alerts > 0 ? "var(--map-alert)" : "var(--map-site)";
       leaflet
         .circleMarker(labPoint, {
           radius: Math.min(16, 8 + Math.sqrt(site.requests || 1) * 1.4),
@@ -92,7 +105,7 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
       for (const source of publicSources) {
         leaflet
           .polyline([labPoint, [source.lat, source.lon]], {
-            color: source.alerts > 0 ? "#c44b4b" : "#3a7ca5",
+            color: source.alerts > 0 ? "var(--map-alert)" : "var(--map-site)",
             weight: 1,
             opacity: 0.35,
           })
@@ -101,7 +114,7 @@ export default function TrafficMap({ sources = [], site = null, theme = "dark" }
     }
 
     for (const source of publicSources) {
-      const color = source.alerts > 0 ? "#c44b4b" : "#2f6fed";
+      const color = source.alerts > 0 ? "var(--map-alert)" : "var(--map-public)";
       leaflet
         .circleMarker([source.lat, source.lon], {
           radius: Math.min(16, 5 + Math.sqrt(source.requests) * 1.8),

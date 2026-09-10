@@ -4,12 +4,16 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useMemo } from "react";
 import { requestHistogram, signalMeta } from "@/app/ui/format";
-import { Metric } from "@/app/ui/parts";
+import { Loading, Metric } from "@/app/ui/parts";
 import { useLive } from "@/app/ui/store";
 
 const TrafficMap = dynamic(() => import("@/app/traffic-map"), {
   ssr: false,
-  loading: () => <div className="map-canvas map-loading">Loading map…</div>,
+  loading: () => (
+    <div className="map-canvas map-loading">
+      <Loading label="Loading map…" />
+    </div>
+  ),
 });
 
 export default function OverviewPage() {

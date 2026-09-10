@@ -1,0 +1,76 @@
+{
+  "admission_rule": "none",
+  "data_source": "v4",
+  "engineered_features": {},
+  "evaluation": {
+    "false_positive_budget": 0.02,
+    "test": {
+      "attack_detection_rate": 0.5159071367153912,
+      "attack_rows": 1163,
+      "benign_rows": 2662,
+      "false_positive_rate": 0.02291510142749812,
+      "rows": 3825
+    },
+    "threshold_score_samples": -0.6269392937796316,
+    "validation": {
+      "attack_detection_rate": 0.5933884297520661,
+      "attack_rows": 605,
+      "benign_rows": 3125,
+      "false_positive_rate": 0.02016,
+      "rows": 3730
+    }
+  },
+  "feature_names": [
+    "request_count",
+    "peak_1s_requests",
+    "interarrival_cv",
+    "unique_path_ratio",
+    "dominant_route_ratio",
+    "unmatched_route_ratio",
+    "post_ratio",
+    "login_ratio",
+    "login_failure_ratio",
+    "backend_404_ratio",
+    "backend_5xx_ratio",
+    "mean_request_body_bytes",
+    "p95_upstream_duration_ms",
+    "endpoint_method_deviation"
+  ],
+  "feature_schema_version": "v3",
+  "library": "scikit-learn IsolationForest",
+  "library_version": "1.9.0",
+  "missing_value_handling": "training-partition median by feature",
+  "model_version": "v4-iforest",
+  "runtime_loadable": true,
+  "runtime_schema_version": "v3",
+  "score_scale": {
+    "anomalous": -0.7017951710628646,
+    "normal": -0.3628245146307028
+  },
+  "trained_at": "2026-09-09T12:44:37.167907+00:00",
+  "training_run_ids": [
+    "run2",
+    "run3",
+    "run4",
+    "run5",
+    "run6",
+    "run7",
+    "run8",
+    "run9",
+    "run10",
+    "run11",
+    "run12",
+    "run13",
+    "run14",
+    "run15",
+    "run16",
+    "run17",
+    "run18",
+    "run19",
+    "run20",
+    "run21",
+    "run22",
+    "run23",
+    "run24"
+  ]
+}

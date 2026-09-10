@@ -32,6 +32,7 @@ from iasg.anomaly.spec import (
     INSUFFICIENT_HISTORY_MAX,
     KNOWN_AUTH_OUTCOMES,
     P95,
+    UNMATCHED_ROUTE,
     WINDOW_SECONDS,
 )
 from iasg.anomaly.windows import window_end
@@ -95,6 +96,15 @@ def extract(
     features["interarrival_cv"] = _interarrival_cv(records)
     features["unique_path_ratio"] = len({r.path for r in records}) / total
     features["dominant_route_ratio"] = _dominant_route_ratio(records) / total
+    # Paths matching no configured template at all. Distinct from
+    # backend_404_ratio, which a real page with a bad id also produces: the
+    # dead_link_visitor persona sits at 0 here across every run while the
+    # scanning scenarios sit between 0.54 and 0.999, because walking paths the
+    # application does not serve is what a scanner does and a lost user does
+    # not. Arrival-derived, so it is available before any response settles.
+    features["unmatched_route_ratio"] = sum(
+        1 for r in records if r.route_template == UNMATCHED_ROUTE
+    ) / total
     features["post_ratio"] = sum(1 for r in records if r.method == "POST") / total
 
     logins = [r for r in records if r.is_login]

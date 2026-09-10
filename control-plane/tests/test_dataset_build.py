@@ -15,6 +15,7 @@ from iasg.anomaly.checks import check_feature_header, check_no_identifying_colum
 from iasg.anomaly.spec import FEATURE_NAMES
 from iasg.dataset.build import (
     DatasetFrozen,
+    LeakageCheckFailed,
     UnplannedTrafficTooHigh,
     build,
     health_by_window,
@@ -410,3 +411,78 @@ def test_evaluation_md_is_written_before_any_model_is_fit(tmp_path):
     assert "validation" in text
     for scenario in RESERVED_SCENARIOS:
         assert scenario in text
+
+
+# ---------------------------------------------------------------------------
+# The integrity checks are actually called
+# ---------------------------------------------------------------------------
+#
+# checks.py has stated these guarantees since it was written, and until now
+# only pytest ever asked -- against rows it invented. These assert that build()
+# itself runs them over the rows it is about to freeze, which is the difference
+# between a guarantee and a comment.
+
+
+def test_build_runs_the_split_disjointness_check(tmp_path, monkeypatch):
+    from iasg.anomaly.checks import CheckFailure
+
+    called = {}
+
+    def spy(rows):
+        called["rows"] = list(rows)
+        return [CheckFailure("split_disjoint", "planted")]
+
+    monkeypatch.setattr("iasg.dataset.build.check_split_disjoint", spy)
+    write_run(tmp_path, "run1", busy("203.0.113.10", W))
+
+    with pytest.raises(LeakageCheckFailed, match="planted"):
+        build([tmp_path / "run1"], tmp_path / "v3")
+    assert called["rows"], "the check was called with no rows"
+
+
+def test_build_runs_the_label_independence_check(tmp_path, monkeypatch):
+    """A dataset labelled by the detectors can only teach a model to reproduce
+    the detectors, and would score well while being worthless."""
+    from iasg.anomaly.checks import CheckFailure
+
+    monkeypatch.setattr(
+        "iasg.dataset.build.check_labels_independent_of_detectors",
+        lambda rows: [CheckFailure("label_independence", "planted")],
+    )
+    write_run(tmp_path, "run1", busy("203.0.113.10", W))
+
+    with pytest.raises(LeakageCheckFailed, match="planted"):
+        build([tmp_path / "run1"], tmp_path / "v3")
+
+
+def test_a_malformed_record_is_reported_but_only_fatal_under_strict(tmp_path, capsys):
+    """Failing by default would throw away hours of collection over one bad
+    line; saying nothing would hide a telemetry defect entirely."""
+    requests = busy("203.0.113.10", W)
+    for record in requests:
+        record["path"] = ""
+        record["route"] = ""
+
+    write_run(tmp_path, "run1", requests)
+    build([tmp_path / "run1"], tmp_path / "lenient")
+    assert "malformed record" in capsys.readouterr().out
+
+    write_run(tmp_path, "run2", requests)
+    with pytest.raises(LeakageCheckFailed):
+        build([tmp_path / "run2"], tmp_path / "strict", strict=True)
+
+
+def test_detector_output_reaches_metadata_and_never_the_feature_matrix(tmp_path):
+    """Carried so the evaluation can count minutes the detectors missed without
+    going back to raw capture. It identifies a row, so it lives in metadata.csv
+    -- and the header check stays the thing that fails if that is got wrong."""
+    write_run(tmp_path, "run1", busy("203.0.113.10", W))
+    out = build([tmp_path / "run1"], tmp_path / "v3")
+
+    meta = next(csv.DictReader(open(out / "metadata.csv")))
+    assert meta["detector_fired"] == "0"
+
+    header = next(csv.reader(open(out / "features.csv")))
+    assert header == ["row_id", *FEATURE_NAMES]
+    assert "detector_fired" not in header
+    assert check_no_identifying_columns(out / "features.csv") == []

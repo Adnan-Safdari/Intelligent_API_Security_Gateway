@@ -22,16 +22,27 @@ import secrets
 import sys
 from collections import Counter
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Sequence
 
-from iasg.anomaly.checks import check_feature_header, check_no_identifying_columns
+from iasg.anomaly.checks import (
+    check_feature_header,
+    check_labels_independent_of_detectors,
+    check_no_empty_paths,
+    check_no_identifying_columns,
+    check_split_disjoint,
+)
 from iasg.anomaly.extract import WindowRow, build_as_of, extract
 from iasg.anomaly.health import health_by_window
 from iasg.anomaly.impute import Medians
 from iasg.anomaly.records import join
-from iasg.anomaly.spec import FEATURE_NAMES, FEATURE_SPEC_VERSION, QUALITY_NAMES
+from iasg.anomaly.spec import (
+    FEATURE_NAMES,
+    FEATURE_SPEC_VERSION,
+    QUALITY_NAMES,
+    WINDOW_SECONDS,
+)
 from iasg.anomaly.windows import assign, window_start
 from iasg.adaptive.baseline import BaselineLearner, EndpointKey, MemoryBaselineRepository
 from iasg.adaptive.config import AdaptiveConfig
@@ -84,6 +95,20 @@ class BuiltRow:
     client_id: str = ""
     endpoint_counts: dict[tuple[str, str], int] = None
     safe_to_learn: bool = False
+    # Detector output, carried for evaluation and for the label-independence
+    # check -- never for training. It reaches metadata.csv, never features.csv,
+    # and check_feature_header is what fails if that is ever got wrong.
+    detector_fired: bool = False
+    # Whether the gateway refused anything in this window. Recorded alongside
+    # detector_fired because the two together are what separate "the gateway
+    # missed this minute" from "the gateway had already blocked this address,
+    # so the detectors never saw the traffic". detector_fired alone reads the
+    # second as the first, which overstates misses badly on flood scenarios.
+    gateway_blocked: bool = False
+    # Recomputed from the run manifest rather than read off `label`, so the
+    # check below compares two independent derivations instead of a value
+    # against itself.
+    manifest_attacker: bool = False
 
 
 @dataclass
@@ -197,6 +222,17 @@ def rows_for_run(run: RawRun, run_id: str) -> RunRows:
                     (record.method, record.route_template) for record in records
                 )),
                 safe_to_learn=safe_to_learn,
+                detector_fired=any(
+                    value.get("fired") for value in observed if value is not None
+                ),
+                gateway_blocked=any(
+                    (value.get("decision") or "allow") != "allow"
+                    for value in observed if value is not None
+                ),
+                manifest_attacker=any(
+                    attack.covers(ip, start, start + timedelta(seconds=WINDOW_SECONDS))
+                    for attack in attacks
+                ),
             )
         )
 
@@ -215,6 +251,7 @@ def build(
     out_dir: str | Path,
     split: Split | None = None,
     force: bool = False,
+    strict: bool = False,
 ) -> Path:
     out = Path(out_dir)
     if (out / "FROZEN").exists() and not force:
@@ -258,6 +295,35 @@ def build(
     check_reserved(
         [{"scenario": b.scenario, "split": b.split} for b in built]
     )
+
+    # checks.py has stated these three guarantees since it was written and
+    # build() never asked for any of them -- only pytest did, against rows it
+    # made up. Asserted here, on the rows actually about to be frozen.
+    as_dicts = [
+        {
+            "row_id": b.row_id,
+            "run_id": b.run_id,
+            "client_id": b.client_id,
+            "split": b.split,
+            "label": b.label,
+            "fired": b.detector_fired,
+            "manifest_attacker": b.manifest_attacker,
+        }
+        for b in built
+    ]
+    integrity = check_split_disjoint(as_dicts) + check_labels_independent_of_detectors(as_dicts)
+    if integrity:
+        raise LeakageCheckFailed("; ".join(str(f) for f in integrity))
+
+    # Reported rather than fatal by default: a malformed record is a defect in
+    # the telemetry, not proof the whole run is unusable, and failing here
+    # would throw away hours of collection over one bad line. --strict makes it
+    # fail, which is what checks.py's docstring has always promised.
+    defects = check_no_empty_paths([b.row for b in built])
+    if defects:
+        print(f"[build] {len(defects)} window(s) contain a malformed record")
+        if strict:
+            raise LeakageCheckFailed("; ".join(str(f) for f in defects[:5]))
 
     _derive_endpoint_deviation(built)
 
@@ -333,14 +399,15 @@ def _write_metadata(path: Path, built: Sequence[BuiltRow]) -> None:
     living in a different file."""
     with open(path, "w", newline="") as handle:
         writer = csv.writer(handle)
-        writer.writerow(
-            ["row_id", "run_id", "client_id", "window_start", "label", "scenario", "persona"]
-        )
+        writer.writerow([
+            "row_id", "run_id", "client_id", "window_start", "label", "scenario",
+            "persona", "detector_fired", "gateway_blocked",
+        ])
         for item in built:
             writer.writerow([
                 item.row_id, item.run_id, item.client_id,
                 item.row.window_start.isoformat(), item.label, item.scenario,
-                item.persona,
+                item.persona, int(item.detector_fired), int(item.gateway_blocked),
             ])
 
 
@@ -529,9 +596,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", nargs="+", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--force", action="store_true", help="rebuild a frozen directory")
+    parser.add_argument(
+        "--strict", action="store_true",
+        help="fail the build on a malformed telemetry record rather than reporting it",
+    )
     args = parser.parse_args(argv)
 
-    out = build(args.runs, args.out, force=args.force)
+    out = build(args.runs, args.out, force=args.force, strict=args.strict)
     problems = verify(out)
     if problems:
         for problem in problems:

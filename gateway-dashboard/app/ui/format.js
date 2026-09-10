@@ -1,19 +1,25 @@
 // Shared vocabulary. Everything here is pure, so both the shell and the pages
 // can use it without either owning it.
 
+// Colours are CSS variable references, not hex -- the same eight hexes used
+// to serve both themes identically, tuned only against the dark background
+// and under-contrasting on light's near-white one. --sig-* is defined once
+// per theme in globals.css so a var() here just picks up whichever the
+// current theme already resolved, the same way every other themed colour in
+// this app works.
 const SIGNAL_META = {
-  api_flooding: { label: "Flood", color: "#c9842a" },
-  sql_injection: { label: "SQLi", color: "#c43c51" },
-  brute_force: { label: "Brute force", color: "#7c5cbf" },
-  password_spraying: { label: "Spray", color: "#9a6bb8" },
-  enumeration_path_traversal: { label: "Enum/trav", color: "#2a8f7c" },
-  path_traversal: { label: "Traversal", color: "#2f7d9a" },
-  enumeration: { label: "Enum", color: "#3d8a55" },
-  ip_reputation: { label: "Known bad", color: "#b04a86" },
+  api_flooding: { label: "Flood", color: "var(--sig-flood)" },
+  sql_injection: { label: "SQLi", color: "var(--sig-sqli)" },
+  brute_force: { label: "Brute force", color: "var(--sig-brute)" },
+  password_spraying: { label: "Spray", color: "var(--sig-spray)" },
+  enumeration_path_traversal: { label: "Enum/trav", color: "var(--sig-enum-trav)" },
+  path_traversal: { label: "Traversal", color: "var(--sig-traversal)" },
+  enumeration: { label: "Enum", color: "var(--sig-enum)" },
+  ip_reputation: { label: "Known bad", color: "var(--sig-reputation)" },
 };
 
 export function signalMeta(name) {
-  return SIGNAL_META[name] || { label: name, color: "#6b7785" };
+  return SIGNAL_META[name] || { label: name, color: "var(--muted)" };
 }
 
 // The policy ladder, weakest to strongest. Colour tracks the rung so an
