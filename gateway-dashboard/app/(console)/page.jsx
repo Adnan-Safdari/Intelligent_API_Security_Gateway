@@ -48,9 +48,8 @@ export default function OverviewPage() {
 
   return (
     <>
-      <section className="metrics metrics-hero-row">
+      <section className="metrics">
         <Metric
-          size="hero"
           label="Requests"
           value={stats.requests}
           detail={stats.derived ? "visible window" : "since gateway start"}
@@ -58,98 +57,94 @@ export default function OverviewPage() {
           max={histMax}
           href="/events"
         />
-        <div className="metrics-rail">
-          <Metric
-            label="Alerts"
-            value={stats.alerts}
-            detail={`${alertRate}% of requests`}
-            href="/events?alerts=1"
-          />
-          <Metric
-            label="Under policy"
-            value={policies.length}
-            detail={`${active} active ${active === 1 ? "campaign" : "campaigns"}`}
-            href="/policy"
-          />
-          <Metric
-            label="Unique IPs"
-            value={sources.length}
-            detail={`${sources.filter((s) => s.private).length} private`}
-            href="/events"
-          />
-        </div>
+        <Metric
+          label="Alerts"
+          value={stats.alerts}
+          detail={`${alertRate}% of requests`}
+          href="/events?alerts=1"
+        />
+        <Metric
+          label="Under policy"
+          value={policies.length}
+          detail={`${active} active ${active === 1 ? "campaign" : "campaigns"}`}
+          href="/policy"
+        />
+        <Metric
+          label="Unique IPs"
+          value={sources.length}
+          detail={`${sources.filter((s) => s.private).length} private`}
+          href="/events"
+        />
       </section>
 
-      <section className="workbench">
-        <article className="card map-card panel-primary">
+      {/* The map is the one hero on this page now -- full width, on its own
+          row, rather than sharing a row with a side column. Signals and Top
+          IPs move below it as an equal-weight secondary row instead. */}
+      <article className="card map-card panel-primary">
+        <div className="card-head">
+          <h2>Request origin map</h2>
+          <span>
+            Public IPs plot at true geo. Docker traffic is pinned to this gateway’s site.
+          </span>
+        </div>
+        <TrafficMap sources={sources} site={overview.site} theme={theme} />
+      </article>
+
+      <section className="overview-secondary">
+        <article className="card">
           <div className="card-head">
-            <h2>Request origin map</h2>
-            <span>
-              Public IPs plot at true geo. Docker traffic is pinned to this gateway’s site.
-            </span>
+            <h2>Signals</h2>
+            <Link href="/events?alerts=1">see events</Link>
           </div>
-          <TrafficMap sources={sources} site={overview.site} theme={theme} />
+          {signalRows.length === 0 ? (
+            <p className="empty">No hits in the current window.</p>
+          ) : (
+            <ul className="signal-list">
+              {signalRows.map((row) => (
+                <li key={row.name}>
+                  <span className="swatch" style={{ background: row.color }} />
+                  <Link href={`/events?q=${encodeURIComponent(row.label)}`} className="grow">
+                    {row.label}
+                  </Link>
+                  <b>{row.count}</b>
+                  <span className="pct">{row.pct}%</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </article>
 
-        <div className="side">
-          <article className="card">
-            <div className="card-head">
-              <h2>Signals</h2>
-              <Link href="/events?alerts=1">see events</Link>
-            </div>
-            {signalRows.length === 0 ? (
-              <p className="empty">No hits in the current window.</p>
-            ) : (
-              <ul className="signal-list">
-                {signalRows.map((row) => (
-                  <li key={row.name}>
-                    <span className="swatch" style={{ background: row.color }} />
-                    <Link href={`/events?q=${encodeURIComponent(row.label)}`} className="grow">
-                      {row.label}
-                    </Link>
-                    <b>{row.count}</b>
-                    <span className="pct">{row.pct}%</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-
-          <article className="card">
-            <div className="card-head">
-              <h2>Top IPs</h2>
-              <Link href="/policy">manage</Link>
-            </div>
-            {attackers.length === 0 ? (
-              <p className="empty">No alerting IPs yet.</p>
-            ) : (
-              <ol className="ip-list">
-                {attackers.map((row) => (
-                  <li key={row.ip}>
-                    <Link
-                      href={`/events?q=${encodeURIComponent(row.ip)}`}
-                      className="mono grow"
-                    >
-                      {row.ip}
-                    </Link>
-                    <span>{row.alerts}</span>
-                    {/* An address the agent never grouped into a campaign is
-                        the plainest reason to reach for an override. */}
-                    <button
-                      type="button"
-                      className="act small"
-                      disabled={Boolean(busy)}
-                      onClick={() => instruct([row.ip], "temp_block", `ip-${row.ip}`)}
-                      title={`Instruct temp block for ${row.ip}`}
-                    >
-                      {busy === `ip-${row.ip}:temp_block` ? "…" : "block"}
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            )}
-          </article>
-        </div>
+        <article className="card">
+          <div className="card-head">
+            <h2>Top IPs</h2>
+            <Link href="/policy">manage</Link>
+          </div>
+          {attackers.length === 0 ? (
+            <p className="empty">No alerting IPs yet.</p>
+          ) : (
+            <ol className="ip-list">
+              {attackers.map((row) => (
+                <li key={row.ip}>
+                  <Link href={`/events?q=${encodeURIComponent(row.ip)}`} className="mono grow">
+                    {row.ip}
+                  </Link>
+                  <span>{row.alerts}</span>
+                  {/* An address the agent never grouped into a campaign is
+                      the plainest reason to reach for an override. */}
+                  <button
+                    type="button"
+                    className="act small"
+                    disabled={Boolean(busy)}
+                    onClick={() => instruct([row.ip], "temp_block", `ip-${row.ip}`)}
+                    title={`Instruct temp block for ${row.ip}`}
+                  >
+                    {busy === `ip-${row.ip}:temp_block` ? "…" : "block"}
+                  </button>
+                </li>
+              ))}
+            </ol>
+          )}
+        </article>
       </section>
     </>
   );

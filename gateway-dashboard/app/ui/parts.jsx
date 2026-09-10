@@ -13,7 +13,7 @@ import {
   signalMeta,
 } from "./format";
 
-export function Metric({ label, value, detail, bars, max, href, size }) {
+export function Metric({ label, value, detail, bars, max, href }) {
   const body = (
     <>
       <p>{label}</p>
@@ -30,13 +30,12 @@ export function Metric({ label, value, detail, bars, max, href, size }) {
   );
 
   // A metric that has a page behind it should take you there.
-  const className = size === "hero" ? "metric metric-hero" : "metric";
   return href ? (
-    <Link href={href} className={`${className} linked`}>
+    <Link href={href} className="metric linked">
       {body}
     </Link>
   ) : (
-    <article className={className}>{body}</article>
+    <article className="metric">{body}</article>
   );
 }
 

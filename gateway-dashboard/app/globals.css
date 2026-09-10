@@ -713,52 +713,14 @@ a { color: var(--accent); }
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
-/* Overview's stat row used to be 4 identically-weighted tiles -- nothing told
-   you which number mattered. Requests (the richest tile: it already carries
-   the sparkline) becomes a real hero; the other three drop to a compact rail
-   beside it. */
-.metrics-hero-row {
-  grid-template-columns: minmax(320px, 1.3fr) minmax(280px, 1fr);
-  align-items: stretch;
-}
-
-.metrics-rail {
+/* Overview's second row, below the full-width map: Signals and Top IPs
+   side by side rather than stacked in a narrow side column -- now that the
+   map is the page's one hero and stands on its own above this, these two
+   read as equal-weight secondary panels instead of a sidebar. */
+.overview-secondary {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--space-3);
-}
-
-.metric-hero {
-  padding: var(--space-5);
-  background: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--accent) 10%, var(--bg-elev)),
-    var(--bg-elev) 70%
-  );
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--line));
-}
-
-.metric-hero p {
-  font-size: var(--text-xs);
-}
-
-.metric-hero strong {
-  font-size: var(--text-2xl);
-  font-weight: var(--weight-bold);
-}
-
-.metric-hero .spark {
-  height: 40px;
-  gap: 3px;
-}
-
-.metric-hero .spark span {
-  background: linear-gradient(
-    180deg,
-    var(--accent),
-    color-mix(in srgb, var(--accent) 40%, transparent)
-  );
-  opacity: 1;
 }
 
 .workbench {
@@ -919,16 +881,17 @@ a { color: var(--accent); }
   isolation: isolate;
   z-index: 0;
   flex: 1;
-  min-height: clamp(420px, 46vh, 640px);
+  min-height: clamp(440px, 58vh, 760px);
 }
 
 .map-canvas {
   /* Leaflet reads the container's actual rendered size at mount, so this is
      the value that matters -- .map-wrap's min-height above is a fallback if
      the canvas itself ever isn't the one constraining height. Was a fixed
-     400px regardless of viewport; a security console with a big monitor
-     should let its flagship panel actually use the extra room. */
-  height: clamp(420px, 46vh, 640px);
+     400px regardless of viewport; now that it's the page's one full-width
+     hero rather than sharing a row with a side column, it gets even more
+     of a big monitor's extra room than before. */
+  height: clamp(440px, 58vh, 760px);
   background: var(--map-bg);
 }
 
@@ -1419,8 +1382,7 @@ tbody tr:hover td {
 
 @media (max-width: 980px) {
   .metrics,
-  .workbench,
-  .metrics-hero-row {
+  .workbench {
     grid-template-columns: 1fr;
   }
 
