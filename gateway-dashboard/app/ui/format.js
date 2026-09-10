@@ -7,14 +7,29 @@
 // per theme in globals.css so a var() here just picks up whichever the
 // current theme already resolved, the same way every other themed colour in
 // this app works.
+// Keys matched against gateway/internal/signals/evidence.go's SignalXxx
+// constants -- this used to carry "brute_force" and "password_spraying",
+// neither of which the gateway ever emits (the real constant is
+// SignalBruteForce = "consecutive_failed_logins"; password_spraying is a
+// control-plane campaign classification derived FROM brute-force evidence,
+// never a signal id of its own). Both misses meant those events fell back
+// to the raw id in muted grey everywhere a signal chip renders. Also added
+// unknown_route_scanning, and enumeration_path_traversal.go's own two
+// signal ids: its base "enumeration_path_traversal" (SignalTraversal) is
+// appended to an event's fired[] alongside the more specific attack type
+// (collector.go appends both whenever they differ), so a traversal hit
+// carries two entries, not one -- "enumeration_path_traversal" plus
+// "path_traversal", "enumeration", or the compound
+// "path_traversal+enumeration" when a single session trips both patterns.
 const SIGNAL_META = {
   api_flooding: { label: "Flood", color: "var(--sig-flood)" },
   sql_injection: { label: "SQLi", color: "var(--sig-sqli)" },
-  brute_force: { label: "Brute force", color: "var(--sig-brute)" },
-  password_spraying: { label: "Spray", color: "var(--sig-spray)" },
+  consecutive_failed_logins: { label: "Brute force", color: "var(--sig-brute)" },
+  unknown_route_scanning: { label: "Route scan", color: "var(--sig-spray)" },
   enumeration_path_traversal: { label: "Enum/trav", color: "var(--sig-enum-trav)" },
   path_traversal: { label: "Traversal", color: "var(--sig-traversal)" },
   enumeration: { label: "Enum", color: "var(--sig-enum)" },
+  "path_traversal+enumeration": { label: "Traversal+Enum", color: "var(--sig-enum-trav)" },
   ip_reputation: { label: "Known bad", color: "var(--sig-reputation)" },
 };
 

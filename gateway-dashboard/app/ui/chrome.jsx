@@ -20,6 +20,7 @@ const NAV = [
   { href: "/campaigns", label: "Campaigns" },
   { href: "/policy", label: "Policy" },
   { href: "/adaptive", label: "Adaptive" },
+  { href: "/signals", label: "Signals" },
   { href: "/events", label: "Events" },
   { href: "/history", label: "History" },
   { href: "/settings", label: "Settings" },
