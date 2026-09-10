@@ -3,7 +3,9 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { PageHead } from "@/app/ui/chrome";
+import { HistoryIcon } from "@/app/ui/icons";
 import { ACTION_TONE, actionLabel, formatTime } from "@/app/ui/format";
+import { EmptyState, Metric } from "@/app/ui/parts";
 import { useLive } from "@/app/ui/store";
 
 const COLUMNS = [
@@ -62,11 +64,11 @@ export default function HistoryPage() {
       <>
         <PageHead title="History">The durable record of every campaign ever correlated.</PageHead>
         <article className="card">
-          <p className="empty">
-            No durable store configured. Set <code>IASG_POSTGRES_URL</code> and the agent
-            keeps campaigns past a restart — without it they live in Redis under a
-            24-hour TTL and a reboot loses them.
-          </p>
+          <EmptyState
+            icon={HistoryIcon}
+            title="No durable store configured."
+            hint="Without one, campaigns live in Redis under a 24-hour TTL and a reboot loses them — see the dashboard README to set one up."
+          />
         </article>
       </>
     );
@@ -82,15 +84,15 @@ export default function HistoryPage() {
 
       <section className="metrics narrow">
         {history.byType.map((row) => (
-          <article key={row.type} className="metric">
-            <p>{row.type}</p>
-            <strong>{row.campaigns}</strong>
-            <small>
-              {row.events.toLocaleString()} events · avg confidence{" "}
-              {row.avgConfidence.toFixed(2)}
-              {row.contained ? ` · ${row.contained} contained` : ""}
-            </small>
-          </article>
+          <Metric
+            key={row.type}
+            label={row.type}
+            value={row.campaigns}
+            detail={
+              `${row.events.toLocaleString()} events · avg confidence ${row.avgConfidence.toFixed(2)}` +
+              (row.contained ? ` · ${row.contained} contained` : "")
+            }
+          />
         ))}
       </section>
 

@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useSearchParams } from "next/navigation";
 import { PageHead } from "@/app/ui/chrome";
 import { matchesEvent, signalMeta } from "@/app/ui/format";
-import { EventTable, ExportMenu } from "@/app/ui/parts";
+import { EventTable, ExportMenu, Loading, SegmentedControl } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -170,33 +170,22 @@ function EventsView() {
 
       <div className="toolbar sub">
         <span className="seg-label">Window</span>
-        <span className="seg">
-          {WINDOWS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              className={n === limit ? "on" : ""}
-              onClick={() => setLimit(n)}
-              title={`Read the newest ${n} events from the stream`}
-            >
-              {n}
-            </button>
-          ))}
-        </span>
+        <SegmentedControl
+          value={limit}
+          onChange={setLimit}
+          options={WINDOWS.map((n) => ({
+            value: n,
+            label: n,
+            title: `Read the newest ${n} events from the stream`,
+          }))}
+        />
 
         <span className="seg-label">Since</span>
-        <span className="seg">
-          {RANGES.map((r) => (
-            <button
-              key={r.label}
-              type="button"
-              className={r.ms === rangeMs ? "on" : ""}
-              onClick={() => setRangeMs(r.ms)}
-            >
-              {r.label}
-            </button>
-          ))}
-        </span>
+        <SegmentedControl
+          value={rangeMs}
+          onChange={setRangeMs}
+          options={RANGES.map((r) => ({ value: r.ms, label: r.label }))}
+        />
 
         <button
           type="button"
@@ -270,7 +259,15 @@ function EventsView() {
 export default function EventsPage() {
   // useSearchParams needs a boundary, or the whole route opts out of prerender.
   return (
-    <Suspense fallback={<article className="card"><p className="empty">Loading…</p></article>}>
+    <Suspense
+      fallback={
+        <article className="card">
+          <p className="empty">
+            <Loading />
+          </p>
+        </article>
+      }
+    >
       <EventsView />
     </Suspense>
   );

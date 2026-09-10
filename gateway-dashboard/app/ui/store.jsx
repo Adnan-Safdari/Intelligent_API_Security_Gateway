@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { actionLabel } from "./format";
 
 /**
@@ -45,6 +45,17 @@ export function LiveProvider({ children, me }) {
   const [pendingPolicyActions, setPendingPolicyActions] = useState({});
   const [toast, setToast] = useState(null);
   const [updatedAt, setUpdatedAt] = useState(null);
+  // A page-wide flash when a NEW escalation lands, not a steady light for as
+  // long as one is active -- that is what the statusbar's "N escalated"
+  // count already does. null means no flash is showing; any other value is a
+  // key that changes on every new escalation, so re-triggering the animation
+  // does not depend on React noticing a boolean actually changed.
+  const [flashEscalate, setFlashEscalate] = useState(null);
+  // Alert stream ids already accounted for. A ref, not state: updating it
+  // must never itself cause a render. Starts empty so the very first poll can
+  // establish a baseline instead of flashing for escalations that were
+  // already sitting there before the page opened.
+  const seenAlertIds = useRef(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -56,6 +67,31 @@ export function LiveProvider({ children, me }) {
       ]);
       setOverview(a);
       setPlane(b);
+
+      // New escalations, not a resnapshot of however many are currently
+      // active -- readAlerts already returns the most recent 20, so diffing
+      // against last poll's ids is enough without storing history ourselves.
+      const alertIds = (b.alerts || []).map((alert) => alert.id);
+      if (seenAlertIds.current === null) {
+        // First poll of this page load: record what already existed, flash
+        // nothing. Otherwise every escalation from before the page was even
+        // open would flash the moment it loads.
+        seenAlertIds.current = new Set(alertIds);
+      } else {
+        const fresh = (b.alerts || []).filter((alert) => !seenAlertIds.current.has(alert.id));
+        seenAlertIds.current = new Set(alertIds);
+        if (fresh.length) {
+          setFlashEscalate(fresh[0].id);
+          setToast({
+            tone: "bad",
+            text:
+              fresh.length === 1
+                ? `Escalated: ${fresh[0].explanation || fresh[0].type || "campaign " + fresh[0].campaignId}`
+                : `${fresh.length} campaigns escalated`,
+          });
+        }
+      }
+
       setPendingPolicyActions((pending) => {
         const next = { ...pending };
         for (const [ip, action] of Object.entries(pending)) {
@@ -99,6 +135,15 @@ export function LiveProvider({ children, me }) {
     const id = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(id);
   }, [toast]);
+
+  useEffect(() => {
+    if (flashEscalate === null) return;
+    // Longer than the CSS animation (1.6s) so the element is still mounted
+    // while it plays, and short enough that a second escalation moments
+    // later reads as a second flash rather than an extension of the first.
+    const id = setTimeout(() => setFlashEscalate(null), 2000);
+    return () => clearTimeout(id);
+  }, [flashEscalate]);
 
   // Declared before instruct uses it: a dependency array is evaluated while
   // the component body runs, so a const declared further down is still in its
@@ -225,6 +270,7 @@ export function LiveProvider({ children, me }) {
       pendingPolicyActions,
       toast,
       setToast,
+      flashEscalate,
       updatedAt,
       instruct,
       deletePolicy,
@@ -242,8 +288,8 @@ export function LiveProvider({ children, me }) {
       beat: plane.heartbeat || { alive: false },
     }),
     [
-      me, canAct, overview, plane, history, paused, busy, pendingPolicyActions, toast, updatedAt,
-      instruct, deletePolicy, refresh, refreshHistory,
+      me, canAct, overview, plane, history, paused, busy, pendingPolicyActions, toast,
+      flashEscalate, updatedAt, instruct, deletePolicy, refresh, refreshHistory,
     ],
   );
 

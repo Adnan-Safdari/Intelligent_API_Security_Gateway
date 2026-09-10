@@ -173,30 +173,40 @@ safe?"**
 
 This is the part of the system with the most security reasoning in it, and the
 least algorithmic content. Each rail is a few lines, and each exists because of a
-specific way the system could hurt someone:
+specific way the system could hurt someone. These are what a four-category
+sort of the codebase's numbers (see `gateway/docs/adaptive-policy.md`, "Risk
+and confidence") would call **fixed safety guardrails** — none of them are a
+setting in `AdaptiveConfig`, and none should become one:
 
-- **Allowlist drop** — never write policy for a declared range. Binds humans too:
-  the config is the more considered decision.
-- **Shared-address softening** — office NAT, campus gateway, CGNAT: cap at
-  throttle, never cut off. One person behind a NAT must not take out the building.
-- **Anti-evasion carve-out** — do *not* soften when confidence ≥ 0.9. Otherwise
-  rotating your User-Agent makes you look like a shared address, and a block
-  becomes a throttle. The softening rule is itself an attack surface.
-- **Monotonic ratchet** — never trade a standing policy for a weaker one.
-  Campaigns are re-decided every cycle, so a quiet cycle would otherwise
+- **Allowlist drop** (`policy/simulation.py`) — never write policy for a
+  declared range. Binds humans too: the config is the more considered
+  decision.
+- **Shared-address softening** (`policy/simulation.py`) — office NAT, campus
+  gateway, CGNAT: cap at throttle, never cut off. One person behind a NAT
+  must not take out the building.
+- **Anti-evasion carve-out** (`policy/simulation.py`) — do *not* soften when
+  confidence ≥ 0.9. Otherwise rotating your User-Agent makes you look like a
+  shared address, and a block becomes a throttle. The softening rule is
+  itself an attack surface.
+- **Monotonic ratchet** (`policy/simulation.py`, reading `standing_action`
+  from `adaptive/lifecycle.py`) — never trade a standing policy for a weaker
+  one. Campaigns are re-decided every cycle, so a quiet cycle would otherwise
   downgrade the block that *caused* the quiet.
-- **Address rails** — refuse loopback, private, link-local, multicast and
-  reserved addresses, with an RFC 5737 documentation-range carve-out so demos
-  still work.
-- **Per-cycle budget cap and dry-run** — bound the blast radius of one bad cycle.
+- **Address rails and the per-cycle budget cap** (`policy/writer.py`) —
+  refuse loopback, private, link-local, multicast and reserved addresses,
+  with an RFC 5737 documentation-range carve-out so demos still work, and
+  bound the blast radius of one bad cycle with a write budget and dry-run.
 
 These rails are deliberately hand-written and deliberately separate. A learned
 rail can be shaped by an attacker who controls the inputs; a hard rule cannot.
 They are kept as individual checks rather than one function so each can be tested
 on its own — which is what makes the gate trustworthy.
 
-`policy/writer.py` is the only code that can influence the gateway. New guards go
-there, not scattered.
+Two modules split this, by what each can see: `policy/simulation.py` runs
+first and knows about client behaviour (shared addresses, standing policy);
+`policy/writer.py` runs last, immediately before Redis, and knows about the
+address itself and the cycle's own budget. New guards go into whichever of
+the two already sees the fact the guard needs — not into a new third place.
 
 ---
 

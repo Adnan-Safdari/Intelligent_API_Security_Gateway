@@ -139,6 +139,7 @@ class Runner:
         self.adaptive.apply_config(config)
         self.writer.apply_config(config)
         self.simulator.apply_config(config)
+        self.campaigns.apply_config(config)
         self.writer.begin_cycle()
         self.adaptive.lifecycle.repository.expire_due(datetime.now(timezone.utc))
         for decision, enforce, _ in self.adaptive.observe(self.windows.completed()):
@@ -172,12 +173,12 @@ class Runner:
 
         covered: set[str] = set()
         for campaign in campaigns:
-            self._respond(campaign, evidence, pending, result)
+            self._respond(campaign, evidence, pending, result, config)
             covered.update(campaign.ips)
 
         # Instructions about addresses no campaign mentioned. Blocking an
         # address the agent has never seen is the plainest use of an override.
-        loose = human.standalone(pending, covered)
+        loose = human.standalone(pending, covered, config)
         if loose:
             # Through the same gate, so an allowlisted range is protected from
             # a mistyped instruction exactly as it is from the agent.
@@ -237,7 +238,7 @@ class Runner:
         except Exception as err:  # noqa: BLE001 - liveness is not worth a cycle
             print(f"[heartbeat] could not record this cycle ({err})")
 
-    def _respond(self, campaign, evidence, pending, result: CycleResult) -> None:
+    def _respond(self, campaign, evidence, pending, result: CycleResult, config) -> None:
         """Decide, check the decision is safe, let a human overrule it, write."""
         # 4. decide -- validated numeric configuration and completed-window
         # facts only.  ML is advisory input here; the scorer never runs in Go.
@@ -258,7 +259,7 @@ class Runner:
 
         # 4b. a person outranks the agent, and disagreeing with us is the only
         # thing here worth learning from.
-        decisions, lessons, notes = human.apply(decisions, pending)
+        decisions, lessons, notes = human.apply(decisions, pending, config)
         result.notes.extend(notes)
         for agent_action, human_action in lessons:
             self.feedback.record(campaign.type, agent_action, human_action)

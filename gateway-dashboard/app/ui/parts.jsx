@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { exportCsv, exportJson } from "./export";
+import { EmptyIcon, SpinnerIcon } from "./icons";
 import {
   ACTION_TONE,
   LADDER,
   actionLabel,
   clampRiskScore,
   formatTime,
-  formatTtl,
   riskTone,
   signalMeta,
 } from "./format";
@@ -65,9 +65,33 @@ export function ActionRow({ ips, current, busyKey, busy, onInstruct, label = "Ov
   );
 }
 
-export function CampaignCard({ campaign: c, onInstruct, busy, compact }) {
+export function CampaignCard({
+  campaign: c,
+  onInstruct,
+  busy,
+  compact,
+  // Selection is optional: the IP page renders these bare in a list and
+  // never passes them, so it looks exactly as it did before. Only the
+  // Campaigns grid, where each card can be checked for a bulk action, sets
+  // these -- which is also what puts the "selected" class in play, since
+  // .campaign-grid > .campaign.selected is the only place that class means
+  // anything visually.
+  selectable,
+  selected,
+  onToggleSelect,
+}) {
+  const classes = [c.status === "contained" ? "campaign contained" : "campaign"];
+  if (selected) classes.push("selected");
+
   return (
-    <li className={c.status === "contained" ? "campaign contained" : "campaign"}>
+    <li className={classes.join(" ")}>
+      {selectable ? (
+        <label className="select-row">
+          <input type="checkbox" checked={Boolean(selected)} onChange={onToggleSelect} />
+          select for bulk action
+        </label>
+      ) : null}
+
       <div className="campaign-head">
         <strong>
           #{c.id} {c.type}
@@ -163,29 +187,155 @@ export function CampaignCard({ campaign: c, onInstruct, busy, compact }) {
   );
 }
 
-export function PolicyList({ policies }) {
-  if (!policies.length) return <p className="empty">No policy keys written.</p>;
-
+/**
+ * One control, not three. .segmented (Campaigns' status filter) and .seg
+ * (Events' window/range) were the same idea built twice with slightly
+ * different markup; a third call site toggled plain buttons by hand. Callers
+ * normalize their own data into { value, label, count?, title? } rather than
+ * this component guessing at shapes -- keeps this simple and keeps each
+ * page's own data (a plain array of numbers, an array of {label, ms}
+ * objects, whatever) from needing to change shape just to be displayed.
+ */
+export function SegmentedControl({ options, value, onChange }) {
   return (
-    <ul className="policy-list">
-      {policies.map((p) => (
-        <li key={p.policyId || `${p.ip}-${p.method}-${p.routeTemplate}`}>
-          <div className="policy-top">
-            <IpLink ip={p.ip} />
-            <span className={`risk ${ACTION_TONE[p.action] || "low"}`}>
-              {actionLabel(p.action)}
-            </span>
-          </div>
-          <small>
-            {formatTtl(p.expiresIn)}
-            {p.campaignId && p.campaignId !== "manual"
-              ? ` · campaign #${p.campaignId}`
-              : ""}
-            {p.source === "human" ? " · set by a human" : ""}
-          </small>
-        </li>
+    <span className="segmented">
+      {options.map((option) => (
+        <button
+          key={option.value}
+          type="button"
+          className={option.value === value ? "on" : ""}
+          onClick={() => onChange(option.value)}
+          title={option.title}
+        >
+          {option.label}
+          {option.count != null ? <em>{option.count}</em> : null}
+        </button>
       ))}
-    </ul>
+    </span>
+  );
+}
+
+/**
+ * One labelled-field family, not two. Settings had Num/Text/Toggle/List;
+ * Adaptive had its own local Field handling text/number/select/multiline by
+ * itself -- same CSS classes (.field, .field-label), built by hand twice.
+ * Field.Textarea (a raw string) and Field.List (a newline-separated array)
+ * stay distinct rather than merged: they return different value shapes to
+ * their caller, and collapsing them would force one side to convert.
+ */
+export function Field({ label, hint, children }) {
+  return (
+    <label className="field block">
+      <span className="field-label">{label}</span>
+      {children}
+      {hint ? <small>{hint}</small> : null}
+    </label>
+  );
+}
+
+Field.Text = function FieldText({ label, value, onChange, hint }) {
+  return (
+    <Field label={label} hint={hint}>
+      <input type="text" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
+    </Field>
+  );
+};
+
+Field.Number = function FieldNumber({ label, value, onChange, min, max, step, hint }) {
+  return (
+    <Field label={label} hint={hint}>
+      <input
+        type="number"
+        value={value ?? ""}
+        min={min}
+        max={max}
+        step={step}
+        onChange={(e) => onChange(e.target.value === "" ? "" : Number(e.target.value))}
+      />
+    </Field>
+  );
+};
+
+Field.Select = function FieldSelect({ label, value, onChange, options, optionLabel, hint }) {
+  return (
+    <Field label={label} hint={hint}>
+      <select value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {optionLabel ? optionLabel(option) : option}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+};
+
+// A raw string in a textarea -- Adaptive's prior "multiline" mode. Parsing it
+// into ranges/patterns happens outside this component, same as before.
+Field.Textarea = function FieldTextarea({ label, value, onChange, hint, rows = 3 }) {
+  return (
+    <Field label={label} hint={hint}>
+      <textarea rows={rows} value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
+    </Field>
+  );
+};
+
+// An array, one entry per line -- Settings' prior "List" mode: patterns and
+// CIDRs pasted in from somewhere else, where a textarea takes the paste whole.
+Field.List = function FieldList({ label, value, onChange, hint }) {
+  return (
+    <Field label={label} hint={hint}>
+      <textarea
+        rows={Math.min(Math.max(value.length + 1, 3), 10)}
+        value={value.join("\n")}
+        onChange={(e) =>
+          onChange(
+            e.target.value
+              .split("\n")
+              .map((line) => line.trim())
+              .filter(Boolean),
+          )
+        }
+      />
+    </Field>
+  );
+};
+
+Field.Toggle = function FieldToggle({ label, checked, onChange }) {
+  return (
+    <label className="check toggle">
+      <input type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} />
+      {label}
+    </label>
+  );
+};
+
+/**
+ * Standardizes content, not just the container: every empty state before this
+ * used the same .empty visual mechanism but wildly different content -- a
+ * one-liner here, a runnable shell command there, an env-var explanation
+ * somewhere else. A shell command sitting in an empty panel reads as an
+ * unfinished dev tool in front of anyone this gets demoed to; that kind of
+ * detail belongs in docs, not in the UI.
+ */
+export function EmptyState({ icon: Icon = EmptyIcon, title, hint }) {
+  return (
+    <div className="empty-state">
+      <Icon size={22} aria-hidden="true" />
+      <p>{title}</p>
+      {hint ? <small>{hint}</small> : null}
+    </div>
+  );
+}
+
+/** One loading primitive, replacing five-plus inconsistently-capitalized ad
+ * hoc strings ("Loading map…", "loading…", "Loading {ip}…", ...). */
+export function Loading({ label = "Loading…" }) {
+  return (
+    <span className="loading">
+      <SpinnerIcon size={14} className="spin" aria-hidden="true" />
+      {label}
+    </span>
   );
 }
 
