@@ -7,7 +7,8 @@ const (
 	SignalFlood      = "api_flooding"
 	SignalSQLi       = "sql_injection"
 	SignalTraversal  = "enumeration_path_traversal"
-	SignalBruteForce = "brute_force"
+	SignalBruteForce = "consecutive_failed_logins"
+	SignalRouteScan  = "unknown_route_scanning"
 	SignalReputation = "ip_reputation"
 )
 
@@ -50,6 +51,7 @@ var (
 	_ Detector = (*SQLiDetector)(nil)
 	_ Detector = (*TraversalEnumDetector)(nil)
 	_ Detector = (*BruteForceDetector)(nil)
+	_ Detector = (*UnknownRouteScanDetector)(nil)
 	_ Detector = (*ReputationDetector)(nil)
 
 	// Windowed detectors (flood, brute force) are deliberately absent: their
@@ -108,6 +110,26 @@ func clampScore(score int) int {
 		return 100
 	}
 	return score
+}
+
+// AdvisoryOnly reports detectors whose evidence must make a round trip through
+// the control plane before it can affect a request. Their behavioural state is
+// useful context, not an authority to install a gateway reflex block.
+func AdvisoryOnly(signal string) bool {
+	return signal == SignalBruteForce || signal == SignalRouteScan
+}
+
+func evidenceSeverity(score int) string {
+	switch {
+	case score >= 80:
+		return "high"
+	case score >= 60:
+		return "medium"
+	case score > 0:
+		return "low"
+	default:
+		return "none"
+	}
 }
 
 // ratioScore maps count vs threshold onto 0-100.

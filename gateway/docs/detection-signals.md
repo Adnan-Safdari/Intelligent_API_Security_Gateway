@@ -2,7 +2,7 @@
 
 ## Overview
 
-Five detectors run on every allowed request. **Detectors never enforce.** They
+Six detectors run on every allowed request. **Detectors never enforce.** They
 observe, fill in a standard `Evidence` struct, and let the request continue.
 Deciding what to do about what they saw is the control plane's job, and acting
 on that decision is the enforcer's.
@@ -10,18 +10,39 @@ on that decision is the enforcer's.
 That separation is what makes the gateway safe to leave switched on: a
 false positive costs a log line, not a refused customer.
 
-## The five detectors
+## The detectors
 
 | Signal constant | Detector | Detects | Windowed? |
 | --- | --- | --- | --- |
 | `api_flooding` | `FloodDetector` | Request rate above the configured budget | Yes |
 | `sql_injection` | `SQLiDetector` | SQL injection patterns in path, query, or body | No |
 | `enumeration_path_traversal` | `TraversalEnumDetector` | `../` traversal and probes for `/.env`, `/.git`, `/wp-admin` | No |
-| `brute_force` | `BruteForceDetector` | Repeated failed logins on configured login paths | Yes |
+| `consecutive_failed_logins` | `BruteForceDetector` | Consecutive configured invalid-credential outcomes, per client and login target | Yes |
+| `unknown_route_scanning` | `UnknownRouteScanDetector` | Distinct raw paths classified as `<unmatched>` by the route table | Yes |
 | `ip_reputation` | `ReputationDetector` | Addresses on a known-bad list | No — see below |
 
-All five are configured under `enforcement:` in `configs/config.yaml`, and each
+All are configured under `enforcement:` in `configs/config.yaml`, and each
 can be disabled individually.
+
+### Low-and-slow deterministic rules
+
+`brute_force` deliberately has no list of paths or status-code guesses. The
+structural `routes.auth_outcomes` declaration identifies each login route and
+the backend statuses that mean `success` or `invalid_credentials`. Only a
+configured invalid backend response grows a streak. A configured success resets
+that route and target's streak; gateway refusals never reach the detector and
+are never interpreted as authentication outcomes.
+
+`unknown_route_scanning` consults the same compiled route table telemetry uses.
+It records the raw path only after the table returns `<unmatched>`, so a known
+route that happens to return a backend 404 is irrelevant. Repeating one broken
+link remains one path; the detector needs several distinct paths in its rolling
+window. `max_clients` and `max_paths_per_client` bound retained attacker input,
+and inactive entries are swept after the configured window.
+
+Both signals are advisory-only: the gateway reflex rejects them even if they
+are named in `block.signals`. They become an expiring throttle or block only
+after control-plane correlation and the policy writer's safety checks.
 
 ### Reputation is the odd one out
 
@@ -71,7 +92,7 @@ the control plane can treat them uniformly:
 The distinction matters more than it looks, because the enforcer sits *outside*
 the detectors — a refused request never reaches them.
 
-- **Windowed** detectors (flood, brute force) describe a rolling window. Their
+- **Windowed** detectors (flood, failed-login, route scanning) describe a rolling window. Their
   counts remain true whether or not the current request reached them, so they
   always report.
 - **Request-scoped** detectors (SQLi, traversal) describe *one* request. If the
@@ -102,7 +123,7 @@ a stale hit.
 
 ## The collector
 
-`signals.Collector` fans a lookup out across all five detectors and summarises
+`signals.Collector` fans a lookup out across all six detectors and summarises
 the result.
 
 ```mermaid
@@ -112,11 +133,15 @@ flowchart TD
     C -->|MetricsFor| TR[Traversal / enumeration]
     C -->|Metrics| FL[Flood]
     C -->|Metrics| BF[Brute force]
+
+    C -->|Metrics| RS[Route scanning]
     C -->|MetricsFor| RP[Reputation]
     SQ --> S[summarize]
     TR --> S
     FL --> S
     BF --> S
+
+    RS --> S
     RP --> S
     S -->|fired, riskScore, signals| T
 ```
@@ -152,6 +177,7 @@ cd gateway && go test ./internal/signals/... ./internal/telemetry/...
 | `internal/signals/sqli_injection.go` | SQL injection patterns |
 | `internal/signals/enumeration_path_traversal.go` | Traversal and forced browsing |
 | `internal/signals/brute_force.go` | Failed-login tracking |
+| `internal/signals/unknown_route_scanning.go` | Bounded distinct unmatched-path tracking |
 | `internal/signals/ip_reputation.go` | Known-bad address lookup and its cooldown |
 | `internal/reputation/` | Loading the list, refreshing it, and the lookup itself |
 | `internal/signals/body.go` | Body reading shared by the request-scoped detectors |

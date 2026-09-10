@@ -17,6 +17,7 @@ type live struct {
 	flood      *signals.FloodDetector
 	sqli       *signals.SQLiDetector
 	brute      *signals.BruteForceDetector
+	routeScan  *signals.UnknownRouteScanDetector
 	traversal  *signals.TraversalEnumDetector
 	reputation *signals.ReputationDetector
 	reflex     *enforcement.Reflex
@@ -49,6 +50,7 @@ func (l live) apply(cfg config.EnforcementConfig) error {
 	l.flood.Apply(cfg.RateLimit)
 	l.sqli.Apply(cfg.AttackDetection)
 	l.brute.Apply(cfg.BruteForce)
+	l.routeScan.Apply(cfg.UnknownRouteScan)
 	l.traversal.Apply(cfg.Enumeration)
 	// Only the tunables move here. Where the list comes from is structural, so
 	// a pushed settings change can turn reputation on, adjust what it scores

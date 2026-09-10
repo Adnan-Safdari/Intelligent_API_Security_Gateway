@@ -44,6 +44,7 @@ class RiskConfig:
         "bruteforce": 80.0,
         "flood": 70.0,
         "enumeration": 55.0,
+        "unknown_route_scanning": 60.0,
         "reputation": 20.0,
     })
     repeated_evidence_increment: float = 5.0

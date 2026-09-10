@@ -68,16 +68,14 @@ func TestFloodHistorySurvivesAnApply(t *testing.T) {
 func TestBruteForceFailuresSurviveAnApply(t *testing.T) {
 	bd := NewBruteForceDetector(config.BruteForceConfig{
 		Enabled: true, MaxFailures: 100, Window: time.Minute,
-		LoginPaths: []string{"/api/login"},
-	})
+	}, loginOutcomes, loginMatch)
 
 	for i := 0; i < 3; i++ {
-		bd.recordFailure("5.5.5.5", "a@b.c", request("5.5.5.5"))
+		bd.recordFailure("5.5.5.5", "/api/login", "a@b.c", time.Now(), bd.settings())
 	}
 
 	bd.Apply(config.BruteForceConfig{
 		Enabled: true, MaxFailures: 3, Window: time.Minute,
-		LoginPaths: []string{"/api/login"},
 	})
 
 	ev := bd.Metrics("5.5.5.5")
@@ -115,7 +113,7 @@ func TestSQLiCanBeDisabledLive(t *testing.T) {
 // overlap unsafely.
 func TestApplyIsSafeUnderConcurrentTraffic(t *testing.T) {
 	fd := NewFloodDetector(config.RateLimitConfig{Enabled: true, RequestsPerMinute: 50})
-	bd := NewBruteForceDetector(config.BruteForceConfig{Enabled: true, MaxFailures: 5, Window: time.Minute})
+	bd := NewBruteForceDetector(config.BruteForceConfig{Enabled: true, MaxFailures: 5, Window: time.Minute}, loginOutcomes, loginMatch)
 	sd := NewSQLiDetector(DefaultSQLiDetectorConfig())
 	td := NewTraversalEnumDetector(config.EnumerationConfig{Enabled: true})
 

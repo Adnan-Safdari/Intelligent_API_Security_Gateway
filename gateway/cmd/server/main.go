@@ -50,6 +50,7 @@ func main() {
 		AdaptiveRateLimit: cfg.Enforcement.AdaptiveRateLimit,
 		AttackDetection:   cfg.Enforcement.AttackDetection,
 		BruteForce:        cfg.Enforcement.BruteForce,
+		UnknownRouteScan:  cfg.Enforcement.UnknownRouteScan,
 		Enumeration:       cfg.Enforcement.Enumeration,
 		IPReputation:      cfg.Enforcement.IPReputation,
 		Policy:            cfg.Enforcement.Policy,

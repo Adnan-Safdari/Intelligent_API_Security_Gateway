@@ -136,6 +136,7 @@ type EnforcementConfig struct {
 	RateLimit         RateLimitConfig         `yaml:"rate_limit"`
 	AttackDetection   AttackDetectionConfig   `yaml:"attack_detection"`
 	BruteForce        BruteForceConfig        `yaml:"brute_force"`
+	UnknownRouteScan  UnknownRouteScanConfig  `yaml:"unknown_route_scanning"`
 	Enumeration       EnumerationConfig       `yaml:"enumeration_path_traversal"`
 	IPReputation      IPReputationConfig      `yaml:"ip_reputation"`
 	Throttle          ThrottleConfig          `yaml:"throttle"`
@@ -191,9 +192,19 @@ type PolicyConfig struct {
 
 type BruteForceConfig struct {
 	Enabled     bool          `yaml:"enabled"`
-	MaxFailures int           `yaml:"max_failures"` // failed logins inside the window before the signal fires
-	Window      time.Duration `yaml:"window"`       // sliding window for counting failures
-	LoginPaths  []string      `yaml:"login_paths"`  // request paths treated as login endpoints
+	MaxFailures int           `yaml:"max_failures"` // consecutive invalid credentials before the signal fires
+	Window      time.Duration `yaml:"window"`       // maximum age of a consecutive-failure streak
+}
+
+// UnknownRouteScanConfig bounds the detector that notices a client walking
+// several paths the configured application does not expose. Route templates
+// are structural, but these behavioural limits may safely move at runtime.
+type UnknownRouteScanConfig struct {
+	Enabled           bool          `yaml:"enabled"`
+	DistinctPaths     int           `yaml:"distinct_paths"`
+	Window            time.Duration `yaml:"window"`
+	MaxClients        int           `yaml:"max_clients"`
+	MaxPathsPerClient int           `yaml:"max_paths_per_client"`
 }
 
 type AttackDetectionConfig struct {
@@ -377,6 +388,54 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("adaptive_rate_limit.bucket_key_prefix must not overlap policy.key_prefix")
 	}
 	cfg.Enforcement.AdaptiveRateLimit = a
+	brute, err := ValidatedBruteForce(cfg.Enforcement.BruteForce)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Enforcement.BruteForce = brute
+	scan, err := ValidatedUnknownRouteScan(cfg.Enforcement.UnknownRouteScan)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Enforcement.UnknownRouteScan = scan
 
+	return cfg, nil
+}
+
+// ValidatedBruteForce fills safe defaults and rejects a limit that would make
+// the detector either unbounded or too broad to be a useful security control.
+// Settings uses the same function so a hand-written Redis override receives
+// exactly the validation a YAML file does.
+func ValidatedBruteForce(cfg BruteForceConfig) (BruteForceConfig, error) {
+	if cfg.MaxFailures == 0 {
+		cfg.MaxFailures = 5
+	}
+	if cfg.Window == 0 {
+		cfg.Window = time.Minute
+	}
+	if cfg.MaxFailures < 1 || cfg.MaxFailures > 1_000 || cfg.Window < time.Second || cfg.Window > 24*time.Hour {
+		return BruteForceConfig{}, fmt.Errorf("brute_force.max_failures must be 1..1000 and window must be 1s..24h")
+	}
+	return cfg, nil
+}
+
+// ValidatedUnknownRouteScan limits every retained dimension. The raw paths are
+// attacker input, so capacity is part of correctness rather than tuning.
+func ValidatedUnknownRouteScan(cfg UnknownRouteScanConfig) (UnknownRouteScanConfig, error) {
+	if cfg.DistinctPaths == 0 {
+		cfg.DistinctPaths = 8
+	}
+	if cfg.Window == 0 {
+		cfg.Window = 5 * time.Minute
+	}
+	if cfg.MaxClients == 0 {
+		cfg.MaxClients = 10_000
+	}
+	if cfg.MaxPathsPerClient == 0 {
+		cfg.MaxPathsPerClient = 64
+	}
+	if cfg.DistinctPaths < 2 || cfg.DistinctPaths > cfg.MaxPathsPerClient || cfg.MaxPathsPerClient > 10_000 || cfg.MaxClients < 1 || cfg.MaxClients > 100_000 || cfg.Window < time.Second || cfg.Window > 24*time.Hour {
+		return UnknownRouteScanConfig{}, fmt.Errorf("unknown_route_scanning requires distinct_paths 2..max_paths_per_client, max_paths_per_client <= 10000, max_clients 1..100000, and window 1s..24h")
+	}
 	return cfg, nil
 }

@@ -27,6 +27,7 @@
 package enforcement
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"strings"
@@ -42,15 +43,15 @@ import (
 // RecommendedSignals is what configs/config.yaml.example ships, and what an
 // operator should copy if they are unsure.
 //
-// Both are windowed and count repetition: they fire on a pattern of behaviour
-// rather than on one request that happened to contain a suspicious string.
-// The request-scoped detectors are absent on purpose -- a single request
+// Flood is windowed and counts repetition rather than one request that happened
+// to contain a suspicious string. The request-scoped detectors are absent on
+// purpose -- a single request
 // carrying "UNION" may be an attack or may be someone searching a catalogue,
 // and that is a judgement, which is the control plane's job.
 //
 // It is a recommendation and not a default. Nothing applies it automatically;
 // see New.
-var RecommendedSignals = []string{signals.SignalFlood, signals.SignalBruteForce}
+var RecommendedSignals = []string{signals.SignalFlood}
 
 // DefaultExempt are the ranges never blocked by reflex.
 //
@@ -150,6 +151,9 @@ func buildTunables(cfg Config) (*reflexTunables, error) {
 	// cannot be mistaken for working.
 	for _, name := range cfg.Signals {
 		if name = strings.TrimSpace(name); name != "" {
+			if signals.AdvisoryOnly(name) {
+				return nil, fmt.Errorf("%s is advisory-only and must be enforced through the control-plane policy writer", name)
+			}
 			t.signals[name] = true
 		}
 	}

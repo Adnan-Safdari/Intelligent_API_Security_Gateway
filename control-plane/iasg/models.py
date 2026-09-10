@@ -10,6 +10,7 @@ DETECTOR_SQLI = "sqli"
 DETECTOR_TRAVERSAL = "traversal"
 DETECTOR_ENUMERATION = "enumeration"
 DETECTOR_REPUTATION = "reputation"
+DETECTOR_UNKNOWN_ROUTE_SCAN = "unknown_route_scanning"
 
 # The phase of an intrusion each detector belongs to. Several detectors can
 # describe the same phase -- guessing filenames and climbing out of a directory
@@ -28,6 +29,7 @@ STAGE_ABUSE = "abuse"
 STAGE_OF = {
     DETECTOR_ENUMERATION: STAGE_RECON,
     DETECTOR_TRAVERSAL: STAGE_RECON,
+    DETECTOR_UNKNOWN_ROUTE_SCAN: STAGE_RECON,
     DETECTOR_BRUTE_FORCE: STAGE_CREDENTIAL,
     DETECTOR_SQLI: STAGE_INJECTION,
     DETECTOR_FLOOD: STAGE_ABUSE,
@@ -38,10 +40,12 @@ SIGNAL_TO_DETECTOR = {
     "api_flooding": DETECTOR_FLOOD,
     "sql_injection": DETECTOR_SQLI,
     "brute_force": DETECTOR_BRUTE_FORCE,
+    "consecutive_failed_logins": DETECTOR_BRUTE_FORCE,
     "password_spraying": DETECTOR_BRUTE_FORCE,
     "path_traversal": DETECTOR_TRAVERSAL,
     "enumeration": DETECTOR_ENUMERATION,
     "ip_reputation": DETECTOR_REPUTATION,
+    "unknown_route_scanning": DETECTOR_UNKNOWN_ROUTE_SCAN,
 }
 
 DETECTOR_TO_SIGNAL = {
@@ -51,6 +55,7 @@ DETECTOR_TO_SIGNAL = {
     DETECTOR_TRAVERSAL: "enumeration_path_traversal",
     DETECTOR_ENUMERATION: "enumeration_path_traversal",
     DETECTOR_REPUTATION: "ip_reputation",
+    DETECTOR_UNKNOWN_ROUTE_SCAN: "unknown_route_scanning",
 }
 
 # What a campaign is called once it spans more than one phase.
