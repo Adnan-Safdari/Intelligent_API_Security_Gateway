@@ -178,29 +178,24 @@ func (fd *FloodDetector) Metrics(ip string) Evidence {
 
 	crossed := count > tun.threshold
 	ev.Details["requestRate"] = count
-	ev.Score = floodScore(count, tun.threshold)
+	score := ratioScore(count, tun.threshold)
+	if count == tun.threshold {
+		// ratioScore's boundary is inclusive (count == threshold scores 60,
+		// "at threshold"). Flood's is exclusive -- count == threshold is
+		// still clean, matching `crossed` above -- so only this one case is
+		// overridden, with ratioScore's own below-threshold formula
+		// (count*30/threshold), rather than shifting the whole curve or
+		// carrying a second copy of it. That formula is exactly 30 whenever
+		// count == threshold; written out so the boundary stays visibly tied
+		// to ratioScore's shape instead of becoming its own magic number.
+		score = count * 30 / tun.threshold
+	}
+	ev.Score = score
 	ev.ThresholdCross = crossed
 	if crossed {
 		ev.AttackType = SignalFlood
 	}
 	return ev
-}
-
-func floodScore(count, threshold int) int {
-	if threshold <= 0 || count <= 0 {
-		return 0
-	}
-	// Flood fires when count > threshold, so equal-to-threshold is still clean.
-	if count <= threshold {
-		return count * 30 / threshold
-	}
-	if count >= threshold*5 {
-		return 100
-	}
-	if count >= threshold*2 {
-		return 80
-	}
-	return 60
 }
 
 func trimExpired(times []time.Time, cutoff time.Time) []time.Time {

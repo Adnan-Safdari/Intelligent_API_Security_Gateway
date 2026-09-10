@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 from datetime import datetime, timedelta, timezone
 
+from iasg.adaptive.config import AdaptiveConfig
 from iasg.config import Settings
 from iasg.feedback import overrides as human
 from iasg.feedback.memory import FeedbackMemory
@@ -98,13 +99,15 @@ def test_an_unreadable_instruction_is_not_retried_forever():
 # --- applying them ---
 
 def test_a_human_action_replaces_the_agents():
+    config = AdaptiveConfig()
     applied, lessons, notes = human.apply(
         [decision(action=ACTION_THROTTLE)],
         {"203.0.113.5": Override("203.0.113.5", ACTION_TEMP_BLOCK, "pranav")},
+        config,
     )
 
     assert applied[0].action == ACTION_TEMP_BLOCK
-    assert applied[0].ttl_seconds == TTL[ACTION_TEMP_BLOCK]
+    assert applied[0].ttl_seconds == config.guardrails.temporary_block_duration_seconds
     assert applied[0].source == "human"
     assert "pranav" in applied[0].reason
     assert lessons == [(ACTION_THROTTLE, ACTION_TEMP_BLOCK)]
@@ -115,6 +118,7 @@ def test_agreement_teaches_nothing():
     applied, lessons, notes = human.apply(
         [decision(action=ACTION_THROTTLE)],
         {"203.0.113.5": Override("203.0.113.5", ACTION_THROTTLE, "pranav")},
+        AdaptiveConfig(),
     )
 
     assert applied[0].action == ACTION_THROTTLE
@@ -123,7 +127,7 @@ def test_agreement_teaches_nothing():
 
 
 def test_untouched_addresses_are_left_alone():
-    applied, lessons, _ = human.apply([decision(ip="198.51.100.7")], {})
+    applied, lessons, _ = human.apply([decision(ip="198.51.100.7")], {}, AdaptiveConfig())
 
     assert applied[0].action == ACTION_THROTTLE
     assert lessons == []
@@ -134,6 +138,7 @@ def test_an_instruction_about_an_unseen_address_still_writes_policy():
     loose = human.standalone(
         {"198.51.100.7": Override("198.51.100.7", ACTION_TEMP_BLOCK, "pranav", "spam")},
         handled=set(),
+        config=AdaptiveConfig(),
     )
 
     (only,) = loose
@@ -147,8 +152,43 @@ def test_an_address_a_campaign_already_covered_is_not_written_twice():
     loose = human.standalone(
         {"203.0.113.5": Override("203.0.113.5", ACTION_TEMP_BLOCK, "pranav")},
         handled={"203.0.113.5"},
+        config=AdaptiveConfig(),
     )
     assert loose == []
+
+
+def test_an_escalate_override_cannot_outstand_the_configured_maximum():
+    """
+    ACTION_ESCALATE's own default (1 hour) is longer than the default policy
+    ceiling (30 minutes). A human's instruction is not exempt from the same
+    rail that binds the agent -- see AdaptiveConfig.guardrails.
+    """
+    config = AdaptiveConfig()
+    loose = human.standalone(
+        {"198.51.100.7": Override("198.51.100.7", ACTION_ESCALATE, "pranav")},
+        handled=set(),
+        config=config,
+    )
+
+    (only,) = loose
+    assert only.ttl_seconds == config.guardrails.maximum_policy_duration_seconds
+
+
+def test_a_humans_explicit_ttl_is_still_capped_at_the_maximum():
+    config = AdaptiveConfig()
+    loose = human.standalone(
+        {
+            "198.51.100.7": Override(
+                "198.51.100.7", ACTION_TEMP_BLOCK, "pranav",
+                ttl_seconds=config.guardrails.maximum_policy_duration_seconds * 10,
+            )
+        },
+        handled=set(),
+        config=config,
+    )
+
+    (only,) = loose
+    assert only.ttl_seconds == config.guardrails.maximum_policy_duration_seconds
 
 
 # --- remembering them ---

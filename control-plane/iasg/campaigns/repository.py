@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
 
+from iasg.adaptive.config import AdaptiveConfig
 from iasg.models import CAMPAIGN_MULTI_STAGE, ENFORCEMENT_ACTIONS, Campaign
 from iasg.store.base import Store
 
@@ -35,7 +36,15 @@ _SIGNATURE_REQUIRED = ("endpoint", "user_agent", "detector")
 # How long an attacker can be quiet and still be the same campaign returning.
 # Comfortably longer than the longest policy TTL, so a block expiring and the
 # attacker coming back on fresh addresses is recognised rather than renumbered.
+#
+# Derived from guardrails.maximum_policy_duration_seconds (see apply_config)
+# rather than fixed outright: that ceiling is itself configurable up to 24h,
+# and a bare constant here could not keep its own stated promise once an
+# operator raised it. The floor below is what every test and default
+# deployment sees, since the default ceiling (1800s) times the multiple
+# already lands exactly on it.
 CONTINUATION_WINDOW = timedelta(hours=2)
+CONTINUATION_WINDOW_MULTIPLE = 4
 
 
 class CampaignRepository:
@@ -55,6 +64,18 @@ class CampaignRepository:
         self._prefix = prefix
         self._counter_key = f"{prefix}next_id"
         self._db = persistence
+        self._continuation_window = CONTINUATION_WINDOW
+
+    def apply_config(self, config: AdaptiveConfig) -> None:
+        """
+        Keep the continuation window's own stated invariant true: comfortably
+        longer than the longest policy TTL, even after that ceiling is raised.
+        """
+        self._continuation_window = max(
+            CONTINUATION_WINDOW,
+            CONTINUATION_WINDOW_MULTIPLE
+            * timedelta(seconds=config.guardrails.maximum_policy_duration_seconds),
+        )
 
     def all(self) -> list[Campaign]:
         if self._db:
@@ -93,7 +114,7 @@ class CampaignRepository:
         result = []
 
         for candidate in fresh:
-            match, matched_on = _best_match(candidate, known)
+            match, matched_on = _best_match(candidate, known, self._continuation_window)
             if match is None:
                 candidate.campaign_id = self._next_id()
                 known.append(candidate)
@@ -211,7 +232,7 @@ class CampaignRepository:
 
 
 def _best_match(
-    candidate: Campaign, known: list[Campaign]
+    candidate: Campaign, known: list[Campaign], continuation_window: timedelta
 ) -> tuple[Campaign | None, str]:
     """
     The stored campaign this cluster most likely continues, and how we decided.
@@ -237,7 +258,7 @@ def _best_match(
     # tooling, same attack. That is what we fall back to.
     best, best_score = None, 0.0
     for existing in known:
-        score = _behaviour_match(candidate, existing)
+        score = _behaviour_match(candidate, existing, continuation_window)
         if score > best_score:
             best, best_score = existing, score
     if best_score >= SIGNATURE_MATCH:
@@ -246,7 +267,9 @@ def _best_match(
     return None, ""
 
 
-def _behaviour_match(candidate: Campaign, existing: Campaign) -> float:
+def _behaviour_match(
+    candidate: Campaign, existing: Campaign, continuation_window: timedelta
+) -> float:
     """
     How strongly two campaigns look like the same operation on new hardware.
 
@@ -267,7 +290,7 @@ def _behaviour_match(candidate: Campaign, existing: Campaign) -> float:
     # The same tooling pointed at the same endpoint next month is a new
     # campaign, not this one resuming. The window is wide enough that a block
     # expiring and the attacker returning still counts as a continuation.
-    if abs(candidate.last_seen - existing.last_seen) > CONTINUATION_WINDOW:
+    if abs(candidate.last_seen - existing.last_seen) > continuation_window:
         return 0.0
 
     return sum(
