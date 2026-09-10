@@ -6,6 +6,7 @@
     "dev": "next dev -H 0.0.0.0 -p 5177",
     "build": "next build",
     "start": "next start -H 0.0.0.0 -p 5177",
+    "test": "node --test tests/adaptive-mode.test.mjs",
     "reset-accounts": "node scripts/reset-accounts.mjs"
   },
   "dependencies": {
