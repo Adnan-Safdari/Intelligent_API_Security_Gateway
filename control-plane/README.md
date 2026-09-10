@@ -26,6 +26,24 @@ turns fired signals into campaign Evidence; another keeps clean traffic long
 enough to finish privacy-safe 60-second windows and endpoint baselines.
 `iasg.evidence.ingest` remains as a fallback for piping old SECURITY ALERT logs.
 
+## The five core mechanisms
+
+1. **Deterministic attack detectors** emit evidence for known attack shapes.
+2. **Adaptive endpoint baselines** learn trusted normal traffic per method and route.
+3. **Campaign correlation** connects related evidence across addresses and cycles.
+4. **The risk/confidence policy engine** makes a bounded, explainable recommendation.
+5. **An optional Isolation Forest** adds advisory anomaly context only.
+
+IP reputation is supporting evidence, not independent policy authority. Body
+limits, cooldowns, Redis streams, policy TTLs, and token buckets support safe
+enforcement or reliable delivery rather than acting as detection algorithms.
+LLM explanation and assessment run only after policy selection; the default
+`null` provider renders templates offline and cannot affect enforcement.
+
+Read [ALGORITHMS.md](ALGORITHMS.md) for the mechanism-level explanation and
+[`../gateway/docs/adaptive-policy.md`](../gateway/docs/adaptive-policy.md) for
+the baseline, risk/confidence, and advisory-model contract.
+
 ## Setup
 
 ```bash
@@ -199,9 +217,9 @@ and a review of the grouping (`campaign.assessment`). Both run *after* policy is
 written, and nothing reads them back to make a decision. A hallucinated or
 prompt-injected assessment can mislead a human reader; it cannot unblock an attacker.
 
-Compose enables this: it sets `IASG_LLM_PROVIDER=ollama` and points the container at
-Ollama on the *host*, so there is no second copy of the model. A bare `python -m iasg`
-still defaults to `null` and renders templates offline. To use a real model there:
+Compose and a bare `python -m iasg` both default to `null` and render templates
+offline. To opt into a real model, set `IASG_LLM_PROVIDER=ollama`; Compose points
+the container at Ollama on the *host*, so there is no second copy of the model:
 
 ```bash
 brew install ollama
@@ -215,8 +233,9 @@ IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg --once
 `policy/writer.py` is the only code that can influence the gateway, so the guards live
 there together:
 
-- reputation can firm up an answer by one rung but never originate one: a campaign the
-  evidence itself would only monitor stays monitored, however well known the address is
+- reputation is optional context only. The live adaptive risk engine excludes it
+  from its evidence floor and score, and the default gateway configuration does
+  not arm it for reflex enforcement
 - never writes policy for loopback, private, link-local or reserved addresses
   (the RFC 5737 documentation ranges used by the seeder are explicitly allowed)
 - `monitor` writes nothing at all

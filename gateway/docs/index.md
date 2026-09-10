@@ -38,6 +38,30 @@ keeping it independent.
 | Control plane (`control-plane/`) | Every 30s | Read evidence, cluster it into campaigns, choose an action, write time-bounded policy |
 | Dashboard (`gateway-dashboard/`) | On demand | Show live traffic, campaigns, and policy; let an operator override the agent |
 
+## Five core mechanisms
+
+The system has five decision-making mechanisms:
+
+1. **Deterministic attack detectors** observe known attack shapes and emit
+   evidence; they do not decide the response to the request they inspect.
+2. **Adaptive endpoint baselines** learn normal traffic per normalized method
+   and route from trusted completed windows.
+3. **Campaign correlation** groups related evidence across addresses and cycles.
+4. **The risk/confidence policy engine** turns evidence, behavioural deviation,
+   and campaign facts into a bounded policy recommendation.
+5. **The optional Isolation Forest** contributes an advisory anomaly score only;
+   it cannot originate enforcement or contribute to policy confidence.
+
+IP reputation is optional supporting evidence, never independent authority to
+enforce. Body caps, detector cooldowns, Redis streams, token buckets, policy
+snapshots, and TTLs are supporting enforcement/reliability mechanisms, not
+additional detection algorithms. LLM narration runs after policy selection and
+cannot influence risk, confidence, or enforcement; the offline template
+provider is the safe default.
+
+For the full decision explanation, see [Control Plane](control-plane.md) and
+[Adaptive Policy and Analyst Control](adaptive-policy.md).
+
 ## Request path
 
 Every request crosses nine middlewares before reaching the backend. The order

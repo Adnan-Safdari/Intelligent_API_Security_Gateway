@@ -36,6 +36,30 @@ with a TTL.
 Stop the control plane and the gateway keeps serving traffic exactly as before. That
 independence is the point of the split.
 
+## Five core mechanisms
+
+The project is designed to be explained through these mechanisms, rather than
+as a collection of queues, caches, and timers:
+
+| Mechanism | Responsibility |
+|---|---|
+| Deterministic attack detectors | Emit evidence for known attack shapes; detectors never choose a response. |
+| Adaptive endpoint baseline | Learn safe normal traffic per method and route from trusted completed windows. |
+| Campaign correlation | Relate evidence across addresses and cycles into continuing attacks. |
+| Risk/confidence policy engine | Choose a bounded, explainable policy from evidence, behaviour, and campaign facts. |
+| Optional Isolation Forest advisory model | Add anomaly context when an installed model is valid; it cannot act alone. |
+
+Body limits, detector cooldowns, Redis streams, token buckets, policy snapshots,
+and TTLs support safe enforcement and reliable delivery; they are not separate
+detection algorithms. IP reputation is optional supporting evidence only. The
+LLM writes narration strictly after policy selection and cannot affect risk,
+confidence, or enforcement. The offline template provider remains the safe
+default; Ollama is an explicit narration provider.
+
+See the [control-plane mechanism guide](control-plane/ALGORITHMS.md) and
+[adaptive-policy documentation](gateway/docs/adaptive-policy.md) for the
+decision boundaries and their safeguards.
+
 ## Layout
 
 | Path | What it is |

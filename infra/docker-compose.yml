@@ -194,10 +194,11 @@ services:
       # Linux Docker routes to the bridge address instead, where it is not --
       # run Ollama with OLLAMA_HOST=0.0.0.0 there.
       #
-      # Set IASG_LLM_PROVIDER=null in infra/.env to switch narration off. A
+      # Keep the default self-contained: templates need no host model. Set
+      # IASG_LLM_PROVIDER=ollama in infra/.env to opt into host narration. A
       # provider that is configured but unreachable is not an error either --
       # every call degrades to the template and says so once.
-      IASG_LLM_PROVIDER: ${IASG_LLM_PROVIDER:-ollama}
+      IASG_LLM_PROVIDER: ${IASG_LLM_PROVIDER:-null}
       IASG_OLLAMA_URL: ${IASG_OLLAMA_URL:-http://host.docker.internal:11434}
       IASG_OLLAMA_MODEL: ${IASG_OLLAMA_MODEL:-llama3.2}
       # Campaigns and feedback outlive a restart. Policy keys stay in Redis.
