@@ -76,7 +76,7 @@ Cannot be configured away, by design. These hold regardless of what
 | --- | --- | --- |
 | No deterministic evidence → Monitor, unconditionally | `adaptive/risk.py` `_guard` | A statistical surprise (ML, behaviour) can never be sole authority to act |
 | Detector points configured to zero → Monitor | `adaptive/risk.py` `_guard` | Zeroing out `detector_points` cannot be used to silently disable the floor above |
-| Reputation excluded from deterministic evidence | `adaptive/risk.py` `calculate_risk` | A list membership is a prior, not an observed event; it can firm up a decision but never originate one |
+| Reputation excluded from deterministic evidence and score | `adaptive/risk.py` `calculate_risk` | A list membership is a prior, not observed behaviour from this API; it remains optional context, never policy authority |
 | Two detectors firing on one request count once | `adaptive/risk.py` `calculate_risk` | De-duplicated by `stream_id`, so evidence volume can't be inflated by request, only by distinct observation |
 | `maximum_policy_duration_seconds` binds every write, including human overrides | `policy/writer.py`, `feedback/overrides.py` | An analyst's `escalate` cannot stand longer than the configured ceiling — see below |
 | Allowlist outranks everything, including a human | `policy/simulation.py` | A declared range is the more considered of two decisions, not the agent overruling a person |
@@ -195,7 +195,7 @@ detector can:
 | Detector, at maximum confidence | Score | Clears `min_score: 80` alone? |
 | --- | --- | --- |
 | Path traversal | 80 | Yes — exactly at the floor |
-| Reputation (listed address) | 80 | Yes — exactly at the floor, by deliberate design (see `ip_reputation.go`) |
+| Reputation (listed address) | 80 | Only if an operator explicitly adds it to `block.signals`; the default leaves it as supporting context |
 | SQL injection, ≥2 patterns matched | 85–100 | Yes |
 | SQL injection, exactly one strong pattern | 70 | No |
 | Enumeration alone (no traversal) | 50 | No |

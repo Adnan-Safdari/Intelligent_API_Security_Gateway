@@ -225,10 +225,10 @@ deterministic Python. The LLM writes **text only**, runs *after* policy is alrea
 and nothing reads its output back to make a decision. A hallucinated or prompt-injected
 assessment can mislead a human reader; it cannot unblock an attacker.
 
-**Under Compose this is on.** `infra/docker-compose.yml` sets
-`IASG_LLM_PROVIDER=ollama` and points the container at Ollama running on the *host*
-(`host.docker.internal:11434`) rather than shipping a second copy of a 2GB model. Set
-`IASG_LLM_PROVIDER=null` in `infra/.env` to turn narration off.
+**Under Compose this is off by default.** `infra/docker-compose.yml` sets the
+template provider unless `IASG_LLM_PROVIDER=ollama` is supplied in `infra/.env`.
+That explicit opt-in points the container at Ollama running on the *host*
+(`host.docker.internal:11434`) rather than shipping a second copy of a 2GB model.
 
 A bare `python -m iasg` still defaults to `null`, so the offline path is unchanged. To use
 a model there:

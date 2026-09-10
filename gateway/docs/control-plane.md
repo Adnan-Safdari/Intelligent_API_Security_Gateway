@@ -30,15 +30,18 @@ flowchart TD
     V --> A[Ack the evidence]
 ```
 
+This is an operational sequence, not six more decision algorithms. The five core
+mechanisms are deterministic detectors, adaptive endpoint baselines, campaign
+correlation, the risk/confidence policy engine, and an optional advisory
+Isolation Forest. Redis delivery, policy TTLs, safety simulation, and narration
+preserve those mechanisms' boundaries.
+
 Three things about that order are deliberate:
 
-- **IP reputation is worth one rung, and only on a campaign that already
-  earned an action.** `reputation_bias` returns 0 when the evidence alone would
-  only monitor: being on a list makes an attack answerable more firmly, it does
-  not make ordinary traffic into an attack. A feed is the input most likely to
-  be stale, so it is the last thing trusted to originate enforcement. The ladder
-  clamps the total bias to a single rung, so this cannot compound with a learned
-  feedback bias.
+- **IP reputation is optional context, not independent authority.** The live
+  adaptive risk engine excludes it from the deterministic-evidence floor and
+  risk score, and the default gateway configuration does not arm it for reflex
+  enforcement. The legacy `reputation_bias` helper has no production caller.
 - **Decisions are made by rules, with no LLM anywhere near them.** The
   language model is used for narration only, and it runs *after* the decision
   already exists. A model that is unavailable, slow, or wrong cannot change
@@ -131,8 +134,8 @@ All settings come from the environment, via `Settings.from_env()`:
 | `IASG_DRY_RUN` | `false` | Decide everything, write nothing |
 | `IASG_ALLOWLIST` | empty | Comma-separated CIDRs that are never actioned |
 | `IASG_POSTGRES_URL` | unset | Enables durable campaigns |
-| `IASG_LLM_PROVIDER` | `null` in code, **`ollama` under Compose** | `null` or `ollama` |
-| `IASG_OLLAMA_URL` | `http://localhost:11434` | Narration model endpoint. Compose points this at the *host* |
+| `IASG_LLM_PROVIDER` | `null` | `null` or `ollama`; Compose also defaults to `null` |
+| `IASG_OLLAMA_URL` | `http://localhost:11434` | Narration model endpoint when `ollama` is explicitly enabled; Compose points this at the *host* |
 | `IASG_OLLAMA_MODEL` | `llama3.2` | Model to generate with |
 | `IASG_OLLAMA_TIMEOUT_SECONDS` | `15` | Bound on one call |
 | `IASG_NARRATION_BUDGET_SECONDS` | `12` | Total wall clock one cycle may spend narrating |
@@ -144,10 +147,12 @@ the explanation agent falls back to a template and still produces a readable
 paragraph, while the assessment agent has no template and produces nothing at
 all. Turning a model on is what makes the second one exist.
 
-Compose sets `ollama` and points at the host rather than shipping a second copy
-of a 2GB model. Docker Desktop proxies `host.docker.internal` to the host
-loopback, so a model listening only on `127.0.0.1` is reachable; native Linux
-Docker routes to the bridge instead and needs `OLLAMA_HOST=0.0.0.0`.
+Compose defaults to the offline template provider. Set
+`IASG_LLM_PROVIDER=ollama` in `infra/.env` to opt into host narration; Compose
+then points at the host rather than shipping a second copy of a 2GB model.
+Docker Desktop proxies `host.docker.internal` to the host loopback, so a model
+listening only on `127.0.0.1` is reachable; native Linux Docker routes to the
+bridge instead and needs `OLLAMA_HOST=0.0.0.0`.
 
 Narration is two model calls per campaign, inside the cycle, so its cost scales
 with how bad the hour is -- six campaigns is twelve calls, which at a few

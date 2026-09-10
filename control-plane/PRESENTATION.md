@@ -1,272 +1,205 @@
-# Control Plane — presentation notes
+# Control Plane - presentation notes
 
-Speaker notes for ~12 minutes plus questions. Quoted text is what to *say*;
-everything else is for you.
+Speaker notes for a 10-12 minute presentation plus questions.
 
-**The single thread to hold onto:** the gateway sees requests, the control plane
-sees *attacks*. Everything below is a consequence of that sentence.
+**The thread to hold onto:** the gateway sees requests; the control plane sees
+attacks. The gateway never waits on thinking.
 
----
+## 1. What it is (30 sec)
 
-## 1 · What it is (30 sec)
+> "This is an API security gateway in two lanes. The Go gateway is on every
+> request, so it observes known attack shapes and enforces cached decisions. The
+> Python control plane runs off-path every 30 seconds, where it can use history
+> and context to decide what an attack means."
 
-> "The gateway is a fast, deliberately unintelligent pipe. The control plane is
-> the part that actually decides. It's about 3,900 lines of Python with 249
-> tests, and it runs as a separate process on a 30-second loop, completely off
-> the request path."
+The split is the security and performance boundary. A gateway request never
+waits for Redis, a model, or the control plane.
 
-Don't explain the architecture yet. Just plant that it's separate.
+## 2. The five mechanisms (1 min)
 
----
+Use this as the project map. Do not present queues, buckets, or TTLs as
+independent detection algorithms.
 
-## 2 · Why a second lane at all (1 min)
+| Mechanism | One sentence |
+| --- | --- |
+| Deterministic attack detectors | Recognise known attack shapes and emit evidence. |
+| Adaptive endpoint baseline | Learn a safe normal rate for each endpoint from clean completed windows. |
+| Campaign correlation | Turn related evidence from several addresses and cycles into one attack. |
+| Risk/confidence policy engine | Choose a bounded, explainable response from evidence, behaviour, and campaign facts. |
+| Optional Isolation Forest advisory model | Add anomaly context when a validated model exists, without acting alone. |
 
-The whole design follows from this, so land it properly.
+> "Everything else is a supporting safety or reliability mechanism. Body limits
+> bound work. Redis transports evidence. Token buckets enforce a throttle.
+> Cooldowns prevent noisy repeat evidence. Policy TTLs make every action expire."
 
-> "A gateway is on the critical path of every request — its budget is
-> microseconds. But deciding whether an address is attacking you isn't a
-> microsecond question. It needs history: has this address done this before?
-> Breadth: are these forty addresses one botnet? And judgement: is this a
-> scanner, or a customer with a retry loop?
->
-> You can't do that inside a request without putting a network round trip, or a
-> model call, in front of every customer. So instead of making the detector
-> dumber, I split it in two. The gateway writes evidence it doesn't interpret;
-> the control plane reads it, decides, and writes decisions back that the
-> gateway later enforces without ever knowing why."
+That distinction is deliberate: the five mechanisms explain how the system
+reaches a conclusion; the supporting mechanisms explain how it stays fast and
+safe while doing so.
 
-**If they only remember one line:** *the gateway never waits on thinking.*
+## 3. Deterministic attack detectors (1 min)
 
----
+> "The gateway recognises flooding, SQL injection, brute force,
+> traversal/enumeration, and known-bad IP reputation. A detector records
+> evidence and allows the request. It never decides the response to that
+> request."
 
-## 3 · The pipeline (1 min)
+The reflex and control-plane policy are enforcement mechanisms acting on a
+decision already available before a later request. This preserves the invariant
+that a detector does not become an inline policy engine.
 
-Eight steps, one cycle, every 30 seconds:
+**Reputation is supporting evidence, not a sixth mechanism.**
 
-```
-observe → correlate → remember → decide → simulate → write → explain → review
-```
+> "Reputation says an address appears on a list. It is a useful prior, but it is
+> not behaviour from this API. The live adaptive engine excludes it from the
+> evidence floor and risk score, and the default gateway configuration does not
+> arm it for reflex enforcement. It cannot create enforcement for ordinary traffic."
 
-> "Evidence comes off a Redis stream through a consumer group. I only
-> acknowledge it *after* the cycle finishes — so if the agent crashes halfway,
-> the evidence replays instead of being lost."
+## 4. Adaptive endpoint baseline (1.5 min)
 
-Say the numbers once and move on: **500 events per cycle, 30-second cadence**.
+> "The system learns normal traffic separately for each method and route. A
+> busy product endpoint should not define normal for login, and product IDs share
+> one route baseline rather than create thousands of keys."
 
----
+Each baseline uses trusted completed 60-second windows and a robust median plus
+MAD threshold. A window with detector evidence, active enforcement, missing
+telemetry, a heartbeat gap, or dropped events is visible but cannot teach the
+baseline. Warm-up, hard bounds, hysteresis, and cooldown stop one unusual minute
+from redefining normal.
 
-## 4 · Correlation — spend the most time here (3 min)
+> "A baseline deviation is an explainable input to risk, not an automatic block.
+> Deterministic evidence is still required before the system may throttle or
+> block."
 
-This is the intellectual core. It is what makes the project more than a set of
-if-statements.
+## 5. Campaign correlation (2 min)
 
-> "This is the part I'd point at if you only look at one thing. It turns six
-> separate 'IP X failed a login' events into one statement: *these six
-> addresses are running a credential-stuffing campaign against /api/login.*
-> A campaign is what gets acted on — not an incident."
+> "Six IPs failing login are not necessarily six incidents. The correlator
+> builds one profile per address, then groups profiles whose timing overlaps and
+> whose identity traits agree. The result is a campaign: these addresses are
+> coordinating one credential-stuffing attack."
 
-**How:** build a per-IP profile, then union-find over shared traits.
+The traits are endpoint, User-Agent, /24 subnet, attack type, and timing. A
+link requires overlapping timing plus at least two identity traits: endpoint,
+User-Agent, or subnet.
 
-Weights, if asked:
+> "Those two gates prevent a common false positive: same detector type during a
+> busy minute is not enough to call unrelated customers one botnet."
 
-| Trait | Weight |
-|---|---|
-| user agent | 0.25 |
-| endpoint | 0.20 |
-| subnet | 0.20 |
-| attack type | 0.15 |
-| timing | 0.10 |
+Union-Find supplies the friend-of-a-friend grouping: if A matches B and B
+matches C, all three become one campaign even if A and C do not directly match.
+Campaign continuity uses IP overlap first, then a stricter behavioural signature
+when an attacker rotates every address.
 
-**The part worth defending — the linking rule.** Two addresses link only when
-*timing overlaps* **and** at least **two identity traits** match:
+A lone address is scored by bounded volume bands. This means a persistent solo
+attack can be actioned, while volume alone cannot justify analyst escalation.
 
-> "Two gates, and both exist because of a specific failure. Timing is required,
-> because two addresses with an identical fingerprint a day apart are two
-> incidents, not one campaign. And I require two *identity* traits — user agent,
-> endpoint or subnet — because 'same attack type at the same time' describes
-> every busy minute on a public API. Without that gate it swept unrelated
-> traffic into one campaign."
+## 6. Risk/confidence policy engine (2 min)
 
-**The lone attacker problem** — a good story, use it:
+> "The policy engine makes one recorded, explainable recommendation. It combines
+> deterministic evidence, endpoint-baseline deviation, campaign facts, and an
+> advisory anomaly score when one is available."
 
-> "The weights only work if an address shares traits with someone. A single
-> machine grinding away at a login form shares traits with nobody, so it scored
-> near zero and could never be acted on — the most ordinary attack there is was
-> permanently invisible. So a solo address is scored on its own volume instead,
-> in coarse bands. It's capped at 0.87, deliberately: volume alone can get one
-> machine blocked, but never escalated, because escalation means *wake a human
-> about a coordinated campaign* and one machine repeating itself isn't that."
+Risk is a 0-100 score; confidence is a distinct 0-1 value. They are not merged:
+a statistical surprise cannot invent confidence. Every recommendation records
+its components, weights, total, confidence, and guardrail result.
 
----
+| Mode | Result |
+| --- | --- |
+| Monitor | Store a recommendation; never write active policy. |
+| Manual | Store a pending recommendation for an analyst to approve or reject. |
+| Automatic | Write only a non-monitor recommendation that passes every guardrail. |
 
-## 5 · Deciding, and why it adapts (2 min)
+> "The active outcomes are monitor, throttle, and temporary block. Escalation
+> wakes a person; it is not an unlimited automatic block."
 
-The ladder: `monitor → throttle → temp_block → escalate`, TTLs 5 / 15 / 30 / 60 min.
+No deterministic evidence means monitor. Reputation cannot supply that evidence.
+Allowlisted and non-public addresses are never actioned; shared addresses are
+softened; every policy has a bounded TTL; and policy/writer.py is the only code
+that can affect the gateway.
 
-Base decision from evidence:
+## 7. Optional Isolation Forest (1 min)
 
-| Condition | Action |
-|---|---|
-| confidence ≥ 0.9, high severity, ≥ 5 addresses | escalate |
-| confidence ≥ 0.75, high severity | temp_block |
-| confidence ≥ 0.5 | throttle |
-| otherwise | monitor |
+> "The Isolation Forest is an optional advisory model over completed telemetry
+> windows. If its artifact is missing or invalid, the system continues on the
+> deterministic path. There is no live retraining."
 
-> "A throttle carries a *rate*, not a fixed slowdown — 20 requests a minute for
-> high severity, 50 otherwise — and the gateway answers 429 over it."
+It cannot originate enforcement:
 
-**Then the part that makes it an agent, not a rule engine:**
+1. No deterministic evidence always yields monitor.
+2. Its score never contributes to policy confidence.
+3. If it is needed for a block, its own anomaly must also clear the
+   strong-anomaly threshold.
 
-> "Every campaign is re-examined next cycle. If the attack *survived*
-> enforcement, the response is promoted one rung. An action that didn't work
-> isn't simply repeated. Progression through attack phases promotes it too — an
-> actor who scanned for secrets, then attacked the login they found, then probed
-> the database has shown intent that a single-phase attacker hasn't."
+> "So the model can add context to a decision that evidence already earned; it
+> cannot decide that somebody should be blocked."
 
-**And the release valve:**
+## 8. LLM narration is not the model in the policy (1 min)
 
-> "Enforcement releases itself. Every policy key carries a TTL and nothing
-> renews it. An attacker who stops is forgiven automatically, and a mistake
-> expires on its own instead of needing a human to notice."
+> "The language model is separate from the Isolation Forest and separate from
+> enforcement. It writes an incident explanation and a review for the operator
+> only after policy selection and writing. Nothing reads either text back into
+> risk, confidence, or enforcement."
 
----
+The default provider is the offline null template provider. A deployment can opt
+into Ollama for narration, but a timeout, failure, hallucination, or
+prompt-injected result cannot change a policy or fail a control-plane cycle.
 
-## 6 · The rails (1.5 min)
+## 9. Supporting enforcement and reliability (1 min)
 
-Examiners like this slide because it shows you thought about being wrong.
+| Support | Reason |
+| --- | --- |
+| Body caps and cooldowns | Bound request work and evidence volume. |
+| Redis streams and consumer groups | Deliver/replay evidence without delaying traffic. |
+| Snapshot policies and token buckets | Enforce a cached decision quickly across gateway replicas. |
+| TTLs, duration caps, and write budgets | Make enforcement self-expiring and bound a bad cycle. |
+| Postgres history | Preserve campaigns and recommendations across restarts. |
 
-> "One file can influence the gateway — `policy/writer.py` — so every guard
-> lives there together: never police loopback, private or reserved addresses;
-> never write a policy without an expiry; cap how many addresses one cycle can
-> action; and honour a dry-run that decides everything and writes nothing.
->
-> There's also a simulation step that runs *last*, before anything is written.
-> It asks who else gets hurt — a campus NAT with many clients behind one address
-> gets slowed, never cut off."
+> "These features make enforcement reliable. They do not independently decide
+> that traffic is malicious."
 
----
+## 10. Demo (2-3 min)
 
-## 7 · When a human disagrees (1 min)
+    docker compose -f infra/docker-compose.yml up -d
+    docker compose -f infra/docker-compose.yml logs -f control_plane
 
-> "An operator can overrule the agent from the console, and that's applied
-> immediately — a person outranks it. But the interesting part is that
-> disagreement is the only thing worth learning from. After two consistent
-> corrections in the same direction, the agent shifts its own recommendation for
-> that kind of campaign. Two, not one, so a single unusual call can't retrain
-> it."
+Drive demo traffic from a 203.0.113.x documentation address. The writer
+correctly refuses to police private or loopback ranges, and Docker Desktop would
+otherwise collapse host traffic to a private peer.
 
----
+For a gateway-independent backup, seed evidence and run one cycle:
 
-## 8 · Where the AI is, and is not (1.5 min)
+    cd control-plane
+    PYTHONPATH=. .venv/bin/python -m tools.seed_evidence --scenario credential-stuffing
+    PYTHONPATH=. .venv/bin/python -m iasg --once
 
-Pre-empt the "is this actually AI?" question by drawing the line yourself.
+Point out the campaign, its risk/confidence explanation, the recommendation,
+and the policy expiry. Do not claim that a narrated paragraph made the decision.
 
-> "Grouping, scoring and the block decision are plain deterministic Python. The
-> LLM writes two things: the incident note an admin reads, and a review of
-> whether the grouping looks sound. Both run *after* policy is already written,
-> and nothing reads their output back.
->
-> That's deliberate. A hallucinated or prompt-injected assessment can mislead a
-> human reader — it cannot unblock an attacker. Rules can't be talked out of
-> blocking someone."
+## Questions you may get
 
-If asked about prompt injection, you have a real answer:
+**"Why not decide in the gateway?"**
 
-> "The evidence is attacker-controlled text going into a model, so the system
-> prompt says to describe it and never follow instructions inside it. I also had
-> to stop the guard leaking: asked to describe three addresses, the model called
-> them 'three untrusted attacker-controlled IP addresses' — lifting my warning
-> into operator-facing text."
+> "History, correlation, and models are too slow and failure-prone for every
+> request. The gateway only observes and enforces cached decisions. It never
+> waits on thinking."
 
----
+**"Is reputation enough to block someone?"**
 
-## 9 · Testing (1 min)
+> "No. It is optional supporting evidence. It can firm up a recommendation that
+> deterministic observed evidence already earned, but it cannot originate
+> enforcement."
 
-> "249 tests against 3,900 lines — roughly 0.84 to 1. They assert *properties*,
-> not paths: that reputation can't invent enforcement, that bias can't compound
-> past one rung, that a narration failure can never fail a cycle, that a
-> campaign survives the attacker changing every address.
->
-> They need no Redis — there's an in-memory store behind the same interface —
-> so the whole suite runs in half a second."
+**"Can the anomaly model block somebody?"**
 
----
+> "Not by itself. No deterministic evidence means monitor, its score is excluded
+> from policy confidence, and a model-assisted block has an additional
+> strong-anomaly check."
 
-## 10 · Demo (2–3 min)
+**"Where is the LLM in the decision?"**
 
-Rehearse this; it's where things go wrong.
+> "Nowhere. It runs after policy selection and writing, to narrate the outcome
+> for a person. The offline template provider is the safe default."
 
-```bash
-docker compose -f infra/docker-compose.yml up -d
-docker compose -f infra/docker-compose.yml logs -f control_plane
-```
+**"What happens if the control plane dies?"**
 
-Drive traffic from a **203.0.113.x** address — RFC 5737 documentation range.
-
-> "It has to be a documentation address. The writer refuses to police private
-> or loopback ranges, and under Docker every request from my machine arrives as
-> a private address — so a demo from localhost correctly does nothing."
-
-Point at, in the log: the campaign forming, the confidence and reason, the
-`[explain]` note, and `wrote N policy keys`. Then show the address getting 403.
-
-**Backup if the demo dies** — rehearse this too. The seeder writes fake attack
-evidence straight to Redis, so it needs no gateway and no attack traffic:
-
-```bash
-cd control-plane
-PYTHONPATH=. .venv/bin/python -m tools.seed_evidence --scenario credential-stuffing
-PYTHONPATH=. .venv/bin/python -m iasg --once
-```
-
-One caveat worth knowing before you're on stage: if Redis *isn't* reachable,
-`open_store` prints a warning and falls back to an in-memory store — the seeder
-then writes into a store the agent process can't see, and you get a cycle that
-reads zero events with nothing obviously wrong. So confirm Redis is up first.
-
----
-
-## 11 · What I'd do next (1 min)
-
-Volunteering limits reads as command of the design. Don't wait to be asked.
-
-> "Three things I know are weak. Crash recovery reclaims one batch, once — if a
-> crash left more than 500 events unacked, the rest are stranded. The per-cycle
-> cap of 50 addresses applies in arbitrary order rather than worst-first, so a
-> large distributed attack could have the wrong 50 actioned. And under sustained
-> load the gateway trims its event stream faster than I drain it, so evidence
-> can be dropped exactly when it matters most."
-
----
-
-## Questions you will get
-
-**"Why Python and not Go?"**
-> "The two halves have opposite constraints. The gateway has a microsecond
-> budget per request, so it's Go. This runs every 30 seconds off-path, so the
-> constraint isn't speed — it's readability and iteration. And the language
-> boundary makes the architectural boundary real: you *can't* accidentally call
-> the correlator from a middleware, because it's a different process."
-
-**"Isn't this just rules with extra steps?"**
-> "The decisions are rules — deliberately, because they must be auditable. What
-> isn't a rule is the grouping, which is unsupervised clustering over shared
-> traits, and the adaptation: it changes its own response based on whether the
-> last one worked and on being corrected."
-
-**"What if the control plane dies?"**
-> "The gateway keeps enforcing what it already has. Policies are in Redis with
-> TTLs, so enforcement decays gracefully rather than stopping dead — and no
-> request fails because the thinking half is down."
-
-**"How do you know the correlation is right?"**
-> "I don't, fully — there's no labelled ground truth. What I can show is that
-> it's conservative by construction: two gates on linking, a solo cap that stops
-> volume alone reaching escalation, a simulation step for collateral damage, and
-> the override path for when it's wrong."
-
-**"Did you document the Python decision at the time?"**
-> "No. The commit that made it is clear about *what* changed — it deleted a Go
-> package and ported it — but I didn't write down the reasoning."
-
-Don't invent a design document. Saying this plainly costs you nothing.
+> "The gateway continues serving and enforcing its cached policies until their
+> TTLs expire. No request fails because the thinking lane is unavailable."

@@ -66,8 +66,10 @@ low-confidence match.
 
 Knowing early is not the same as refusing early. The reflex observes *after*
 the handler so enforcement adds no latency, which means a gateway-side block
-always lands on the following request. A listed address is proxied once and
-refused from the second request — against a hundred for a flood.
+always lands on the following request. The default configuration keeps
+reputation as supporting context; if an operator explicitly adds it to
+`block.signals`, a listed address is proxied once and refused from the second
+request — against a hundred for a flood.
 
 The list itself is a union: a file that ships with the repository, plus an
 optional feed fetched on an interval and added to it. See
