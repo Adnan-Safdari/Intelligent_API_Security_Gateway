@@ -4,7 +4,7 @@ import { useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
 import { ACTION_TONE, LADDER, actionLabel, formatTtl } from "@/app/ui/format";
 import { useLive } from "@/app/ui/store";
-import { ExportMenu } from "@/app/ui/parts";
+import { ExportMenu, Metric } from "@/app/ui/parts";
 import { POLICY_COLUMNS } from "@/app/ui/export";
 import Link from "next/link";
 
@@ -20,6 +20,13 @@ export default function PolicyPage() {
   const rows = [...policies].sort((a, b) =>
     sort === "expiry" ? a.expiresIn - b.expiresIn : b.confidence - a.confidence,
   );
+
+  const blocked = policies.filter(
+    (p) => p.action === "temp_block" || p.action === "temporary_block",
+  ).length;
+  const expiringSoon = policies.filter(
+    (p) => p.expiresIn != null && p.expiresIn >= 0 && p.expiresIn <= 3600,
+  ).length;
 
   async function submit(e) {
     e.preventDefault();
@@ -40,12 +47,19 @@ export default function PolicyPage() {
 
   return (
     <>
-      <PageHead title="Policy">
+      <PageHead eyebrow="Enforcement" title="Policy">
         What the gateway is currently enforcing, and the one place to tell the agent it
         got something wrong. Nothing here writes policy directly — instructions go to the
         override stream and are applied on the next cycle, after the same allowlist and
         collateral checks the agent’s own decisions face.
       </PageHead>
+
+      <section className="metrics">
+        <Metric label="Active rules" value={policies.length} detail="Redis policy keys in force" />
+        <Metric label="Blocked addresses" value={blocked} detail="temp block, right now" />
+        <Metric label="Expiring within the hour" value={expiringSoon} detail="TTL running out" />
+        <Metric label="Escalated to you" value={escalations.length} detail="raised once per campaign" />
+      </section>
 
       <p className="form-note">
         Delete policy removes the current Redis policy key immediately. It does not end the
@@ -78,21 +92,30 @@ export default function PolicyPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>Address</th>
+                    <th>#</th>
+                    <th>Scope</th>
+                    <th>Condition</th>
                     <th>Action</th>
                     <th>Expires</th>
                     <th>Origin</th>
+                    <th>State</th>
                     <th>Change to</th>
                     <th>Remove</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((p) => (
+                  {rows.map((p, i) => (
                     <tr key={p.policyId || `${p.ip}-${p.method}-${p.routeTemplate}`}>
+                      <td className="mono">{String(i + 1).padStart(2, "0")}</td>
                       <td>
                         <Link href={`/events?q=${encodeURIComponent(p.ip)}`} className="mono">
                           {p.ip}
                         </Link>
+                      </td>
+                      <td>
+                        {p.method && p.routeTemplate
+                          ? `${p.method} ${p.routeTemplate}`
+                          : p.reason || "Any request"}
                       </td>
                       <td>
                         <span className={`risk ${ACTION_TONE[p.action] || "low"}`}>
@@ -108,6 +131,11 @@ export default function PolicyPage() {
                         ) : (
                           <span className="tag">agent</span>
                         )}
+                      </td>
+                      <td>
+                        {/* A row here is by definition still active -- an
+                            expired Redis key is gone, not listed. */}
+                        <span className="tag good">Active</span>
                       </td>
                       <td>
                         <div className="row-actions">

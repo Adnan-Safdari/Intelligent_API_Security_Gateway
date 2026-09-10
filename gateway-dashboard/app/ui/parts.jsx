@@ -13,20 +13,63 @@ import {
   signalMeta,
 } from "./format";
 
-export function Metric({ label, value, detail, bars, max, href }) {
-  const body = (
+/**
+ * A trend line, not a bar chart. The bucketed request histogram used to
+ * render as fixed-width vertical bars (`.spark span`) -- fine for evenly
+ * busy data, but the real histogram is mostly-zero buckets with one or two
+ * spikes, which rendered as a row of near-invisible slivers next to one
+ * solid block. A polyline reads the same shape as a trend regardless of how
+ * lopsided the underlying counts are.
+ */
+function Sparkline({ values, max, width = 96, height = 34 }) {
+  const top = Math.max(1, max ?? Math.max(...values, 1));
+  const last = values.length - 1;
+  const points = values.map((v, i) => {
+    const x = last > 0 ? (i / last) * width : width;
+    const y = height - 3 - (Math.max(0, v) / top) * (height - 6);
+    return [x, y];
+  });
+  const [ex, ey] = points[points.length - 1] || [width, height];
+  return (
+    <svg className="spark-svg" width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
+      <polyline
+        points={points.map(([x, y]) => `${x},${y}`).join(" ")}
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx={ex} cy={ey} r="2.4" fill="var(--accent)" />
+    </svg>
+  );
+}
+
+export function Metric({ label, value, detail, bars, max, href, badge, tone }) {
+  const text = (
     <>
       <p>{label}</p>
-      <strong>{Number(value || 0).toLocaleString()}</strong>
-      {bars ? (
-        <div className="spark" aria-hidden="true">
-          {bars.map((n, i) => (
-            <span key={i} style={{ height: `${Math.max(8, (n / max) * 100)}%` }} />
-          ))}
-        </div>
-      ) : null}
+      {badge ? (
+        <span className="metric-value-row">
+          <strong className={tone || ""}>{Number(value || 0).toLocaleString()}</strong>
+          <span className={`metric-badge ${tone || ""}`}>{badge}</span>
+        </span>
+      ) : (
+        <strong className={tone || ""}>{Number(value || 0).toLocaleString()}</strong>
+      )}
       <small>{detail}</small>
     </>
+  );
+
+  // The one tile with a trend line sits its number on the left and the
+  // line on the right, bottom-aligned -- every other tile just stacks.
+  const body = bars ? (
+    <div className="metric-with-spark">
+      <div>{text}</div>
+      <Sparkline values={bars} max={max} />
+    </div>
+  ) : (
+    text
   );
 
   // A metric that has a page behind it should take you there.
@@ -303,8 +346,16 @@ Field.List = function FieldList({ label, value, onChange, hint }) {
 
 Field.Toggle = function FieldToggle({ label, checked, onChange }) {
   return (
-    <label className="check toggle">
-      <input type="checkbox" checked={Boolean(checked)} onChange={(e) => onChange(e.target.checked)} />
+    <label className="check">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={Boolean(checked)}
+        className={checked ? "switch on" : "switch"}
+        onClick={() => onChange(!checked)}
+      >
+        <span className="knob" />
+      </button>
       {label}
     </label>
   );
@@ -339,7 +390,32 @@ export function Loading({ label = "Loading…" }) {
   );
 }
 
-export function EventTable({ events, empty, showSerialNumber = false }) {
+// Status-chip tone: this app's own status codes, not a signal or policy
+// action, so it gets its own small mapping rather than reusing riskTone.
+function statusTone(status) {
+  const code = Number(status);
+  if (code === 429) return "warn";
+  if (code >= 400) return "bad";
+  return "ok";
+}
+
+// The Action column's own tone -- deliberately not the shared ACTION_TONE
+// (--risk .low/.mid/.high) that Policy and Campaigns use for the same
+// action names, because those two disagree on what "monitor" should look
+// like: ACTION_TONE paints it green (low risk), the design calls for it
+// muted/dim here. Same word, different column, different meaning: whether
+// this row saw enforcement, not how risky the address is.
+const EVENT_ACTION_TONE = {
+  temp_block: "bad",
+  temporary_block: "bad",
+  escalate: "bad",
+  throttle: "warn",
+  rate_limited: "warn",
+  monitor: "dim",
+};
+
+export function EventTable({ events, empty, showSerialNumber = false, showGeo = false, geoByIp = {} }) {
+  const cols = 7 + (showSerialNumber ? 1 : 0) + (showGeo ? 1 : 0);
   return (
     <div className="table-wrap">
       <table>
@@ -348,46 +424,77 @@ export function EventTable({ events, empty, showSerialNumber = false }) {
             {showSerialNumber ? <th>S. No.</th> : null}
             <th>Time</th>
             <th>Source</th>
+            {showGeo ? <th>Geo</th> : null}
             <th>Endpoint</th>
             <th>Status</th>
             <th>Risk</th>
-            <th>Signals</th>
+            <th>Matched signals</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody>
           {events.length === 0 ? (
             <tr>
-              <td colSpan={showSerialNumber ? 7 : 6} className="empty">
+              <td colSpan={cols} className="empty">
                 {empty}
               </td>
             </tr>
           ) : (
-            events.map((event, index) => (
-              <tr
-                key={event.id || event.requestId}
-                className={event.fired?.length ? "alert-row" : ""}
-              >
-                {showSerialNumber ? <td className="mono">{index + 1}</td> : null}
-                <td className="mono">{formatTime(event.ts)}</td>
-                <td>
-                  <IpLink ip={event.ip} />
-                </td>
-                <td>
-                  <span className="method">{event.method}</span> {event.path}
-                </td>
-                <td className="mono">{event.status}</td>
-                <td>
-                  <span className={`risk ${riskTone(clampRiskScore(event.riskScore))}`}>
-                    {clampRiskScore(event.riskScore)}
-                  </span>
-                </td>
-                <td>
-                  {(event.fired || []).length === 0
-                    ? "—"
-                    : event.fired.map((name) => signalMeta(name).label).join(", ")}
-                </td>
-              </tr>
-            ))
+            events.map((event, index) => {
+              const risk = clampRiskScore(event.riskScore);
+              const tone = riskTone(risk);
+              const actionTone = EVENT_ACTION_TONE[event.decision] || "ok";
+              return (
+                <tr
+                  key={event.id || event.requestId}
+                  className={event.fired?.length ? "alert-row" : ""}
+                >
+                  {showSerialNumber ? <td className="mono">{index + 1}</td> : null}
+                  <td className="mono">{formatTime(event.ts)}</td>
+                  <td>
+                    <IpLink ip={event.ip} />
+                  </td>
+                  {showGeo ? <td>{geoByIp[event.ip] || "—"}</td> : null}
+                  <td>
+                    <span className="method">{event.method}</span> {event.path}
+                  </td>
+                  <td>
+                    <span className={`status-chip ${statusTone(event.status)}`}>{event.status}</span>
+                  </td>
+                  <td>
+                    <div className="risk-cell">
+                      <span className={`risk ${tone}`}>{risk}</span>
+                      <span className="risk-meter">
+                        <span className={`risk-meter-fill ${tone}`} style={{ width: `${risk}%` }} />
+                      </span>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="sig-tags">
+                      {(event.fired || []).length === 0 ? (
+                        <span className="faint">—</span>
+                      ) : (
+                        event.fired.map((name) => {
+                          const meta = signalMeta(name);
+                          return (
+                            <span
+                              key={name}
+                              className="sig-tag"
+                              style={{ color: meta.color, borderColor: meta.color }}
+                            >
+                              {meta.label}
+                            </span>
+                          );
+                        })
+                      )}
+                    </div>
+                  </td>
+                  <td>
+                    <span className={`event-action ${actionTone}`}>{actionLabel(event.decision)}</span>
+                  </td>
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

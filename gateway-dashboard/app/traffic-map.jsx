@@ -1,167 +1,189 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
-export default function TrafficMap({ sources = [], site = null, theme = "dark" }) {
-  const rootRef = useRef(null);
-  const leafletRef = useRef(null);
-  const mapRef = useRef(null);
-  const layerRef = useRef(null);
-  const tilesRef = useRef(null);
-  const [ready, setReady] = useState(false);
+// The design's own recipe (see design_handoff's "Map rendering" section)
+// calls for the 110m resolution atlas; that file renders several borders
+// -- India's northeast frontier with China worst of all -- as a visibly
+// self-crossing line, a real artifact of simplifying that geometry down to
+// 110m, not a rendering bug here. The 50m atlas fixes it and every other
+// coastline at a real but small cost (roughly 750KB vs 100KB, fetched once
+// and cached). Same "countries" object, so it's a one-line swap: d3-geo +
+// TopoJSON, geoNaturalEarth1() fitted to the container, a graticule
+// underlay, per-country paths -- a flat vector map, not a photographic/
+// street basemap.
+const WORLD_ATLAS_URL = "https://unpkg.com/world-atlas@2.0.2/countries-50m.json";
+
+// Module-level, not state: every TrafficMap instance (a theme toggle
+// remounts nothing, but Overview's own remounts during dev fast-refresh
+// would otherwise each re-fetch) shares one in-flight/resolved promise.
+let worldPromise = null;
+function loadWorld() {
+  if (!worldPromise) {
+    worldPromise = Promise.all([import("d3-geo"), import("topojson-client"), fetch(WORLD_ATLAS_URL)])
+      .then(async ([d3geo, topojson, res]) => {
+        if (!res.ok) throw new Error(`world atlas ${res.status}`);
+        const topology = await res.json();
+        const countries = topojson.feature(topology, topology.objects.countries);
+        return { d3geo, countries, graticule: d3geo.geoGraticule10() };
+      })
+      .catch((err) => {
+        worldPromise = null; // let a later mount retry instead of caching the failure forever
+        throw err;
+      });
+  }
+  return worldPromise;
+}
+
+// A short, stable spread of animation delays so alerting dots don't all
+// pulse in unison -- derived from the IP itself, so it's stable across
+// re-renders rather than reshuffling on every poll.
+function pulseDelay(ip) {
+  let hash = 0;
+  for (let i = 0; i < ip.length; i++) hash = (hash * 31 + ip.charCodeAt(i)) >>> 0;
+  return (hash % 26) / 10; // 0.0 - 2.5s
+}
+
+export default function TrafficMap({ sources = [], site = null }) {
+  const router = useRouter();
+  const containerRef = useRef(null);
+  const [size, setSize] = useState({ width: 0, height: 0 });
+  const [world, setWorld] = useState(null);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function init() {
-      const leaflet = await import("leaflet");
-      if (cancelled || !rootRef.current || mapRef.current) return;
-      leafletRef.current = leaflet;
-      mapRef.current = leaflet.map(rootRef.current, {
-        zoomControl: true,
-        attributionControl: true,
-        worldCopyJump: true,
-        scrollWheelZoom: true,
-      });
-      mapRef.current.setView([20, 10], 2);
-      layerRef.current = leaflet.layerGroup().addTo(mapRef.current);
-      setReady(true);
-      setTimeout(() => mapRef.current?.invalidateSize(), 80);
-    }
-
-    init();
+    loadWorld()
+      .then((w) => !cancelled && setWorld(w))
+      .catch(() => !cancelled && setError(true));
     return () => {
       cancelled = true;
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-      }
-      setReady(false);
     };
   }, []);
 
   useEffect(() => {
-    const leaflet = leafletRef.current;
-    const map = mapRef.current;
-    if (!ready || !leaflet || !map) return;
+    const el = containerRef.current;
+    if (!el) return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const box = entries[0].contentRect;
+      setSize({ width: Math.round(box.width), height: Math.round(box.height) });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
-    // CARTO's basemaps.cartocdn.com used to serve these keyless. It no longer
-    // does -- every tile now comes back watermarked "API KEY REQUIRED" -- and
-    // getting a key means an account this console has no business depending
-    // on. Esri's Canvas basemaps are the replacement: free, no key, and still
-    // a light/dark pair. Note the tile path is {z}/{y}/{x}, not {z}/{x}/{y} --
-    // Esri's REST tile service orders row before column, the opposite of
-    // CARTO's and most others'. Leaflet substitutes {x}/{y} by name, not
-    // position, so writing them in this order is what makes it correct here
-    // rather than a typo to "fix" later.
-    const tileUrl =
-      theme === "light"
-        ? "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}"
-        : "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}";
+  const publicSources = useMemo(
+    () => sources.filter((s) => !s.private && s.lat != null && s.lon != null),
+    [sources],
+  );
+  const privateSources = useMemo(() => sources.filter((s) => s.private), [sources]);
 
-    if (tilesRef.current) {
-      map.removeLayer(tilesRef.current);
-    }
-    tilesRef.current = leaflet
-      .tileLayer(tileUrl, {
-        attribution: "&copy; Esri",
-        maxZoom: 8,
-      })
-      .addTo(map);
-  }, [ready, theme]);
-
-  useEffect(() => {
-    const leaflet = leafletRef.current;
-    const map = mapRef.current;
-    if (!ready || !leaflet || !map || !layerRef.current) return;
-
-    layerRef.current.clearLayers();
-
-    const points = [];
-    const publicSources = sources.filter((source) => !source.private && source.lat != null && source.lon != null);
-
-    if (site?.lat != null && site?.lon != null) {
-      const labPoint = [site.lat, site.lon];
-      points.push(labPoint);
-      // var() strings, not hex -- Leaflet sets these as inline style
-      // properties on the underlying SVG path, and the browser resolves
-      // var() there exactly like it would in a stylesheet. That means a
-      // theme toggle repaints these correctly on its own, with no re-render
-      // needed, unlike a resolved hex baked in once at draw time.
-      const labColor = site.alerts > 0 ? "var(--map-alert)" : "var(--map-site)";
-      leaflet
-        .circleMarker(labPoint, {
-          radius: Math.min(16, 8 + Math.sqrt(site.requests || 1) * 1.4),
-          color: labColor,
-          weight: 2,
-          fillColor: labColor,
-          fillOpacity: 0.28,
-        })
-        .bindPopup(
-          `<strong>Gateway site</strong><br/>${site.city || "Unknown"}, ${site.country || "—"}<br/>Local / Docker: ${site.requests || 0} req · ${site.alerts || 0} alerts`,
-        )
-        .addTo(layerRef.current);
-
-      for (const source of publicSources) {
-        leaflet
-          .polyline([labPoint, [source.lat, source.lon]], {
-            color: source.alerts > 0 ? "var(--map-alert)" : "var(--map-site)",
-            weight: 1,
-            opacity: 0.35,
-          })
-          .addTo(layerRef.current);
-      }
-    }
-
-    for (const source of publicSources) {
-      const color = source.alerts > 0 ? "var(--map-alert)" : "var(--map-public)";
-      leaflet
-        .circleMarker([source.lat, source.lon], {
-          radius: Math.min(16, 5 + Math.sqrt(source.requests) * 1.8),
-          color,
-          weight: 1.5,
-          fillColor: color,
-          fillOpacity: 0.62,
-        })
-        .bindPopup(
-          `<strong>${source.ip}</strong><br/>${source.city || "Unknown"}, ${source.country || "—"}<br/>${source.requests} req · ${source.alerts} alerts`,
-        )
-        .addTo(layerRef.current);
-      points.push([source.lat, source.lon]);
-    }
-
-    const fitKey = points.map((p) => p.join(":")).join("|");
-    if (layerRef.current._iasgFitKey !== fitKey) {
-      if (points.length === 1) {
-        map.setView(points[0], 4);
-      } else if (points.length > 1) {
-        map.fitBounds(points, { padding: [36, 36], maxZoom: 5 });
-      }
-      layerRef.current._iasgFitKey = fitKey;
-    }
-
-    setTimeout(() => map.invalidateSize(), 80);
-  }, [ready, sources, site]);
-
-  const publicCount = sources.filter((s) => !s.private && s.lat != null).length;
-  const privateSources = sources.filter((s) => s.private);
+  const layout = useMemo(() => {
+    if (!world || !size.width || !size.height) return null;
+    const { d3geo, countries, graticule } = world;
+    const projection = d3geo
+      .geoNaturalEarth1()
+      .fitExtent(
+        [
+          [8, 6],
+          [size.width - 8, size.height - 6],
+        ],
+        countries,
+      );
+    const path = d3geo.geoPath(projection);
+    const project = (lon, lat) => projection([lon, lat]);
+    return {
+      landPath: path(countries),
+      gridPath: path(graticule),
+      project,
+    };
+  }, [world, size.width, size.height]);
 
   return (
     <div className="map-wrap">
-      <div ref={rootRef} className="map-canvas" />
-      <div className="map-legend">
-        <span>
-          <i className="dot public" /> Public {publicCount}
-        </span>
-        <span>
-          <i className="dot site" /> Gateway site
-        </span>
-        <span>
-          <i className="dot alert" /> Alerting
-        </span>
-        <span>
-          <i className="dot private" /> Private {privateSources.length}
-        </span>
+      <div ref={containerRef} className="map-canvas">
+        {error ? (
+          <div className="map-loading">Map unavailable — no network reach to the basemap.</div>
+        ) : !layout ? (
+          <div className="map-loading">Loading map…</div>
+        ) : (
+          <svg
+            className="world-map-svg"
+            width={size.width}
+            height={size.height}
+            viewBox={`0 0 ${size.width} ${size.height}`}
+          >
+            <path className="world-map-grid" d={layout.gridPath} />
+            <path className="world-map-land" d={layout.landPath} />
+
+            {site?.lat != null && site?.lon != null
+              ? (() => {
+                  const point = layout.project(site.lon, site.lat);
+                  if (!point) return null;
+                  const alerting = site.alerts > 0;
+                  return (
+                    <g key="site">
+                      {alerting ? (
+                        <circle
+                          className="world-map-pulse"
+                          cx={point[0]}
+                          cy={point[1]}
+                          r={4.2}
+                          style={{ stroke: "var(--map-alert)", animationDelay: "0s" }}
+                        />
+                      ) : null}
+                      <circle
+                        cx={point[0]}
+                        cy={point[1]}
+                        r={4.2}
+                        style={{ fill: alerting ? "var(--map-alert)" : "var(--map-site)" }}
+                      >
+                        <title>
+                          Gateway site — {site.city || "Unknown"}, {site.country || "—"}
+                          {"\n"}
+                          {site.requests || 0} req · {site.alerts || 0} alerts
+                        </title>
+                      </circle>
+                    </g>
+                  );
+                })()
+              : null}
+
+            {publicSources.map((source) => {
+              const point = layout.project(source.lon, source.lat);
+              if (!point) return null;
+              const alerting = source.alerts > 0;
+              return (
+                <g key={source.ip}>
+                  {alerting ? (
+                    <circle
+                      className="world-map-pulse"
+                      cx={point[0]}
+                      cy={point[1]}
+                      r={4}
+                      style={{ stroke: "var(--map-alert)", animationDelay: `${pulseDelay(source.ip)}s` }}
+                    />
+                  ) : null}
+                  <circle
+                    className="world-map-dot"
+                    cx={point[0]}
+                    cy={point[1]}
+                    r={alerting ? 4 : 2.6}
+                    style={{ fill: alerting ? "var(--map-alert)" : "var(--map-public)" }}
+                    onClick={() => router.push(`/ip/${encodeURIComponent(source.ip)}`)}
+                  >
+                    <title>
+                      {source.ip} — {source.city || "Unknown"}, {source.country || "—"}
+                      {"\n"}
+                      {source.requests} req · {source.alerts} alerts
+                    </title>
+                  </circle>
+                </g>
+              );
+            })}
+          </svg>
+        )}
       </div>
       {privateSources.length > 0 ? (
         <aside className="map-internal">

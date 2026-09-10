@@ -6,40 +6,37 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useLive } from "./store";
 import {
-  AdaptiveIcon,
   AgentIcon,
-  CampaignsIcon,
   EscalatedIcon,
-  EventsIcon,
-  HistoryIcon,
-  MoonIcon,
-  OverviewIcon,
-  PauseIcon,
   PolicyCountIcon,
-  PolicyIcon,
   RedisIcon,
-  ResumeIcon,
-  SettingsIcon,
-  SunIcon,
+  RefreshIcon,
 } from "./icons";
 
-// One icon per section -- replaces the two hand-rolled sun/moon SVGs that
-// used to live here, and gives nav something other than text-only labels.
+// Text-only, no per-item icon -- the mockup's nav is plain buttons with a
+// bottom-border active state, not an icon rail.
 const NAV = [
-  { href: "/", label: "Overview", icon: OverviewIcon },
-  { href: "/campaigns", label: "Campaigns", icon: CampaignsIcon },
-  { href: "/policy", label: "Policy", icon: PolicyIcon },
-  { href: "/adaptive", label: "Adaptive", icon: AdaptiveIcon },
-  { href: "/events", label: "Events", icon: EventsIcon },
-  { href: "/history", label: "History", icon: HistoryIcon },
-  { href: "/settings", label: "Settings", icon: SettingsIcon },
+  { href: "/", label: "Overview" },
+  { href: "/campaigns", label: "Campaigns" },
+  { href: "/policy", label: "Policy" },
+  { href: "/adaptive", label: "Adaptive" },
+  { href: "/events", label: "Events" },
+  { href: "/history", label: "History" },
+  { href: "/settings", label: "Settings" },
 ];
 
 export function Shell({ children }) {
-  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast, flashEscalate } =
+  const { overview, policies, campaigns, escalations, beat, paused, setPaused, updatedAt, toast, setToast, flashEscalate, refresh } =
     useLive();
   const pathname = usePathname();
   const [theme, setTheme] = useState("dark");
+  const [spinning, setSpinning] = useState(false);
+
+  function refreshNow() {
+    refresh();
+    setSpinning(true);
+    setTimeout(() => setSpinning(false), 850);
+  }
 
   useEffect(() => {
     const stored = localStorage.getItem("iasg-theme");
@@ -63,13 +60,14 @@ export function Shell({ children }) {
   };
 
   return (
-    <div className="app">
+    <>
       <header className="top">
         <div className="brand">
-          <span className="logo">IASG</span>
-          <div>
-            <strong>Operations</strong>
-            <small>Intelligent API Security Gateway</small>
+          <span className="logo">
+            <span className="logo-dot" />
+          </span>
+          <div className="brand-text">
+            IASG<span className="brand-sub"> Operations</span>
           </div>
         </div>
 
@@ -77,14 +75,12 @@ export function Shell({ children }) {
           {NAV.map((item) => {
             const active =
               item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-            const Icon = item.icon;
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={active ? "nav-link active" : "nav-link"}
               >
-                <Icon size={15} aria-hidden="true" />
                 {item.label}
                 {badges[item.href] ? <em>{badges[item.href]}</em> : null}
               </Link>
@@ -92,67 +88,91 @@ export function Shell({ children }) {
           })}
         </nav>
 
-        <div className="top-actions">
-          <button
-            type="button"
-            className={paused ? "icon-btn on" : "icon-btn"}
-            onClick={() => setPaused((p) => !p)}
-            title="Stop the 2.5s refresh while you read"
-          >
-            {paused ? <ResumeIcon size={15} /> : <PauseIcon size={15} />}
-            {paused ? "Resume" : "Pause"}
-          </button>
+        <div className="header-tools">
+          <div className="live-group">
+            <button
+              type="button"
+              onClick={() => setPaused((p) => !p)}
+              title="Stop the 2.5s refresh while you read"
+            >
+              <span className={paused ? "live-dot" : "live-dot on"} />
+              <span className="live-label">{paused ? "Paused" : "Live"}</span>
+            </button>
+            <button
+              type="button"
+              className={spinning ? "refresh-btn spinning" : "refresh-btn"}
+              onClick={refreshNow}
+              title="Refresh now"
+              aria-label="Refresh now"
+            >
+              <RefreshIcon size={13} aria-hidden="true" />
+            </button>
+          </div>
+
+          <div className="refreshed-label">
+            {paused ? "Paused" : updatedAt ? `Updated ${updatedAt.toLocaleTimeString([], { hour12: false })}` : "Connecting"}
+          </div>
+
+          {overview.site?.city ? (
+            <div className="host-label mono">
+              {overview.site.city}
+              {overview.site.country ? ` · ${overview.site.country}` : ""}
+            </div>
+          ) : null}
 
           <button
             type="button"
-            className="icon-btn"
+            className="theme-btn"
             onClick={toggleTheme}
             title={theme === "dark" ? "Switch to light" : "Switch to dark"}
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
           >
-            {theme === "dark" ? <SunIcon size={16} /> : <MoonIcon size={16} />}
+            {theme === "dark" ? "Light" : "Dark"}
           </button>
-
         </div>
       </header>
 
       <div className="statusbar">
-        <RedisIcon size={13} aria-hidden="true" />
-        <span className={`dot ${overview.redis ? "on" : "off"}`} />
-        {overview.redis ? "Redis connected" : "Redis unavailable"}
-        <span className="sep" />
-        {/* Liveness, not activity. A quiet network and a dead agent look
-            identical without this, and they mean opposite things. */}
-        <AgentIcon size={13} aria-hidden="true" />
-        <span className={`dot ${beat.alive ? (beat.late ? "late" : "on") : "off"}`} />
-        {beat.alive
-          ? beat.late
-            ? `Agent late — ${beat.secondsAgo}s since last cycle`
-            : `Agent live — cycled ${beat.secondsAgo}s ago`
-          : "Agent not running"}
-        {beat.alive && beat.dryRun ? " (dry run)" : ""}
-        {beat.alive && beat.durable ? (
-          <>
-            <span className="sep" />
-            Durable
-          </>
-        ) : null}
-        <span className="sep" />
-        <PolicyCountIcon size={13} aria-hidden="true" />
-        {policies.length > 0
-          ? `${policies.length} policy ${policies.length === 1 ? "key" : "keys"} in force`
-          : "Detect-only"}
-        {escalations.length ? (
-          <>
-            <span className="sep" />
-            <span className="risk high">
-              <EscalatedIcon size={13} aria-hidden="true" />
-              {escalations.length} escalated
-            </span>
-          </>
-        ) : null}
-        <span className="grow" />
-        {paused ? "Paused" : updatedAt ? `Refreshed ${updatedAt.toLocaleTimeString([], { hour12: false })}` : "Connecting"}
+        <div className="statusbar-inner">
+          <RedisIcon size={13} aria-hidden="true" />
+          <span className={`dot ${overview.redis ? "on" : "off"}`} />
+          {overview.redis ? "Redis connected" : "Redis unavailable"}
+          <span className="sep" />
+          {/* Liveness, not activity. A quiet network and a dead agent look
+              identical without this, and they mean opposite things. */}
+          <AgentIcon size={13} aria-hidden="true" />
+          <span className={`dot ${beat.alive ? (beat.late ? "late" : "on") : "off"}`} />
+          {beat.alive
+            ? beat.late
+              ? `Agent late — ${beat.secondsAgo}s since last cycle`
+              : `Agent live — cycled ${beat.secondsAgo}s ago`
+            : "Agent not running"}
+          {beat.alive && beat.dryRun ? " (dry run)" : ""}
+          {beat.alive && beat.durable ? (
+            <>
+              <span className="sep" />
+              Durable
+            </>
+          ) : null}
+          <span className="sep" />
+          <PolicyCountIcon size={13} aria-hidden="true" />
+          {policies.length > 0
+            ? `${policies.length} policy ${policies.length === 1 ? "key" : "keys"} in force`
+            : "Detect-only"}
+          {escalations.length ? (
+            <>
+              <span className="sep" />
+              <Link href="/policy" className="risk high">
+                <EscalatedIcon size={13} aria-hidden="true" />
+                {escalations.length} escalated
+              </Link>
+            </>
+          ) : null}
+          <span className="grow" />
+          <span className="mono">
+            {paused ? "Paused" : updatedAt ? `Refreshed ${updatedAt.toLocaleTimeString([], { hour12: false })}` : "Connecting"}
+          </span>
+        </div>
       </div>
 
       {toast ? (
@@ -171,8 +191,8 @@ export function Shell({ children }) {
         <div key={flashEscalate} className="escalate-flash" aria-hidden="true" />
       ) : null}
 
-      <main>{children}</main>
-    </div>
+      <main className="app">{children}</main>
+    </>
   );
 }
 
@@ -309,12 +329,17 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
   );
 }
 
-export function PageHead({ title, eyebrow, children }) {
+export function PageHead({ title, eyebrow, actions, children }) {
   return (
     <div className="page-head">
-      {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
-      <h1>{title}</h1>
-      <p>{children}</p>
+      <div className="page-head-row">
+        <div>
+          {eyebrow ? <p className="eyebrow">{eyebrow}</p> : null}
+          <h1>{title}</h1>
+          <p>{children}</p>
+        </div>
+        {actions ? <div className="page-head-actions">{actions}</div> : null}
+      </div>
     </div>
   );
 }

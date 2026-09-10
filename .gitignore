@@ -93,3 +93,4 @@ datasets/raw/
 # fixed seed, so the artefact worth keeping is the metadata beside them.
 # datasets/raw/ is ignored for the same reason.
 models/**/*.joblib
+IASG Operations dashboard.zip

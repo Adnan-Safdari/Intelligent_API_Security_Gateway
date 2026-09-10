@@ -22,6 +22,11 @@ export function signalMeta(name) {
   return SIGNAL_META[name] || { label: name, color: "var(--muted)" };
 }
 
+// The eight detector labels, in the gateway's own order -- for a filter
+// dropdown that needs the whole vocabulary up front rather than only the
+// signals a given window of events happens to contain.
+export const SIGNAL_OPTIONS = Object.values(SIGNAL_META).map((s) => s.label);
+
 // The policy ladder, weakest to strongest. Colour tracks the rung so an
 // escalation is visible without reading the label.
 export const LADDER = ["monitor", "throttle", "temp_block", "escalate"];
