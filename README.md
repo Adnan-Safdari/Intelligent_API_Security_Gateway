@@ -54,7 +54,10 @@ and TTLs support safe enforcement and reliable delivery; they are not separate
 detection algorithms. IP reputation is optional supporting evidence only. The
 LLM writes narration strictly after policy selection and cannot affect risk,
 confidence, or enforcement. The offline template provider remains the safe
-default; Ollama is an explicit narration provider.
+default; Ollama is an explicit, opt-in narration provider — as a container in
+the Docker stack (`docker compose --profile llm up -d`, see
+[`infra/README.md`](infra/README.md#narration)) or as a native install
+alongside a bare-metal control plane.
 
 See the [control-plane mechanism guide](control-plane/ALGORITHMS.md) and
 [adaptive-policy documentation](gateway/docs/adaptive-policy.md) for the
@@ -150,6 +153,10 @@ variables; export the ones you want to change rather than copying the file:
 ```bash
 IASG_INTERVAL_SECONDS=15 IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg
 ```
+
+That last example needs a host-native Ollama (`brew install ollama`) already running;
+the Docker stack ships its own containerised one instead — see
+[`infra/README.md`](infra/README.md#narration).
 
 **4. Dashboard** — the operations console. Needs Redis and Postgres:
 

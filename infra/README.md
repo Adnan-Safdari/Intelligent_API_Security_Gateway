@@ -22,8 +22,11 @@ docker compose -f infra/docker-compose.yml logs -f control_plane
 | `redis` | 6379 | Evidence stream, policy keys, telemetry |
 | `docs` | 8000 | MkDocs site |
 | `ports_info` | — | Prints the port map and exits |
+| `ollama` | — | Local LLM for narration. Opt-in (`--profile llm`), internal-only, CPU-only in Docker |
+| `ollama_pull` | — | One-shot: makes sure the narration model is downloaded, then exits |
 
 `ports_info` runs once and stops. Compose reporting it as exited is expected.
+So does `ollama_pull`, once the model is in place.
 
 ## The two databases
 
@@ -39,6 +42,24 @@ Both databases and Redis use named volumes, and Redis runs with `--appendonly ye
 
 `docker compose down -v` removes the volumes and everything in them, including the console
 accounts — you will be sent back to `/setup` on the next start.
+
+## Narration
+
+The control plane can write incident prose with a local LLM. It's off by default — a
+plain `docker compose up` downloads and runs nothing extra. To turn it on:
+
+```bash
+docker compose -f infra/docker-compose.yml --profile llm up -d
+```
+
+That starts `ollama` and runs `ollama_pull`, which downloads `llama3.2` (~2GB) the
+first time and is a fast no-op after. Then set `IASG_LLM_PROVIDER=ollama` in
+`infra/.env` (see [`.env.example`](.env.example)) and recreate `control_plane`.
+
+It's CPU-only here — Docker Desktop can't pass an Apple Silicon GPU to a Linux
+container — so it's noticeably slower than a native `brew install ollama`. Either way,
+narration is advisory: a slow or unreachable model degrades to an offline template,
+never blocks a decision.
 
 ## Configuration
 

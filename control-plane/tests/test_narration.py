@@ -8,7 +8,10 @@ decision. It runs after policy is written and only ever produces prose.
 from __future__ import annotations
 
 import dataclasses
+import json
+import threading
 from datetime import datetime, timezone
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from iasg.assessment.agent import AssessmentAgent
 from iasg.config import Settings
@@ -94,6 +97,48 @@ def test_unknown_provider_falls_back_to_null():
 def test_ollama_returns_empty_when_unreachable():
     provider = OllamaProvider("http://127.0.0.1:1", "llama3.2")
     assert provider.generate("sys", "prompt") == ""
+
+
+# The dead-port test above never exercises a real response, so a change to
+# the request shape or the response key ("response") that Ollama's real API
+# stopped agreeing with would ship as "narration is always empty" -- every
+# call would still degrade cleanly, just never to anything but "". A fake
+# server closes that gap.
+class _FakeOllama(BaseHTTPRequestHandler):
+    received = None
+
+    def do_POST(self):
+        length = int(self.headers["Content-Length"])
+        _FakeOllama.received = json.loads(self.rfile.read(length))
+        body = json.dumps({"response": "a generated note"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass  # keep test output quiet
+
+
+def test_ollama_parses_a_real_response():
+    server = HTTPServer(("127.0.0.1", 0), _FakeOllama)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        provider = OllamaProvider(f"http://127.0.0.1:{server.server_port}", "llama3.2")
+        text = provider.generate("sys prompt", "user prompt")
+    finally:
+        server.shutdown()
+        thread.join()
+
+    assert text == "a generated note"
+    assert _FakeOllama.received == {
+        "model": "llama3.2",
+        "system": "sys prompt",
+        "prompt": "user prompt",
+        "stream": False,
+        "options": {"temperature": 0.2},
+    }
 
 
 # --------------------------- explanation ---------------------------

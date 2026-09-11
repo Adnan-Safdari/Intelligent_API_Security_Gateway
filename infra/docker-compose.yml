@@ -72,6 +72,53 @@ services:
       timeout: 5s
       retries: 5
 
+  # Narration model, opt-in via `docker compose --profile llm up`. A plain
+  # `docker compose up` never touches this -- nothing downloads, nothing runs.
+  # CPU-only here: Docker Desktop cannot pass the Apple Silicon GPU to a Linux
+  # container, so this is several times slower than a native
+  # `brew install ollama`. It exists so narration works with no host install
+  # at all; run Ollama natively instead when speed matters (see the
+  # control_plane narration comment below).
+  ollama:
+    profiles: ["llm"]
+    image: ollama/ollama:0.12.3
+    restart: unless-stopped
+    # Internal by default -- the control plane reaches this by service name.
+    # Uncomment to call /api/generate from the host directly.
+    # ports:
+    #   - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    healthcheck:
+      # The image ships neither curl nor wget, so the CLI is the only probe
+      # available. `list` talks to the local server and fails while it is
+      # still starting, which is exactly the signal wanted here.
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # One-shot: makes sure the configured model is in ollama_models, then exits.
+  # `show` first so a volume that already has the model succeeds offline, with
+  # no registry round-trip -- a bare `pull` would contact the registry on
+  # every start and fail this gate when offline.
+  ollama_pull:
+    profiles: ["llm"]
+    image: ollama/ollama:0.12.3
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    # A single quoted string, not a list -- Compose word-splits an unquoted
+    # command the way a shell would, so wrapping the whole script in one pair
+    # of quotes is what keeps `sh -c` from seeing the redirect and `||` as
+    # separate, unrelated arguments.
+    command: >-
+      sh -c 'ollama show "${IASG_OLLAMA_MODEL:-llama3.2}" >/dev/null 2>&1 ||
+      ollama pull "${IASG_OLLAMA_MODEL:-llama3.2}"'
+    depends_on:
+      ollama:
+        condition: service_healthy
+
   vulnerable_api:
     image: node:22-alpine
     restart: unless-stopped
@@ -184,23 +231,37 @@ services:
       # console shows; without a provider the first falls back to a template
       # and the second produces nothing at all.
       #
-      # Points at Ollama on the HOST, not a container: on Apple Silicon the
-      # native app reaches the GPU and a Linux container here cannot, and it
-      # avoids a second copy of a 2GB model. `extra_hosts` makes the same name
-      # resolve on Linux, where it is not built in.
+      # Off by default -- IASG_LLM_PROVIDER stays "null" so a plain
+      # `docker compose up` downloads and runs nothing extra. Opt in with two
+      # steps: `docker compose --profile llm up -d` to start the `ollama`
+      # service (see its definition above) and pull the model, then set
+      # IASG_LLM_PROVIDER=ollama in infra/.env. IASG_OLLAMA_URL then points at
+      # that container by service name.
       #
-      # One platform difference: Docker Desktop proxies this name to the host's
-      # loopback, so an Ollama listening only on 127.0.0.1 is reachable. Native
-      # Linux Docker routes to the bridge address instead, where it is not --
-      # run Ollama with OLLAMA_HOST=0.0.0.0 there.
+      # For real speed, skip the container and run Ollama natively instead
+      # (`brew install ollama && ollama pull llama3.2`): on Apple Silicon the
+      # native app reaches the GPU, where the containerised path (CPU-only --
+      # Docker Desktop cannot pass the GPU to a Linux container) cannot. Point
+      # at it with IASG_OLLAMA_URL=http://host.docker.internal:11434 in
+      # infra/.env; `extra_hosts` below makes that name resolve on Linux too,
+      # where it is not built in. One platform difference: Docker Desktop
+      # proxies that name to the host's loopback, so an Ollama listening only
+      # on 127.0.0.1 is reachable, while native Linux Docker routes to the
+      # bridge address instead -- run Ollama with OLLAMA_HOST=0.0.0.0 there.
       #
-      # Keep the default self-contained: templates need no host model. Set
-      # IASG_LLM_PROVIDER=ollama in infra/.env to opt into host narration. A
-      # provider that is configured but unreachable is not an error either --
-      # every call degrades to the template and says so once.
+      # A provider that is configured but unreachable is not an error either --
+      # every call degrades to the template and says so once, in this
+      # container's own logs (`grep '[llm]'`).
+      #
+      # CPU inference is slow enough at the 3b default that the timeout and
+      # per-cycle budget need real headroom over the code's own 15s/12s
+      # defaults -- keep the budget under IASG_INTERVAL_SECONDS (30s), which
+      # is the whole point of having one.
       IASG_LLM_PROVIDER: ${IASG_LLM_PROVIDER:-null}
-      IASG_OLLAMA_URL: ${IASG_OLLAMA_URL:-http://host.docker.internal:11434}
+      IASG_OLLAMA_URL: ${IASG_OLLAMA_URL:-http://ollama:11434}
       IASG_OLLAMA_MODEL: ${IASG_OLLAMA_MODEL:-llama3.2}
+      IASG_OLLAMA_TIMEOUT_SECONDS: ${IASG_OLLAMA_TIMEOUT_SECONDS:-30}
+      IASG_NARRATION_BUDGET_SECONDS: ${IASG_NARRATION_BUDGET_SECONDS:-25}
       # Campaigns and feedback outlive a restart. Policy keys stay in Redis.
       IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
       IASG_HEALTH_STREAM: iasg:telemetry:health
@@ -331,3 +392,4 @@ volumes:
   gateway_dashboard_next:
   control_plane_models:
   vulnerable_web_node_modules:
+  ollama_models:
