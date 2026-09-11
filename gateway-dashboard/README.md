@@ -14,7 +14,9 @@ Runs on **http://localhost:5177**.
 | `/policy` | What is being enforced, and how do I change it |
 | `/events` | What actually happened, request by request |
 | `/history` | What keeps happening to us, across restarts |
-| `/users` | Who can reach this console (admins only) |
+| `/adaptive` | What the adaptive engine would do, and the approval queue for it |
+| `/signals` | What each detector is configured to catch, and its real alert counts |
+| `/ip/<address>` | Everything known about one address, in one place |
 
 They are linked rather than merely separate: an address anywhere opens its own events, a
 signal opens the events that fired it, and a metric tile opens the page behind it.
@@ -35,32 +37,21 @@ rather than reporting zero above a screen full of attacks.
 
 ## Accounts
 
-The console can change enforcement, so it requires a login. First run redirects to
-`/setup` to create an administrator; that page closes for good once one exists.
+There are none. The console runs open — no login, no accounts, no roles.
+Whoever can reach http://localhost:5177 can use every control on it. See the
+root [README](../README.md#reaching-the-console) for why, and for the warning
+about not exposing this port to a network you don't trust.
 
-| Role | May |
-|---|---|
-| `viewer` | Read everything |
-| `operator` | Instruct the agent |
-| `admin` | Everything, plus managing accounts |
+`lib/auth.js` is a stub: `require()` always authorises, as a full admin, with
+no session, regardless of the role a route handler asks for — routes still
+call `requireRole("operator")` and similar, but the argument is currently a
+statement of intent rather than an enforced check. The login system this
+replaced (accounts, sessions, scrypt hashing, `viewer`/`operator`/`admin`
+roles, `/login` and `/setup` pages) is in git history if it's ever wanted
+back; the comment at the top of `lib/auth.js` says what to restore.
 
-Roles are checked in the route handlers on every write. The hidden button is presentation;
-the check on the server is the authorisation. See the root
-[README](../README.md#signing-in) for the hashing, session and lockout details.
-
-### Starting over
-
-Accounts live in Postgres, not in git, so a fresh database already starts at `/setup`.
-To clear the accounts in an existing database — handing the project to someone else, or
-resetting after a demo — run:
-
-```bash
-cd gateway-dashboard
-IASG_POSTGRES_URL=postgresql://iasg_user:changeme@localhost:5432/iasg npm run reset-accounts
-```
-
-It wipes only `users` and `sessions`; campaigns, feedback and policy are untouched. The
-next visit to the console goes to `/setup` to create a new administrator.
+`scripts/reset-accounts.mjs` (`npm run reset-accounts`) still exists but is
+now vestigial — there is no `/setup` for a wiped account table to return to.
 
 ## Writing is instructing, not enforcing
 
@@ -90,11 +81,10 @@ REDIS_HOST=127.0.0.1 npm run dev
 | Variable | Default | For |
 |---|---|---|
 | `REDIS_HOST` / `REDIS_PORT` | `127.0.0.1` / `6379` | Everything live |
-| `IASG_POSTGRES_URL` | — | Accounts, and campaign history |
+| `IASG_POSTGRES_URL` | — | Durable campaign and feedback history, and the adaptive-policy settings |
 
-**Postgres is required.** Accounts have to live somewhere durable, and the console refuses
-to start rather than run unauthenticated. Without it you get an explanatory page, not a
-broken one.
+**Postgres is optional.** Without it (`lib/postgres.js`), the console simply
+has no history to show — every live panel keeps working from Redis.
 
 Under Compose both are set for you:
 
@@ -109,17 +99,21 @@ directly with `python -m tools.seed_evidence --scenario mixed`.
 
 ```text
 app/
-  (console)/        signed-in pages; its layout is the gate
-    layout.js       redirects to /setup or /login before rendering anything
-  login/ setup/     outside the shell -- no session to poll with
-  api/              overview, campaigns, history, overrides, auth, users
+  (console)/        every page; layout.js used to be the login gate, now removed
+    page.jsx        overview, adaptive/, campaigns/, events/, history/,
+                     ip/[address]/, policy/, settings/, signals/
+  api/               overview, adaptive/, campaigns/, events/, history/,
+                     health, ip/[address], overrides, policies/[address], settings
   ui/
     store.jsx       one poller for the whole console, above the router
     chrome.jsx      header, nav, status line, toasts
     parts.jsx       cards, tables and action rows shared between pages
+    icons.jsx       every icon the console uses, imported once
     format.js       pure helpers: labels, tones, filters
+    export.js       CSV export of whatever's on screen
 lib/
-  redis.js  postgres.js  auth.js  telemetry.js  geo.js
+  redis.js  postgres.js  plane.js  adaptive.js  adaptive-mode.mjs
+  telemetry.js  geo.js  auth.js (a stub -- see "Accounts" above)
 ```
 
 Polling lives in `LiveProvider`, above the router, so moving between pages neither

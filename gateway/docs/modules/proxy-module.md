@@ -12,7 +12,7 @@ composed here.
 `proxy.NewServer` takes the loaded configuration. `Server.Start` then builds
 the runtime in this order:
 
-1. The five detectors, from `enforcement:` config
+1. The six detectors, from `enforcement:` config
 2. A `signals.Collector` over them
 3. The bounded background Redis telemetry publisher, if `storage.redis.enabled`;
    Redis failure is non-fatal and publication reconnects after recovery
@@ -40,6 +40,7 @@ handler := ChainMiddleware(
     observedDetectors(reflex, s.collector,
         reputationDetector.Middleware,
         floodDetector.Middleware,
+        unknownRouteScanDetector.Middleware,
         sqliDetector.Middleware,
         traversalEnumDetector.Middleware,
         bruteForceDetector.Middleware,
@@ -59,7 +60,7 @@ The reasoning behind the ordering is in
 | --- | --- |
 | `LoggingMiddleware` | Prints method, path, resolved IP, and user agent to stdout |
 | `BodyLimitMiddleware` | Caps request bodies before downstream buffering; runs after policy enforcement so refused bodies are not read |
-| `RequestInspectionMiddleware` | Legacy debug helper that prints headers and body; not installed in the live chain |
+| `RequestInspectionMiddleware` | Deleted entirely — it printed every header and the raw body to stdout, which put passwords and tokens in the logs. Only an explanatory comment remains at `middleware.go:37` |
 
 The active chain uses `telemetry.CaptureBody` after the body cap. It restores
 the body for upstream forwarding and redacts the stored snippet through
@@ -97,5 +98,4 @@ flowchart LR
 | `internal/proxy/server.go` | Server construction, `newEnforcer`, chain assembly |
 | `internal/proxy/middleware.go` | `ChainMiddleware`, logging, inspection |
 | `internal/proxy/reverse_proxy.go` | Reverse proxy and header mutation |
-| `internal/proxy/security.go` | Legacy adapter; superseded by `internal/signals` |
 | `cmd/server/main.go` | Loads config and starts the server |

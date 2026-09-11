@@ -3,7 +3,7 @@
 | | |
 | --- | --- |
 | **Status** | Decided before any model is fit |
-| **Applies to** | Feature spec `v1`, dataset `v3` onward |
+| **Applies to** | Feature spec `v2` onward, dataset `v3` onward |
 | **Companion to** | [Feature Specification](anomaly-features.md) |
 
 **Why this page exists rather than an edit to the dataset.** Each frozen
@@ -301,36 +301,33 @@ stays as it is.
 | Change | Status today |
 | --- | --- |
 | `interval_fully_observed` required for every partition | not built |
-| Split membership assigned by whole `run_id` | partly — grouping is `run_id\|ip`, not run |
+| Split membership assigned by whole `run_id` | partly — grouping is `(run_id, client_identity, replay_group)`, not run |
 | Three runs reserved entirely for test | not built |
 | Assert train is benign-only | **not built** |
 | Assert reserved scenarios never leave test | enforced (`check_reserved`) |
-| `features.csv` is `row_id` plus the twelve | enforced |
-| No group key spans two partitions | **written, never called** |
-| Labels independent of detector output | **written, never called** |
-| Empty paths fail the build in strict mode | **written, never called** |
+| `features.csv` is `row_id` plus the feature columns | enforced |
+| No group key spans two partitions | enforced (`check_split_disjoint`) |
+| Labels independent of detector output | enforced (`check_labels_independent_of_detectors`) |
+| Empty paths fail the build in strict mode | enforced (`check_no_empty_paths`) |
 | Scenario × split × run count table in `evaluation.md` | not built |
 | Protocol version and commit hash in `versions.json` | not built |
 | `attack_start` in `metadata.csv` for delay measurement | not built |
 
-### Three guards exist and guard nothing
+### Three guards that used to guard nothing
 
 `control-plane/iasg/anomaly/checks.py` defines `check_split_disjoint`,
-`check_labels_independent_of_detectors` and `check_no_empty_paths`. All three are
-written, documented, and unit-tested in `test_anomaly_dataset.py` — and none is
-called by `build()`, which imports only `check_feature_header` and
-`check_no_identifying_columns`.
+`check_labels_independent_of_detectors` and `check_no_empty_paths`. All three
+are written, documented, and unit-tested in `test_anomaly_dataset.py`, and
+`build()` now calls all three (`control-plane/iasg/dataset/build.py:314,322`) —
+`check_split_disjoint` and `check_labels_independent_of_detectors` raise
+`LeakageCheckFailed` on failure, and `check_no_empty_paths` raises in
+`--strict` mode. This section is kept as a record that they were once written
+but not wired in, so the gap doesn't get silently reintroduced.
 
-They are promises the build does not keep. The properties happen to hold in v2 —
-verified directly: 1,896 groups with none spanning a partition, zero telemetry
-defects, labels taken only from the run manifest. But they hold by construction
-and luck rather than by enforcement, and nothing would fail if a future change
-broke them. Wiring them into `build()` is a precondition for v3, not a cleanup.
-
-**There is no benign-only-train assertion at all.** `splits.assign` never returns
-`train` for a labelled attack, so the property holds structurally — but it is the
-single most load-bearing claim in the design, and it should fail loudly rather
-than rely on one branch staying correct.
+**There is still no benign-only-train assertion.** `splits.assign` never
+returns `train` for a labelled attack, so the property holds structurally —
+but it is the single most load-bearing claim in the design, and it should fail
+loudly rather than rely on one branch staying correct.
 
 ### Recording which protocol a result was measured under
 

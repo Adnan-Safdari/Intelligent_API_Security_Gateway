@@ -18,7 +18,7 @@ config work locally and under Compose:
 | `IASG_BACKEND_URL` | `proxy.backend_url` |
 | `IASG_REDIS_HOST` | `storage.redis.host` |
 
-`Server.Start` in `internal/proxy/server.go` then constructs the five
+`Server.Start` in `internal/proxy/server.go` then constructs the six
 detectors, a `signals.Collector` over them, the Redis telemetry writer, the
 client-IP resolver, reflex, and policy enforcer. It assembles them with
 `ChainMiddleware` and serves.
@@ -39,9 +39,10 @@ first to see a request and the last to see the response.
 | 7 | `enforcement.Middleware` | `enforcement` | Observes detector evidence after the response; records reflex blocks for subsequent requests |
 | 8 | `reputationDetector.Middleware` | `signals` | Known-bad address lookup |
 | 9 | `floodDetector.Middleware` | `signals` | Request-rate flooding |
-| 10 | `sqliDetector.Middleware` | `signals` | SQL injection patterns |
-| 11 | `traversalEnumDetector.Middleware` | `signals` | Path traversal and forced browsing |
-| 12 | `bruteForceDetector.Middleware` | `signals` | Repeated failed logins |
+| 10 | `unknownRouteScanDetector.Middleware` | `signals` | Bounded distinct unmatched-path scanning |
+| 11 | `sqliDetector.Middleware` | `signals` | SQL injection patterns |
+| 12 | `traversalEnumDetector.Middleware` | `signals` | Path traversal and forced browsing |
+| 13 | `bruteForceDetector.Middleware` | `signals` | Repeated failed logins |
 
 Then `NewReverseProxy` sets `X-Gateway: IASG` and forwards upstream.
 
@@ -129,4 +130,4 @@ action mapping, policy schema, expiry details, and configuration.
 | `internal/netutil/ip.go` | Client IP resolution |
 | `internal/telemetry/` | Event shape, redaction, recording middleware |
 | `internal/policy/` | Policy snapshot store and the enforcing middleware |
-| `internal/signals/` | The five detectors, evidence, and the collector |
+| `internal/signals/` | The six detectors, evidence, and the collector |

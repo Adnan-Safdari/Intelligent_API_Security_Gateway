@@ -38,21 +38,37 @@ A frozen dataset is never rebuilt in place. A model trained on `v1` has no way
 to notice that its inputs changed underneath it, so a change means a new
 directory.
 
-| | `v1/` | `v2/` |
-| --- | --- | --- |
-| Rows | 85 | 17,160 |
-| Capture runs | 1 | 24 |
-| Benign / attack | 58 / 27 | 15,317 / 1,843 |
-| Attack rate | 31.8% | 10.7% |
-| Spec version | `v1` | `v1` |
-| Built | 2026-09-07T06:23:32Z | 2026-09-08T17:34:01Z |
+| | `v1/` | `v2/` | `v3/` | `v4/` | `part5-fresh/` |
+| --- | --- | --- | --- | --- | --- |
+| Rows | 85 | 17,160 | 16,438 | 16,438 | 721 |
+| Capture runs | 1 | 24 | 23 | 23 | 1 |
+| Benign / attack | 58 / 27 | 15,317 / 1,843 | 14,670 / 1,768 | 14,670 / 1,768 | 644 / 77 |
+| Attack rate | 31.8% | 10.7% | 10.8% | 10.8% | 10.7% |
+| Spec version | `v1` | `v1` | `v2` | `v3` | `v3` |
+| Built | 2026-09-07T06:23:32Z | 2026-09-08T17:34:01Z | 2026-09-09T12:26:14Z | 2026-09-09T12:44:26Z | 2026-09-10T13:24:22Z |
 
 `v1` is the first end-to-end build — enough to prove the pipeline, too small to
-fit a model on. **`v2` is the one to use.** Its 10.7% attack rate is deliberate:
-real API traffic is overwhelmingly benign, and a balanced dataset would teach a
-model to expect an attack every other minute.
+fit a model on. Its 10.7%–10.8% attack rate across the later versions is
+deliberate: real API traffic is overwhelmingly benign, and a balanced dataset
+would teach a model to expect an attack every other minute.
 
-Both share the same eleven files and the same schema.
+`v2` and `v3` share feature spec `v1`/`v2` respectively (12–13 columns); `v3`
+was rebuilt against the same 23 runs as `v4` but frozen one spec version
+behind it. **`v4` matches the runtime's current feature spec** (`v3`, 14
+columns — `unmatched_route_ratio` was added, see
+[Feature Specification](../gateway/docs/anomaly-features.md)), so it's the one
+a new model should train against unless there's a specific reason to use an
+older one. `part5-fresh` is a small, separately-collected validation run
+(different platform, different day) used to check a model against traffic it
+never saw during the original collection — see
+`testing/traffic/PART5_VALIDATION.md`.
+
+Trained model artifacts for each version live in `../models/` — see that
+directory for what's actually been fit and evaluated against which dataset.
+
+All five share the same file roles; `v1`/`v2` have twelve feature columns,
+`v3` has thirteen, and `v4`/`part5-fresh` have fourteen — the schema, not the
+file list, is what changed.
 
 ---
 
@@ -414,7 +430,7 @@ cd control-plane && PYTHONPATH=. python -c \
   "from iasg.dataset.build import verify; print(verify('../datasets/v2') or 'OK')"
 ```
 
-Both `v1` and `v2` currently verify clean.
+All five versions currently verify clean.
 
 ## `versions.json`
 

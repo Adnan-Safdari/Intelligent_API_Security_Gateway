@@ -36,7 +36,7 @@ sequenceDiagram
     else Admitted
         P->>I: Continue
         I->>D: Cap body size, capture redacted snippet
-        D->>D: Reputation, flood, SQLi, traversal, brute force
+        D->>D: Reputation, flood, unknown-route scan, SQLi, traversal, brute force
         D->>RP: Evidence recorded per detector
         RP->>B: Forward with X-Gateway: IASG
         B-->>RP: Response

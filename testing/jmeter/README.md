@@ -12,17 +12,28 @@ Built for JMeter 5.6.3.
 
 | Plan | Attack | Detector | Does the gateway block on its own? |
 | --- | --- | --- | --- |
-| `brute_force_demo.jmx` | Dictionary login attack on `/api/login` | `brute_force` | **Yes** — windowed |
+| `brute_force_demo.jmx` | Dictionary login attack on `/api/login` | `consecutive_failed_logins` | **No** — windowed, but advisory-only; the reflex refuses this signal if named in `block.signals` |
 | `flood_demo.jmx` | Request flood on `/api/products` | `api_flooding` | **Yes** — windowed |
 | `sqli_probe.jmx` | SQL injection in a login body and a query string | `sql_injection` | No — request-scoped, the control plane decides |
 | `path_traversal_probe.jmx` | `../` traversal and forced-browsing probes | `enumeration_path_traversal` | No — request-scoped |
-| `distributed_attack.jmx` | Flood + brute force from several addresses at once | both windowed | **Yes** |
+| `distributed_attack.jmx` | Flood + brute force from several addresses at once | both windowed | Only the flood half — see below |
 | `adaptive_rate_limit.jmx` | FR3: campaign-driven high-severity throttle | brute force + policy limiter | **Yes, 20/min after policy arrives** |
 
-"Windowed" detectors fire on repetition and are safe for the gateway to act on
-by itself; the request-scoped ones turn on a single request that might be
-innocent, so that judgement is left to the control plane. See
-`gateway/docs/detection-signals.md`.
+There is currently no plan for `unknown_route_scanning`, the newest detector.
+
+`distributed_attack.jmx` runs flood and brute-force threads together, but only
+the flood thread group can trigger the reflex on its own — brute force is
+advisory-only regardless of how many addresses are involved. The plan itself
+carries no response assertions either; it's a visible demo, not a pass/fail
+check.
+
+"Windowed" detectors fire on repetition; among those, only the ones the reflex
+trusts (`api_flooding` and `ip_reputation` today) are safe for the gateway to
+act on by itself. `consecutive_failed_logins` and `unknown_route_scanning` are
+windowed too but are advisory-only by design — see
+`gateway/docs/detection-signals.md`. Request-scoped detectors turn on a single
+request that might be innocent, so that judgement is always left to the
+control plane.
 
 The `.csv` files are the payload and probe dictionaries the plans read.
 

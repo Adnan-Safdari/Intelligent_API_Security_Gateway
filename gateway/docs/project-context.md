@@ -100,7 +100,7 @@ AI → Allow / Block
 | ID | Requirement | Status | Reality in code |
 | --- | --- | --- | --- |
 | **FR1** | Intercept API requests (reverse proxy + middleware) | **Complete** | Working |
-| **FR2** | Analyze request behavior (detectors → metrics) | **Complete** | Five detectors: flood, SQLi, brute force, traversal/enumeration and IP reputation. Each fills the same `Evidence` shape; `signals.Collector` summarises them per request, the reflex reads that summary, and telemetry publishes it for the control plane |
+| **FR2** | Analyze request behavior (detectors → metrics) | **Complete** | Six detectors: flood, SQLi, brute force (`consecutive_failed_logins`), traversal/enumeration, unknown-route scanning, and IP reputation. Each fills the same `Evidence` shape; `signals.Collector` summarises them per request, the reflex reads that summary, and telemetry publishes it for the control plane |
 | **FR3** | Adaptive rate limiting as a **decision outcome** | **Complete** | An opt-in baseline (`rate_limit.enforce`) holds every address to `requests_per_minute`; a throttle policy carries its own rate, set from campaign severity, and replaces the baseline in both directions. `policy.Limiter` answers `429` over whichever applies. Recovery is the policy's TTL lapsing |
 | **FR4** | Risk scoring + centralized decision engine | **Superseded by design** | Scoring is per-detector; decisions are split between the gateway reflex and the control plane. No central engine, and the dead `trust_engine` config has been removed |
 | **FR5** | Forward valid / reject blocked / throttle | **Complete** | `policy.Enforcer` answers `403` for `temp_block`/`escalate` and `429` for a throttled address over its rate; the gateway's own reflex blocks on a threshold cross |
@@ -132,9 +132,9 @@ Order in `gateway/internal/proxy/server.go` (outer → inner):
 2. `telemetry.Middleware` — assign a request ID, and record the event on the way out
 3. `LoggingMiddleware` — method, path, IP, User-Agent
 4. `policy.Enforcer.Middleware` — **the branch.** `temp_block`/`escalate` answers `403`; a throttled address over its rate answers `429` with `Retry-After`; an address over the baseline rate answers `429`. Nothing below runs
-5. `RequestInspectionMiddleware` — headers + body (body restored for upstream)
+5. `BodyLimitMiddleware`, then `telemetry.CaptureBody` — caps the admitted body and captures a redacted snippet. The old `RequestInspectionMiddleware` debug helper that printed full headers and bodies has been deleted, not merely left unwired — only an explanatory comment remains at `internal/proxy/middleware.go:37`
 6. `enforcement.Middleware` — the reflex. Observes *after* the handler, so it never adds latency; a block it records takes effect on the next request
-7. The five detectors — reputation, flood, SQLi, traversal/enumeration, brute force. Each **records evidence and allows**
+7. The six detectors — reputation, flood, unknown-route scanning, SQLi, traversal/enumeration, brute force (`consecutive_failed_logins`). Each **records evidence and allows**
 8. `NewReverseProxy` — `httputil.NewSingleHostReverseProxy` + `X-Gateway: IASG`
 
 **Current behavior summary:** the gateway detects *and* enforces, but never decides in the request path. Every refusal acts on a decision already made — by the control plane, written to `policy:<ip>` and read from a background-refreshed snapshot, or by the reflex on an earlier request. The detectors themselves still only ever record and allow, which is what keeps a false positive cheap.
@@ -161,7 +161,8 @@ Loaded into structs but **not consumed by request handling yet**:
 ### 5.4 Removed / unused pieces
 
 - `internal/context` (`RequestContext`, builder) — **removed**; was never imported by the live proxy path. Empty `internal/context/` directory may still exist on disk.
-- `proxy/security.go` — thin compatibility wrapper that constructs a default SQLi detector; the real wiring is in `server.go`.
+- `proxy/security.go` — **removed entirely**, not merely superseded; the real wiring has always been in `server.go`.
+- `RequestInspectionMiddleware` — **removed entirely**. It printed every header and the raw request body to stdout for every request, which put passwords and tokens in the logs; only an explanatory comment remains at `internal/proxy/middleware.go:37`.
 
 ---
 
@@ -180,47 +181,45 @@ Intelligent_API_Security_Gateway/
 │   │   └── config.yaml.example
 │   ├── Dockerfile
 │   ├── go.mod / go.sum
-│   ├── docs/                           # MkDocs content
-│   │   ├── index.md
-│   │   ├── system-architecture.md      # partly stale
-│   │   ├── request-lifecycle.md        # partly stale
-│   │   ├── project-structure.md        # partly stale
-│   │   ├── running-locally.md          # partly stale paths
-│   │   ├── reverse-proxy-logic.md      # most accurate runtime doc
-│   │   ├── project-context.md          # THIS file
-│   │   └── modules/proxy-module.md
+│   ├── docs/                           # MkDocs content — see project-structure.md for the full list
 │   └── internal/
 │       ├── config/config.go            # YAML → structs + Load()
 │       ├── netutil/ip.go               # ClientIP helper
 │       ├── proxy/
 │       │   ├── server.go               # listen + middleware assembly
-│       │   ├── middleware.go           # logging + inspection + ChainMiddleware
+│       │   ├── middleware.go           # logging + ChainMiddleware
 │       │   ├── reverse_proxy.go        # upstream forwarder
 │       │   └── live.go                  # live reconfiguration from the console
+│       ├── policy/                     # policy snapshot store, enforcing middleware, rate limiter
+│       ├── enforcement/                # the gateway's own reflex — a threshold cross too fast to wait an agent cycle for
+│       ├── reputation/                 # known-bad-address list loading and refresh
+│       ├── settings/                   # the iasg:settings live-override channel
+│       ├── storage/redis/              # the Redis adapter
+│       ├── telemetry/                  # event shape, redaction, recording middleware
 │       └── signals/
 │           ├── api_flooding.go         # request volume, windowed
 │           ├── sqli_injection.go       # injection signatures, request-scoped
-│           ├── brute_force.go          # failed logins, windowed + Metrics()
+│           ├── brute_force.go          # consecutive failed logins, windowed + Metrics()
 │           ├── enumeration_path_traversal.go
+│           ├── unknown_route_scanning.go  # distinct unmatched-path scanning, windowed
 │           └── ip_reputation.go        # known-bad list, fires on a cooldown
+├── control-plane/                      # Python agent — see control-plane.md
 ├── testing/
 │   ├── jmeter/                         # JMeter demo plans
-│   └── signals/                        # HTTP test scripts for detectors (not in the gateway module)
+│   ├── signals/                        # HTTP test scripts for detectors (not in the gateway module)
+│   └── traffic/                        # generates the labelled traffic behind datasets/
+├── datasets/                           # frozen, versioned traffic captures used to train/evaluate the anomaly model
+├── models/                             # trained model artifacts read by the control plane's ModelScorer
 ├── gateway-dashboard/                  # Next.js command center (UI + /api/overview)
 │   ├── app/
 │   └── lib/
 ├── vulnerable-app/                     # intentional vulnerable demo API/UI
-├── DEMO.md                             # brute force demo guide
-├── vulnerable-app2/
-└── vulnerable-application/
+└── DEMO.md                             # brute force demo guide
 ```
 
-**Not present (despite older docs mentioning them):**
+**Not present, despite an even older version of this document once claiming otherwise:**
 
 - `internal/trust/`
-- `internal/enforcement/`
-- `internal/storage/` (postgres/redis adapters)
-- `signals/enumeration_path_traversal.go` (planned / previously discussed; **not in tree**)
 
 ---
 
@@ -239,20 +238,23 @@ Intelligent_API_Security_Gateway/
 
 #### Implemented now
 
-Every detector implements `Name()` + `Metrics(ip) Evidence` (shared contract in `evidence.go`). None of them block. A `Collector` can call `Collect(ip)` / `TotalScore(ip)` for the future decision engine.
+Every detector implements `Name()` + `Metrics(ip) Evidence` (shared contract in `evidence.go`). None of them block. A `Collector` fans a lookup out across all six and summarises the result — see [Detection Signals](detection-signals.md) for the full contract.
 
 | Attack | File | Mechanism | Metrics() | Enforcement |
 | --- | --- | --- | --- | --- |
-| **API Flooding** | `api_flooding.go` | Per-IP sliding window; threshold = `requests_per_minute` | Yes — `requestRate`, `threshold`, `window`; Score 0–100 | None — logs alert, allows |
-| **SQL Injection** | `sqli_injection.go` | Signatures in path, query, and body | Yes — `matchCount`, `matchedPatterns`; last-request evidence per IP | None — logs alert, allows |
-| **Path Traversal + Enumeration** | `enumeration_path_traversal.go` | URL/query signatures (`../`, `/.env`, …) | Yes — `pathTraversalDetected`, `enumerationDetected`, match counts | None — logs alert, allows |
-| **Brute Force** | `brute_force.go` | Login-path 401/403 failures; spraying vs brute force | Yes — `failedLogins`, `distinctUsers`, `maxFailures` | None — logs alert, allows |
+| **API Flooding** | `api_flooding.go` | Per-IP sliding window; threshold = `requests_per_minute` | Yes — `requestRate`, `threshold`, `window`; Score 0–100 | Deterministic — can arm the reflex |
+| **SQL Injection** | `sqli_injection.go` | Signatures in path, query, and body | Yes — `matchCount`, `matchedPatterns`; last-request evidence per IP | Deterministic — can arm the reflex |
+| **Path Traversal + Enumeration** | `enumeration_path_traversal.go` | URL/query signatures (`../`, `/.env`, …) | Yes — `pathTraversalDetected`, `enumerationDetected`, match counts | Deterministic — can arm the reflex |
+| **Brute Force** (`consecutive_failed_logins`) | `brute_force.go` | Consecutive invalid-credential outcomes per client and login target, read from `routes.auth_outcomes` — no hardcoded path or status code | Yes — `consecutiveFailures`, `failedLogins`, `maxFailures` | **Advisory-only** — the reflex refuses this signal if named in `block.signals` |
+| **Unknown-Route Scanning** | `unknown_route_scanning.go` | Distinct paths the route table classifies `<unmatched>`, per client, within a rolling window | Yes — distinct-path count vs. `distinct_paths` | **Advisory-only** — same refusal as brute force |
+| **IP Reputation** | `ip_reputation.go` | Known-bad address lookup, fires on a cooldown | Yes | Deterministic — can arm the reflex |
 
 Shared type (`internal/signals/evidence.go`):
 
 ```go
 type Evidence struct {
-    Signal         string         // api_flooding | sql_injection | enumeration_path_traversal | brute_force
+    Signal         string         // api_flooding | sql_injection | enumeration_path_traversal |
+                                   // consecutive_failed_logins | unknown_route_scanning | ip_reputation
     Score          int            // 0-100 contribution
     ThresholdCross bool
     AttackType     string
@@ -260,18 +262,19 @@ type Evidence struct {
 }
 ```
 
-#### Pending / not in current tree
+Brute force does not classify "spraying" versus "brute force" — that distinction exists only as a control-plane campaign classification derived from repeated brute-force evidence (`correlation/agent.py`), never as its own gateway signal.
+
+#### Considered and deprioritized
 
 | Attack | Status | Notes |
 | --- | --- | --- |
-| **Credential Stuffing (dedicated)** | Pending (partial overlap) | Brute force already labels `password_spraying` |
 | **XSS** | Deprioritized | Too WAF-like; stay API-centric |
 
-Around all detectors, still pending: centralized decision engine that consumes `Collector.Collect(ip)`, adaptive RL, persistent logging.
+The centralized decision engine imagined by the original SRS was superseded by design (see FR4 above) rather than left pending — decisions are split between the gateway reflex and the control plane's adaptive engine (`control-plane/iasg/adaptive/`), and persistent logging exists via Postgres.
 
-**Reference pattern:** `Metrics(ip) Evidence` + never block. `brute_force.go` remains the response-aware example; flood/SQLi/traversal now share the same evidence shape.
+**Reference pattern:** `Metrics(ip) Evidence` + never block.
 
-Unit tests are **not** stored next to detectors. HTTP test scripts live in `testing/signals/` at the repo root. See [Signal Test Scripts](modules/signal-tests.md).
+Every `internal/signals/*.go` detector has a matching `*_test.go` file beside it — the "unit tests live only in `testing/signals/`" framing this section once had is no longer accurate. HTTP-level test scripts additionally live in `testing/signals/` at the repo root, for verifying a *running* gateway rather than the Go logic in isolation. See [Signal Test Scripts](modules/signal-tests.md).
 
 ### 7.3 Config (`internal/config` + `configs/`)
 
@@ -386,7 +389,6 @@ From `infra/docker-compose.yml`:
 | --- | --- |
 | Gateway API | http://localhost:8082 |
 | Vulnerable API | http://localhost:5002 |
-| Gateway Dashboard API | http://localhost:4004 |
 | Vulnerable Web | http://localhost:5175 |
 | Dashboard Web | http://localhost:5177 |
 | MkDocs | http://localhost:8000 |
@@ -403,15 +405,22 @@ Gateway env in Compose:
 
 ## 10. Documentation Status (Important)
 
-The pages on this site were last reconciled against the code when IP
-reputation was added. The claims that used to live here -- that the gateway was
-detect-and-log, that `internal/enforcement` and `internal/trust` were empty,
-that the console had a `/setup` login flow -- were all fixed at that point
-rather than annotated.
+Documentation drifts behind the code in this project routinely enough that no
+blanket "current" claim in this section should be trusted at face value --
+this section itself has previously asserted accuracy it did not have (a
+five-detector count, `internal/enforcement`/`internal/storage` claimed absent
+while both were live, a phantom dashboard-API port). Treat any specific,
+checkable claim here as something to verify against the code before relying
+on it, the same way the rest of this document should be read.
 
-| Doc | Accuracy notes |
-| --- | --- |
-| All pages in the nav | Current. Detector count, middleware order, enforcement behaviour and the console's lack of auth all match the code |
+Known reconciliation passes: the gateway was originally detect-and-log only;
+enforcement, the adaptive control-plane engine, and the anomaly-detection ML
+path were added afterward and are documented in
+[Policy Enforcement](policy-enforcement.md),
+[Adaptive Policy and Analyst Control](adaptive-policy.md), and
+[Feature Specification](anomaly-features.md) respectively. The console's login
+system was later removed entirely (`gateway-dashboard/lib/auth.js` is a stub);
+see [Command Center Dashboard](modules/dashboard.md).
 
 The entrypoint is `cmd/server`. Any doc that says `cmd/gateway/main.go` is
 wrong; that path has not existed for a long time.
@@ -461,7 +470,6 @@ When docs conflict with code, **trust the Go sources and `reverse-proxy-logic.md
 
 - Work inside `gateway/` as the Go module root.  
 - Do not reintroduce detector-owned hard blocks. Detectors observe and score; blocking belongs to `internal/enforcement` and the control plane.  
-- Flood detector comment header mentions blocking with 429, but **implementation currently allows**.  
 - There is no trust score and no `trust_engine` config. The model in use is **risk** (higher = worse): each detector emits a 0–100 score, and thresholds are read that way throughout. Do not reintroduce a competing trust-style scale.  
 - Compose and Dockerfile expect `./cmd/server`.  
 - Healthcheck in Dockerfile hits `/api/health` — that path is expected from the **backend**, not implemented as a gateway-local route today.  
@@ -473,4 +481,4 @@ When docs conflict with code, **trust the Go sources and `reverse-proxy-logic.md
 
 ## 15. One-Paragraph Absolute Truth
 
-IASG is a Go reverse proxy on port 8082 in front of a deliberately vulnerable API, paired with a Python control plane and a Next.js console. Five detectors — API flooding, SQL injection, brute force with password-spraying classification, path traversal/enumeration, and IP reputation — record evidence and always allow; the request path never decides anything. Refusals act on decisions made elsewhere: the control plane correlates evidence off-path every 30 seconds, groups addresses into campaigns, and writes `policy:<ip>` keys that the gateway reads from a background-refreshed snapshot, answering `403` for a block and `429` for an address over the rate its policy names. A faster gateway-side reflex covers the gap for signals trusted to act alone. The whole `enforcement` config block can be changed on a running gateway from the console. What the SRS called a centralized risk/decision engine was deliberately not built: scoring is per-detector and deciding is split between the reflex and the control plane, which is why the `trust_engine` config was deleted rather than implemented. The console has no authentication, and the gateway has no request body cap, no health endpoint and no graceful shutdown — those are the honest gaps.
+IASG is a Go reverse proxy on port 8082 in front of a deliberately vulnerable API, paired with a Python control plane and a Next.js console. Six detectors — API flooding, SQL injection, brute force (`consecutive_failed_logins`), path traversal/enumeration, unknown-route scanning, and IP reputation — record evidence and always allow; the request path never decides anything. Refusals act on decisions made elsewhere: the control plane correlates evidence off-path every 30 seconds, groups addresses into campaigns, and writes `policy:<ip>` keys that the gateway reads from a background-refreshed snapshot, answering `403` for a block and `429` for an address over the rate its policy names. A faster gateway-side reflex covers the gap for signals trusted to act alone — brute force and unknown-route scanning are deliberately excluded from that trust and are advisory-only. The whole `enforcement` config block can be changed on a running gateway from the console. What the SRS called a centralized risk/decision engine was deliberately not built: scoring is per-detector and deciding is split between the reflex and the control plane's adaptive engine, which is why the `trust_engine` config was deleted rather than implemented. The console has no authentication, and the gateway has no health endpoint and no graceful shutdown — those are the honest gaps.

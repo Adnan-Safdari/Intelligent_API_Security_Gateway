@@ -37,6 +37,12 @@ It runs **inside** the compose network deliberately. Docker Desktop rewrites a
 host request's source address, so from the host every persona collapses into one
 private address.
 
+That's one run. `collect.sh` drives a whole sequence of them — each run is two
+containers that must start in the right order and run for ten minutes
+unattended, and a real dataset needs dozens of runs, each with its own seed.
+It stops the sequence on the first run whose pre-flight refuses to send
+(a partially-collapsed address pool is worse than a missing run).
+
 ## The pre-flight is not optional
 
 The gateway believes `X-Forwarded-For` only from a configured trusted proxy.

@@ -12,7 +12,11 @@ testing/
     sqli.sh
     traversal.sh
     brute_force.sh
+    redis_inspect.sh
 ```
+
+There is currently no script here for `unknown_route_scanning`, the newest
+detector — a real gap, not a design choice.
 
 ## Prerequisites
 
@@ -46,7 +50,12 @@ bash testing/signals/traversal.sh
 bash testing/signals/brute_force.sh
 ```
 
-Watch the **gateway process logs** for `SECURITY ALERT`. A passing script only proves the request was **forwarded** (no `429`). The alert text is the proof of detection.
+Watch the **gateway process logs** for `SECURITY ALERT` — this applies to
+`flood.sh`, `sqli.sh`, and `traversal.sh`. `brute_force.sh` is the exception:
+`brute_force.go` is advisory-only and evidence-only, and logs nothing at all,
+so its proof of detection is `Metrics(ip)` surfaced through the dashboard or
+`iasg:events`, not a log line. Every script's real pass condition is still
+that the request was **forwarded** (no `429`).
 
 ## What “pass” means
 

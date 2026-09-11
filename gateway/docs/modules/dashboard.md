@@ -23,6 +23,9 @@ use every control on it:
 | `/policy` | `app/(console)/policy/page.jsx` | Active `policy:<ip>` keys, and overrides |
 | `/history` | `app/(console)/history/page.jsx` | Durable campaign history from Postgres |
 | `/settings` | `app/(console)/settings/page.jsx` | Live enforcement settings |
+| `/adaptive` | `app/(console)/adaptive/page.jsx` | Adaptive mode, guardrails and baselines; the analyst approval queue — see [Adaptive Policy and Analyst Control](../adaptive-policy.md) |
+| `/signals` | `app/(console)/signals/page.jsx` | The six gateway detectors, one row per `internal/signals/*.go` file, with real alert counts, each one's configured threshold, and which four of the six can arm the reflex to block on their own — see [Detection Signals](../detection-signals.md) |
+| `/ip/<address>` | `app/(console)/ip/[address]/page.jsx` | Everything known about one address in one place: its events, policy status, campaign membership and signals tripped, previously spread across four pages |
 
 ## API routes
 
@@ -30,9 +33,16 @@ use every control on it:
 | --- | --- |
 | `app/api/overview/route.js` | Live stats and events for the overview |
 | `app/api/campaigns/route.js` | Active campaigns |
+| `app/api/events/route.js` | The full event stream for investigation, deeper than the live poll's slice |
 | `app/api/history/route.js` | Campaign history from Postgres |
 | `app/api/overrides/route.js` | Operator instructions to the agent |
 | `app/api/settings/route.js` | Read, change and revert the live enforcement settings |
+| `app/api/adaptive/route.js` | Adaptive config, baselines, recommendations and audit for the console |
+| `app/api/adaptive/settings/route.js` | Change the durable adaptive configuration |
+| `app/api/adaptive/overrides/route.js` | An analyst's manual policy instruction on the adaptive path |
+| `app/api/adaptive/recommendations/[id]/route.js` | Approve, edit or reject one pending recommendation |
+| `app/api/ip/[address]/route.js` | Everything known about one address, for the investigation page |
+| `app/api/policies/[address]/route.js` | Delete an address's active policy immediately |
 | `app/api/admin/reset/route.js` | Clear the history and live telemetry |
 | `app/api/health/route.js` | Liveness |
 
@@ -42,14 +52,23 @@ use every control on it:
 | --- | --- |
 | `app/ui/chrome.jsx` | Console shell and page headers |
 | `app/ui/parts.jsx` | Shared presentational pieces |
+| `app/ui/icons.jsx` | Every icon the console uses (`lucide-react`), imported once |
 | `app/ui/store.jsx` | Client-side polling provider |
 | `app/ui/format.js` | Formatting helpers |
+| `app/ui/export.js` | CSV export of whatever rows are currently on screen, filters included |
 | `app/traffic-map.jsx` | Geographic plot of source addresses |
 | `lib/redis.js` | Redis client |
 | `lib/postgres.js` | Postgres pool |
 | `lib/telemetry.js` | Reads the event stream and stats |
+| `lib/plane.js` | Readers for what the control plane concluded — campaigns, policies, feedback — shared by the campaigns feed and the per-address investigation view |
+| `lib/adaptive.js` | Validates a proposed adaptive configuration and a recommendation edit against the live guardrails |
+| `lib/adaptive-mode.mjs` | The three adaptive modes' labels and behaviour copy, shared by the settings form and its confirmation dialog |
 | `lib/geo.js` | Address to coordinates |
-| `lib/auth.js` | Password hashing, sessions, RBAC |
+| `lib/auth.js` | A stub — see below |
+
+Every route still calls `requireRole(...)` with the role it would need if
+login were restored, but the stub grants every role unconditionally, so the
+argument is currently a statement of intent rather than an enforced check.
 
 ## Settings
 

@@ -12,14 +12,26 @@ testing/
     sqli.sh
     traversal.sh
     brute_force.sh
+    redis_inspect.sh
     README.md
 ```
 
-`gateway/internal/signals/` contains detector source only. No `*_test.go` files there.
+`gateway/internal/signals/` also has Go unit tests beside every detector
+(`api_flooding_test.go`, `brute_force_test.go`, `sqli_injection_test.go`,
+`enumeration_path_traversal_test.go`, `unknown_route_scanning_test.go`,
+`ip_reputation_test.go`, `collector_test.go`, and more) — these scripts exist
+for a different reason than "Go tests aren't allowed in that package."
 
-## Why they are not in the gateway
+There is currently no script here for `unknown_route_scanning`, the newest
+detector — a real gap, not a design choice.
 
-The gateway package is production code: reverse proxy, middleware, detectors. Mixing Go `_test.go` files into `internal/signals` made it look like those scripts were part of the gateway.
+## Why they exist as a separate layer
+
+The Go tests above verify the detector logic in isolation. These scripts
+verify something a unit test cannot: that a **running** gateway, wired
+through its real middleware chain and real config, actually produces the
+evidence and logs a real HTTP client should see. That's an end-to-end check,
+not a substitute for the Go tests.
 
 These scripts:
 
@@ -62,7 +74,7 @@ GATEWAY_URL=http://localhost:8082 bash testing/signals/run_all.sh
 | `flood.sh` | 105 `GET /api/products` (above default 100/min) | no `429` | `SECURITY ALERT: API FLOOD DETECTED` |
 | `sqli.sh` | Product search with normal input, then `' OR 1=1 --` in `q` | no detector-originated block | `SECURITY ALERT: SQL INJECTION DETECTED`; Dashboard → IP → SQL injection evidence |
 | `traversal.sh` | bounded `demo-files` traversal, `/.env-demo`, both together | no `429` | `PATH TRAVERSAL` / `ENUMERATION ATTACK` |
-| `brute_force.sh` | 8 `POST /api/login` with wrong passwords | no `429` (backend `401` is OK) | `SECURITY ALERT: BRUTE FORCE DETECTED` |
+| `brute_force.sh` | 8 `POST /api/login` with wrong passwords | no `429` (backend `401` is OK) | Nothing is logged — `brute_force.go` is evidence-only and advisory; check `Metrics(ip)` via the dashboard or `iasg:events` instead |
 
 `lib.sh` holds `GATEWAY_URL`, `require_gateway`, and `assert_not_throttled`.
 

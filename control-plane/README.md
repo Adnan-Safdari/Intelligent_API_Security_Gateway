@@ -89,7 +89,7 @@ Other options:
 ```bash
 .venv/bin/python -m iasg                  # loop forever, every 30s
 .venv/bin/python -m iasg --once --dry-run # decide everything, write nothing
-.venv/bin/pytest                          # 236 tests, no Redis needed
+.venv/bin/pytest                          # 428 tests (16 skip without Postgres), no Redis needed
 ```
 
 Scenarios: `credential-stuffing`, `brute-force`, `flood`, `enumeration`, `path-traversal`,

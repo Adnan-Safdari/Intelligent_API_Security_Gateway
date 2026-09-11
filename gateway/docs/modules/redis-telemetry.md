@@ -74,8 +74,8 @@ Event payload (field `event` on the stream):
   "userAgent": "...",
   "decision": "allow",
   "riskScore": 70,
-  "fired": ["brute_force"],
-  "signals": [ { "signal": "brute_force", "score": 70, "thresholdCross": true, "details": {} } ],
+  "fired": ["consecutive_failed_logins"],
+  "signals": [ { "signal": "consecutive_failed_logins", "score": 70, "thresholdCross": true, "details": {} } ],
   "snippet": "{\"email\":\"admin\",\"password\":\"[redacted]\"}",
   "backendMs": 12
 }
@@ -95,7 +95,10 @@ If Redis is down, the gateway still proxies. It logs `redis telemetry write fail
 
 ## Config
 
-`configs/config.yaml`:
+Effective configuration, showing every field including the ones the shipped
+`configs/config.yaml` leaves out and lets default in code
+(`internal/config/config.go`) — the arrival and health stream settings are
+valid YAML keys, just not currently written explicitly in the file:
 
 ```yaml
 storage:
@@ -106,10 +109,10 @@ storage:
     stream_key: iasg:events
     stream_maxlen: 2000
     ip_latest_ttl: 24h
-    arrival_stream_key: iasg:arrivals
-    arrival_maxlen: 2000
-    health_stream_key: iasg:telemetry:health
-    health_maxlen: 86400
+    arrival_stream_key: iasg:arrivals      # defaulted, not in the file
+    arrival_maxlen: 2000                   # defaulted, not in the file
+    health_stream_key: iasg:telemetry:health  # defaulted, not in the file
+    health_maxlen: 86400                   # defaulted, not in the file
 ```
 
 A dataset collection run wants far more history than a hot window does, so it
@@ -124,7 +127,7 @@ Docker Compose sets `IASG_REDIS_HOST=redis` so the gateway container talks to th
 
 ## How it is wired
 
-Outermost middleware: `internal/telemetry`. After flood, SQLi, traversal, and brute force (including backend status), it calls `Collector.Snapshot(ip)` and writes the event.
+Outermost middleware: `internal/telemetry`. After all six detectors have run (including brute force's backend-status check), it calls `Collector.Snapshot(ip)` and writes the event.
 
 Code:
 
