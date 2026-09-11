@@ -39,7 +39,7 @@ safe while doing so.
 ## 3. Deterministic attack detectors (1 min)
 
 > "The gateway recognises flooding, SQL injection, brute force,
-> traversal/enumeration, and known-bad IP reputation. A detector records
+> traversal/enumeration, unknown-route scanning, and known-bad IP reputation. A detector records
 > evidence and allows the request. It never decides the response to that
 > request."
 

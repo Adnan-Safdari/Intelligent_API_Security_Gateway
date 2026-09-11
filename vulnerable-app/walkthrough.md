@@ -1,31 +1,47 @@
 # Vulnerable Backend Walkthrough
 
-The backend is now ready for security testing. It provides a simple login API with intentional vulnerabilities and detailed request logging.
+The backend provides a login API with intentional vulnerabilities and
+detailed request logging. See [README](README.md) for the full endpoint
+list and the SQL injection demo — this page is a login-specific
+request/response transcript.
 
 ## Implemented Features
 
-### 1. In-Memory Mock Database
-Located at [backend/data/users.js](backend/data/users.js), it contains a list of test users with plain text passwords.
+### 1. Postgres-backed user store
+
+Seeded at startup by [backend/db.js](backend/db.js) into a real `users` table
+(`id`, `email`, `password`, `role`) — not an in-memory mock. Passwords are
+stored and compared as plain text, which is itself the intentional
+vulnerability; there is no in-memory fallback.
 
 ```javascript
-const users = [
-  { id: 1, username: "admin", password: "adminPassword123", role: "administrator" },
+const seedUsers = [
+  { email: 'admin@shopforge.com', password: 'admin123', role: 'administrator' },
+  { email: 'jane@example.com', password: 'user123', role: 'user' },
   // ...
 ];
 ```
 
 ### 2. Detailed Request Logger
-Located at [backend/middleware/logger.js](backend/middleware/logger.js), it logs the IP, Headers, and Body of every incoming request to the console.
+
+Located at [backend/middleware/logger.js](backend/middleware/logger.js), it logs the IP, headers, and body of every incoming request to the console.
 
 ### 3. Insecure Login API
+
 Located at [backend/routes/auth.js](backend/routes/auth.js), the `POST /api/login` endpoint:
-- **No Hashing**: Compares passwords as plain text.
-- **Verbose Errors**: Informs the user if the "User was not found" or the "Password was incorrect".
-- **No Rate Limiting**: Vulnerable to brute-force attacks.
+
+- **No hashing**: compares passwords as plain text, in the SQL query itself.
+- **One error message for both cases**: a missing user and a wrong password
+  both return the same `Invalid email or password`, on purpose — the
+  distinguishing behavior an earlier version of this backend had is gone.
+- **No rate limiting**: vulnerable to brute-force attacks, which is what
+  makes it the target for `testing/signals/brute_force.sh` and
+  `testing/jmeter/brute_force_demo.jmx`.
 
 ## Verification Results
 
 ### Health Check
+
 ```bash
 # Request
 GET /api/health
@@ -35,33 +51,47 @@ GET /api/health
 ```
 
 ### Successful Login
+
 ```bash
 # Request
 POST /api/login
-{ "username": "admin", "password": "adminPassword123" }
+{ "email": "admin@shopforge.com", "password": "admin123" }
 
 # Response
 {
   "success": true,
   "message": "Login successful!",
-  "user": { "id": 1, "username": "admin", "role": "administrator" }
+  "user": { "id": 1, "email": "admin@shopforge.com", "role": "administrator" }
 }
 ```
 
-### Failed Login (Incorrect Password)
+### Failed Login (wrong password, or no such user)
+
 ```bash
 # Request
 POST /api/login
-{ "username": "admin", "password": "wrongPassword" }
+{ "email": "admin@shopforge.com", "password": "wrongPassword" }
 
-# Response
-{ "success": false, "message": "Incorrect password" }
+# Response (401)
+{ "success": false, "message": "Invalid email or password" }
 ```
+
+The request body field is `email`, not `username` — a request shaped with
+`username` instead reads as `email: undefined`, matches no row, and gets the
+same 401 above.
 
 ## How to Run
-To start the backend server:
+
+To start the backend server directly (outside Compose):
+
 ```bash
-cd backend
+cd vulnerable-app/backend
+npm install
 npm start
 ```
-The server will run on `http://localhost:5000`.
+
+The server listens on `http://localhost:5002` (`PORT` env var, default 5002 —
+see [server.js](backend/server.js)), matching the port every other doc in
+this repo uses for it. It expects a reachable Postgres; see
+[README](README.md) for the Compose-based way to run it with one already
+provisioned.

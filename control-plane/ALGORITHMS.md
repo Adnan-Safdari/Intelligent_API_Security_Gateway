@@ -20,7 +20,7 @@ constraints, but they are not extra detection algorithms.
 ## 1. Deterministic attack detectors
 
 The gateway detects flooding, SQL injection, brute force, traversal/enumeration,
-and known-bad IP reputation. A detector fills `Evidence` and allows the request;
+unknown-route scanning, and known-bad IP reputation. A detector fills `Evidence` and allows the request;
 it never chooses the request's response. The gateway's reflex and the cached
 control-plane policy are enforcement mechanisms which act on a decision already
 available before the next request.

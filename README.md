@@ -492,8 +492,8 @@ stack. The pages worth starting from:
 - [Gateway](gateway/README.md), [control plane](control-plane/README.md),
   [dashboard](gateway-dashboard/README.md), [infra](infra/README.md),
   [testing](testing/README.md)
-- [Every algorithm the agent runs](control-plane/ALGORITHMS.md) and its
-  [guide](control-plane/GUIDE.md)
+- [Every algorithm the agent runs](control-plane/ALGORITHMS.md) ([older
+  file-by-file history](control-plane/GUIDE.md), superseded by the above)
 - [Demo walkthrough](DEMO.md) and [command reference](commands.md)
 
 ## Stopping

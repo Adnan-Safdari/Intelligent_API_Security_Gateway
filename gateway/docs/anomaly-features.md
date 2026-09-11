@@ -2,8 +2,8 @@
 
 | | |
 | --- | --- |
-| **Spec version** | `v2` |
-| **Written against** | `aaddadb`, 2026-09-06 |
+| **Spec version** | `v3` |
+| **Written against** | `control-plane/iasg/anomaly/spec.py` |
 | **Implemented by** | `control-plane/iasg/anomaly/` |
 
 **This document is the contract, not the code.** If the extractor and this page
@@ -22,7 +22,7 @@ One row is **one resolved client address's activity during one non-overlapping
 | Window type | Non-overlapping, aligned to `:00` UTC — `12:00:00–12:01:00`, `12:01:00–12:02:00` |
 | Window membership | Arrival time falls within `[window_start, window_end)` |
 | Client identity | The gateway's resolved client identity (`internal/netutil`), trusted-proxy aware |
-| Model inputs | Thirteen numerical behaviour summaries, nothing else |
+| Model inputs | Fourteen numerical behaviour summaries, nothing else |
 | Model output | An anomaly score on the risk convention (higher = worse) |
 | Execution | Python control plane, off the synchronous Go request path |
 
@@ -117,7 +117,7 @@ database error. So:
 This mapping is configuration and must be re-verified if the backend changes. A
 401 elsewhere is not a failed password attempt.
 
-## The thirteen features
+## The fourteen features
 
 `N` is the number of requests from that client whose arrival fell in the window.
 Every ratio is in `[0, 1]`.
@@ -162,15 +162,27 @@ is a **documented real category and not a null**. A scanner walking paths that
 match no template produces a large `<unmatched>` bucket, which is itself
 informative — treating it as missing data would discard that.
 
-### 6. `post_ratio`
+### 6. `unmatched_route_ratio`
+
+Requests whose `(method, route_template)` falls in the `<unmatched>` bucket
+(from feature 5) ÷ `N`.
+
+A client walking paths the application does not serve is what a scanner does
+and a lost user does not. It joins the arrival-derived group deliberately: the
+route template is decided when the request arrives, so a scanner is visible
+before any response has settled. It sits beside the other two route features
+rather than being appended at the end, which is what moved this spec from v2
+to v3 — every feature after it shifted position by one.
+
+### 7. `post_ratio`
 
 POST requests ÷ `N`. **0** when there are none.
 
-### 7. `login_ratio`
+### 8. `login_ratio`
 
 `POST /api/login` requests ÷ `N`. **0** when there are none.
 
-### 8. `login_failure_ratio`
+### 9. `login_failure_ratio`
 
 Confirmed `invalid_credentials` outcomes ÷ login attempts **with a known
 outcome**.
@@ -183,13 +195,13 @@ refused never reached the backend, so its outcome is unknown, and counting it as
 a non-failure would let blocking an attacker make their failure ratio look
 better.
 
-### 9. `backend_404_ratio`
+### 10. `backend_404_ratio`
 
 Backend responses with status 404 ÷ backend responses with a known status.
 
 **Null** when no backend statuses are available.
 
-### 10. `backend_5xx_ratio`
+### 11. `backend_5xx_ratio`
 
 Backend responses with status 500–599 ÷ backend responses with a known status.
 
@@ -202,7 +214,7 @@ itself, and mixing them into backend response statistics would mean enforcement
 changed the features of the address it enforced against. See
 [Zero versus unknown](#zero-versus-unknown).
 
-### 11. `mean_request_body_bytes`
+### 12. `mean_request_body_bytes`
 
 Sum of completely measured request-body sizes ÷ number of completely measured
 bodies.
@@ -210,7 +222,7 @@ bodies.
 - A **confirmed empty body is 0** and counts toward the denominator.
 - A refused or unreadable body is **unknown** and counts toward neither.
 
-### 12. `p95_upstream_duration_ms`
+### 13. `p95_upstream_duration_ms`
 
 Sort the completed upstream durations ascending and take position
 `ceil(0.95 × count)`, **one-based**.
@@ -224,7 +236,7 @@ Sort the completed upstream durations ascending and take position
 **Null** when no completed durations are available. A request that timed out has
 no duration, and one is never invented for it.
 
-### 13. `endpoint_method_deviation`
+### 14. `endpoint_method_deviation`
 
 The largest positive deviation among the client's method + normalized-route
 request counts in this window: `(observed - learned threshold) / learned
@@ -406,14 +418,6 @@ policy.
 ## Divergences and known gaps
 
 Stated so they are not discovered later and mistaken for bugs.
-
-**The brute-force detector and this spec count login failures differently.**
-`internal/signals/brute_force.go` treats 401 **or** 403 as a failure; this
-specification counts only 401. Today the difference is inert — the policy
-enforcer sits outside the detectors, so a policy 403 never reaches brute force,
-and the backend's `/api/login` never returns 403. The detector is deliberately
-**not** being changed to match: it feeds campaign formation, and altering what
-it counts would change which campaigns form.
 
 **`backendMs` conflates zero with unknown.** It now carries the true upstream
 duration and reads 0 when there was none, which is fine for a console column and

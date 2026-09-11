@@ -26,7 +26,7 @@ Inside `gateway/internal/proxy/server.go`, the server builds the request pipelin
 3. `LoggingMiddleware`
 4. Policy/reflex enforcer, including an atomic Redis quota check when a rate applies
 5. `BodyLimitMiddleware`, then `telemetry.CaptureBody`
-6. Reflex observer wrapping reputation, flooding, SQLi, traversal, and brute-force detectors
+6. Reflex observer wrapping reputation, flooding, unknown-route scanning, SQLi, traversal, and brute-force detectors
 7. Reverse proxy handler
 
 The middleware order matters. The outer middleware sees the request first, and the inner proxy runs last.
@@ -63,15 +63,17 @@ This logs:
 
 ### RequestInspectionMiddleware
 
-This legacy debug helper prints headers and bodies, but is not installed in
-the live chain. Admitted requests pass through the body-size cap and
-`telemetry.CaptureBody`, which captures a redacted snippet and restores the
-body for forwarding. Requests refused by policy are recorded without reading
-their bodies.
+This legacy debug helper printed headers and bodies to stdout for every
+request, which put passwords and tokens in the logs. It has been deleted, not
+merely left unwired -- only an explanatory comment remains at
+`internal/proxy/middleware.go:37`. Admitted requests instead pass through the
+body-size cap and `telemetry.CaptureBody`, which captures a redacted snippet
+and restores the body for forwarding. Requests refused by policy are recorded
+without reading their bodies.
 
 ## Attack Detection Layer
 
-The gateway has five detection middlewares in `internal/signals`. None of them
+The gateway has six detection middlewares in `internal/signals`. None of them
 refuses a request -- that is the enforcer's job, acting on a decision made
 earlier -- so a false positive here costs a log line rather than a customer.
 
@@ -106,16 +108,50 @@ The comment marker `--` by itself is retained as low-confidence context but does
 
 File: `gateway/internal/signals/brute_force.go`
 
-This watches configured login paths (default `/api/login`), forwards the request, then inspects the backend status:
+Rather than a hardcoded login path and status code, this reads the top-level
+`routes.auth_outcomes` list -- each entry names a method and route template,
+plus which backend statuses mean `success` and which mean
+`invalid_credentials`. A configured invalid-credentials response grows a
+consecutive-failure streak for that client and login target; a configured
+success resets it; gateway refusals never reach the detector and are never
+interpreted as an authentication outcome. This is a change from an earlier,
+hardcoded implementation -- a doc or comment that still lists `/api/login` and
+`401`/`403` as fixed is describing that older version.
 
-- `401` / `403` → record a failed login for that IP
-- `2xx` → reset the failure counter
-- threshold crossed → log SECURITY ALERT (still allows)
-- also classifies classic brute force vs password spraying
-- exposes `Metrics(ip)`, which the collector and the reflex read
-- unit tests + `DEMO.md` + JMeter plan exist
+The detector tracks per-`(ip, route, target)` streaks and reports the single
+strongest one via `Metrics(ip)`, which the collector and the reflex read. It
+does not classify "classic brute force" versus "password spraying" -- that
+distinction exists only as a control-plane campaign classification, derived
+from repeated brute-force evidence, never as its own gateway signal. It also
+does not log: unlike the other detectors here, a firing streak produces
+`Evidence` but no `SECURITY ALERT` line.
 
-Config comes from `enforcement.brute_force` (`enabled`, `max_failures`, `window`, `login_paths`).
+Config comes from `enforcement.brute_force` (`enabled`, `max_failures`,
+`window`, `max_clients`, `max_targets_per_client`) plus the shared
+`routes.auth_outcomes` declaration. This signal is advisory-only -- see
+[Unknown-Route Scanning](#unknown-route-scanning) below for what that means.
+
+### Unknown-Route Scanning
+
+File: `gateway/internal/signals/unknown_route_scanning.go`
+
+Consults the same compiled route table `telemetry` uses. A request that the
+table classifies `<unmatched>` records its raw path against the requesting
+client; a known route that happens to return a backend 404 is irrelevant, and
+repeating one broken link stays one path. The detector needs several distinct
+paths within its rolling window before it fires. `max_clients` and
+`max_paths_per_client` bound retained attacker input, and inactive entries are
+swept after the window elapses.
+
+Config comes from `enforcement.unknown_route_scanning` (`enabled`,
+`distinct_paths`, `window`, `max_clients`, `max_paths_per_client`).
+
+Both this signal and brute force above are **advisory-only**: naming either one
+in `block.signals` makes the gateway refuse to start with an explicit error
+(`internal/enforcement/reflex.go`) rather than silently do nothing. They can
+still become an expiring throttle or block, but only after control-plane
+correlation and the policy writer's safety checks -- see
+[Detection Signals](detection-signals.md).
 
 ### Path Traversal and Enumeration Detection
 
@@ -131,7 +167,7 @@ Config comes from `enforcement.enumeration_path_traversal`.
 
 File: `gateway/internal/signals/ip_reputation.go`
 
-The other four ask what an address just did. This one asks who it is, against a
+The other five ask what an address just did. This one asks who it is, against a
 list loaded from `configs/reputation.txt` plus an optional feed fetched on an
 interval. Being listed is a standing fact, so this is the only detector that
 knows something on a first request -- and the only source of evidence about an
@@ -227,7 +263,7 @@ The gateway now does exactly this at runtime:
    forward normally. An applicable rate uses a shared Redis token bucket per
    IP, path, and method, returning `429` with `Retry-After` when exhausted.
 5. Cap the admitted body and capture its redacted telemetry snippet.
-6. Run the five detectors, each filling in `Evidence`.
+6. Run the six detectors, each filling in `Evidence`.
 7. Forward the request to the backend API on `5002`.
 8. Let the reflex observe what they found, after the response, and record a
    block if a trusted detector crossed its threshold.

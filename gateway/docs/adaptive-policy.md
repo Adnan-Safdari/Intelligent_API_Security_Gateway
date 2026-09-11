@@ -180,11 +180,14 @@ pins this: identical evidence and campaign facts score 41 (Monitor) without
 ML and 46 (Throttle) with it, and nothing on the throttle branch asks whether
 ML was load-bearing for that difference.
 
-No model is currently deployable (see `anomaly-model-results.md`, "Why
-neither model can be deployed") — this section describes a wired-but-dormant
-path, not a live one. See `anomaly-features.md`'s "Score authority" for the
-feature-level half of this contract (what the model is trained on, and why
-enforcement decisions are excluded from its training data).
+A schema-compatible, protocol-evaluated model exists (`models/v4-iforest`,
+trained on `datasets/v4`, `runtime_loadable: true`) but has not been promoted
+to `models/current` — the path `Settings.model_path` actually reads — so this
+section still describes a wired-but-dormant path today, not a live one. See
+`anomaly-model-results.md` for the current state of every trained model and
+`anomaly-features.md`'s "Score authority" for the feature-level half of this
+contract (what the model is trained on, and why enforcement decisions are
+excluded from its training data).
 
 ### What clears the reflex's floor, alone
 

@@ -104,7 +104,7 @@ Inspect incoming activity, detector alerts, reflex enforcement, and policy decis
 docker compose -f .\infra\docker-compose.yml logs --tail=100 gateway
 
 docker compose -f .\infra\docker-compose.yml logs --tail=300 gateway |
-  Select-String -Pattern 'SECURITY ALERT|IP Address|Endpoint|API FLOOD|BRUTE FORCE|SQL INJECTION|PATH TRAVERSAL|ENUMERATION|enforcement|policy|blocking|Retry-After'
+  Select-String -Pattern 'SECURITY ALERT|IP Address|Endpoint|API FLOOD|SQL INJECTION|PATH TRAVERSAL|ENUMERATION|enforcement|policy|blocking|Retry-After'
 
 docker compose -f .\infra\docker-compose.yml logs -f gateway |
   Select-String -Pattern 'SECURITY ALERT|enforcement|policy|blocking'
@@ -124,7 +124,7 @@ Inspect the gateway event stream and control-plane policy keys.
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XLEN iasg:events
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 10
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 100 |
-  Select-String -Pattern 'sql_injection|api_flooding|brute_force|password_spraying|path_traversal|enumeration'
+  Select-String -Pattern 'sql_injection|api_flooding|consecutive_failed_logins|unknown_route_scanning|enumeration_path_traversal|ip_reputation'
 
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli KEYS 'policy:*'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli GET policy:198.51.100.91
@@ -188,11 +188,19 @@ go test ./internal/enforcement -run 'TestExemptRangesAreNeverBlocked|TestTheComp
 Pop-Location
 ```
 
-## Test 10 — Brute force
+## Test 10 — Brute force (`consecutive_failed_logins`)
 
 ### Purpose
 
-Send repeated failed login attempts from one simulated IP. The detector fires at five failures; the default reflex score floor of 80 is reached at ten failures, so the following unrelated request can be blocked.
+Send repeated failed login attempts from one simulated IP. The detector fires
+at `max_failures` (default 5) consecutive invalid-credential outcomes for the
+same client and login target, read from `routes.auth_outcomes` rather than a
+hardcoded status code. **This signal is advisory-only**: it cannot arm the
+gateway's own reflex — `internal/enforcement/reflex.go` refuses to start if
+`consecutive_failed_logins` is named in `block.signals` — so the following
+unrelated request will never be blocked by the gateway alone. It becomes an
+expiring throttle or block only after the control plane correlates the
+evidence and the policy writer's checks pass.
 
 ### Commands
 
@@ -206,21 +214,31 @@ Send repeated failed login attempts from one simulated IP. The detector fires at
   Write-Host "Login attempt $_ -> HTTP $code"
 }
 
-# The reflex is consulted before unrelated backend traffic.
-curl.exe -i http://localhost:8082/api/products `
-  -H "X-Forwarded-For: 203.0.113.60"
+# There is nothing to grep for in the gateway logs -- brute_force.go is
+# evidence-only and logs nothing. Check the evidence stream instead:
+docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 50 |
+  Select-String -Pattern 'consecutive_failed_logins|203\.0\.113\.60'
 
-docker compose -f .\infra\docker-compose.yml logs --tail=250 gateway |
-  Select-String -Pattern 'BRUTE FORCE|Failed Logins|Distinct Users|blocking|203\.0\.113\.60'
+# Give the control plane a cycle (default 30s) to correlate, then check for a policy.
+docker compose -f .\infra\docker-compose.yml exec redis redis-cli GET policy:203.0.113.60
 ```
 
-The ten failed logins themselves are normally HTTP 401 from the backend; the reflex is armed after the response evidence is recorded. The next request is the visible HTTP 403 proof.
+The ten failed logins themselves are normally HTTP 401 from the backend. Any
+enforcement that eventually appears against `203.0.113.60` came from the
+control plane's next cycle, not from the gateway acting alone.
 
-## Test 10B — Password spraying
+## Test 10B — Many login identities from one address
 
 ### Purpose
 
-Use one source IP across many `email` values (or `username` values). More than three distinct login identities changes the current detector classification to `password_spraying`.
+Use one source IP across many `email` values. The Go detector does not
+classify this as "password spraying" — that distinction does not exist at the
+gateway level; `brute_force.go` tracks a consecutive-failure streak per
+`(client, login target)` and has no concept of distinct identities. "Password
+spraying" is only ever a **control-plane campaign classification**
+(`correlation/agent.py`), derived from repeated brute-force evidence after
+several addresses or identities are correlated together — it is never a
+gateway signal or log line.
 
 ### Commands
 
@@ -236,8 +254,9 @@ Use one source IP across many `email` values (or `username` values). More than t
   Write-Host "Spray $email -> HTTP $code"
 }
 
-docker compose -f .\infra\docker-compose.yml logs --tail=200 gateway |
-  Select-String -Pattern 'PASSWORD SPRAYING|Distinct Users|203\.0\.113\.61'
+# Check whether the control plane formed a campaign from this, once it has
+# had a cycle (default 30s) to run:
+docker compose -f .\infra\docker-compose.yml exec redis redis-cli KEYS 'campaign:*'
 ```
 
 ## Test 11 — SQL injection
@@ -298,7 +317,7 @@ curl.exe -i http://localhost:8082/etc/passwd -H "X-Forwarded-For: 198.51.100.93"
 docker compose -f .\infra\docker-compose.yml logs --tail=250 gateway |
   Select-String -Pattern 'PATH TRAVERSAL|ENUMERATION|198\.51\.100\.93'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 100 |
-  Select-String -Pattern 'path_traversal|enumeration|198\.51\.100\.93'
+  Select-String -Pattern 'enumeration_path_traversal|198\.51\.100\.93'
 ```
 
 Traversal/enumeration are request-scoped evidence signals and are intentionally not listed as reflex-blocking signals in the current configuration.
@@ -336,7 +355,7 @@ $keys = docker compose -f .\infra\docker-compose.yml exec -T redis redis-cli --r
 if ($keys) { docker compose -f .\infra\docker-compose.yml exec -T redis redis-cli MGET $keys }
 ```
 
-Policy JSON has an `action` such as `monitor`, `throttle`, `temp_block`, or `escalate`. `monitor` is observe-only; `throttle` uses the configured delay (current file default 500 ms); `temp_block` and `escalate` deny requests while the policy key exists.
+Policy JSON has an `action` such as `monitor`, `throttle`, `temp_block`, or `escalate`. `monitor` is observe-only; `throttle` limits the address to the policy's `requests_per_minute` via a shared Redis token bucket, answering `429` with `Retry-After` once exhausted — `throttle.delay_ms` in `config.yaml` is a legacy setting retained for console compatibility and no longer sleeps on the request path; `temp_block` and `escalate` deny requests while the policy key exists.
 
 ## Test 15 — Reflex → control-plane handoff
 
@@ -349,7 +368,7 @@ Show the two lanes in their intended order: immediate reflex action, asynchronou
 ```powershell
 # Terminal A
 docker compose -f .\infra\docker-compose.yml logs -f gateway |
-  Select-String -Pattern 'API FLOOD|BRUTE FORCE|enforcement|blocking|policy'
+  Select-String -Pattern 'API FLOOD|enforcement|blocking|policy'
 
 # Terminal B
 docker compose -f .\infra\docker-compose.yml logs -f control_plane |
@@ -442,13 +461,18 @@ No terminal command is needed. On Dashboard → Events:
 
 ### Purpose
 
-Run the checked-in load plans without installing JMeter locally. Current files in `testing/jmeter/` are:
+Run the checked-in load plans without installing JMeter locally. Current files in `testing/jmeter/` are six plans, not five:
 
 ```text
-brute_force_demo.jmx       distributed_attack.jmx    flood_demo.jmx
-path_traversal_probe.jmx   sqli_probe.jmx
+adaptive_rate_limit.jmx    brute_force_demo.jmx      distributed_attack.jmx
+flood_demo.jmx             path_traversal_probe.jmx  sqli_probe.jmx
 passwords.csv              sqli_payloads.csv         traversal_paths.csv
 ```
+
+There is no plan yet for `unknown_route_scanning`, the newest detector. See
+`testing/jmeter/README.md` for which of these can arm the gateway's own
+reflex — as of the current signal vocabulary, only `flood_demo.jmx`'s signal
+can.
 
 ### Commands
 
@@ -524,7 +548,7 @@ docker run --rm `
 docker compose -f .\infra\docker-compose.yml logs --tail=200 gateway |
   Select-String -Pattern 'PATH TRAVERSAL|ENUMERATION|traversal-jmeter'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 100 |
-  Select-String -Pattern 'path_traversal|enumeration'
+  Select-String -Pattern 'enumeration_path_traversal'
 ```
 
 ### Test 20D — `brute_force_demo.jmx`
@@ -545,10 +569,14 @@ docker run --rm `
   -JPORT=8082
 
 docker compose -f .\infra\docker-compose.yml logs --tail=250 gateway |
-  Select-String -Pattern 'BRUTE FORCE|Failed Logins|enforcement|policy'
+  Select-String -Pattern 'enforcement|policy'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 100 |
-  Select-String -Pattern 'brute_force|password_spraying'
+  Select-String -Pattern 'consecutive_failed_logins'
 ```
+
+`brute_force.go` logs nothing on its own — it is evidence-only and
+advisory-only, so `BRUTE FORCE` never appears in the gateway logs. Detection
+is proven by the `consecutive_failed_logins` evidence above, not a log line.
 
 ### Test 20E — `distributed_attack.jmx`
 
@@ -568,14 +596,14 @@ docker run --rm `
   -JPORT=8082
 
 docker compose -f .\infra\docker-compose.yml logs --tail=400 gateway |
-  Select-String -Pattern 'API FLOOD|BRUTE FORCE|enforcement|policy'
+  Select-String -Pattern 'API FLOOD|enforcement|policy'
 docker compose -f .\infra\docker-compose.yml logs --tail=400 control_plane |
   Select-String -Pattern 'Distributed Flood|Brute Force|\[correlation\]|\[policy\]'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli KEYS 'policy:198.51.100.*'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli KEYS 'policy:203.0.113.*'
 ```
 
-The current plan sends flood traffic to `GET /api/products` using `198.51.100.${__threadNum}` with `User-Agent: jmeter-flood/1.0`, and brute-force traffic to `POST /api/login` using `203.0.113.${__threadNum}` with `User-Agent: jmeter-brute/1.0`.
+The current plan sends flood traffic to `GET /api/products` using `198.51.100.${__threadNum}` with `User-Agent: jmeter-flood/1.0`, and brute-force traffic to `POST /api/login` using `203.0.113.${__threadNum}` with `User-Agent: jmeter-brute/1.0`. Only the flood half can trigger the gateway's own reflex; the brute-force half is advisory-only and reaches enforcement only through a control-plane policy, if one forms. The plan itself carries no response assertions — it's a visible demo, not a pass/fail check.
 
 ## Test 21 — Distributed / multi-IP correlation
 
@@ -621,16 +649,21 @@ Open Dashboard → **Settings**, make the following deliberate live override, ty
 ```text
 API flooding: enabled; requests/minute 10
 SQL injection: enabled
-Brute force: enabled; max failures 5; window 1m; login path /api/login
+Brute force (consecutive failed logins): enabled; max failures 5; window 1m
+  -- login target and success/failure statuses come from routes.auth_outcomes,
+  -- not a configurable path here
 Path traversal and enumeration: enabled
-Reflex: enabled; signals api_flooding and brute_force only; min score 80; duration 2m
+Unknown-route scanning: enabled
+Reflex: enabled; signals api_flooding only; min score 80; duration 2m
+  -- brute force and unknown-route scanning cannot be named here: the reflex
+  -- refuses to start if either is listed in block.signals
 Policy enforcement: enabled
-Throttling: enabled; delay 500 ms
+Throttling: enabled; requests_per_minute set on the policy itself
 ```
 
-The file defaults verified in `gateway/configs/config.yaml` are 100 RPM, 5-minute block duration, 5 failures/60 seconds, min score 80, throttle 500 ms, SQLi/path traversal omitted from reflex signals, and policy enforcement enabled in the present working file. `gateway/configs/config.yaml.example` is a starting template and leaves policy enforcement disabled, so it must not be treated as the live setting. Use **Revert to file** in Settings when the demo ends.
+The file defaults verified in `gateway/configs/config.yaml` are 100 RPM, 5-minute block duration, 5 failures/60 seconds, min score 80, `api_flooding` alone in reflex signals, and policy enforcement enabled in the present working file. `gateway/configs/config.yaml.example` is a starting template and leaves policy enforcement disabled, so it must not be treated as the live setting. Use **Revert to file** in Settings when the demo ends.
 
-SQLi and traversal are detection-only at the reflex layer because one suspicious request can be a false positive. Their evidence flows to telemetry/control plane, which can make a broader policy decision. These small values are for a short academic demonstration, not production guidance.
+SQLi, traversal, brute force, and unknown-route scanning are all excluded from the reflex today — SQLi and traversal because one suspicious request can be a false positive, brute force and unknown-route scanning because they are advisory-only by design. Their evidence flows to telemetry/control plane, which can make a broader policy decision. These small values are for a short academic demonstration, not production guidance.
 
 Repeat Test 7 to verify the live sequence: 1–20 allowed → detector/risk crosses → around request 21 HTTP 403 → decreasing `Retry-After` → HTTP 200 after the TTL.
 
@@ -791,7 +824,7 @@ docker run --rm --network infra_default `
   -n -t /tests/distributed_attack.jmx -JHOST=gateway -JPORT=8082
 ```
 
-Replace `distributed_attack.jmx` with any of the five checked-in plans listed in Test 20.
+Replace `distributed_attack.jmx` with any of the six checked-in plans listed in Test 20.
 
 ## Go tests
 

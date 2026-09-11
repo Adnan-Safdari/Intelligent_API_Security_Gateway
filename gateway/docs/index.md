@@ -64,8 +64,9 @@ For the full decision explanation, see [Control Plane](control-plane.md) and
 
 ## Request path
 
-Every request crosses nine middlewares before reaching the backend. The order
-is deliberate and is documented in [Request Lifecycle](request-lifecycle.md).
+Every request crosses seven middleware layers before reaching the backend, the
+last of which fans out across the reflex observer and all six detectors. The
+order is deliberate and is documented in [Request Lifecycle](request-lifecycle.md).
 
 ```mermaid
 flowchart LR
@@ -74,8 +75,8 @@ flowchart LR
     Telemetry --> Logging[Logging]
     Logging --> Policy[Policy enforcement]
     Policy -->|refused| Client
-    Policy --> Inspect[Request inspection]
-    Inspect --> Detectors[Five detectors]
+    Policy --> BodyLimit[Body limit + capture]
+    BodyLimit --> Detectors[Reflex + six detectors]
     Detectors --> Proxy[Reverse proxy]
     Proxy --> Backend[Backend API]
     Backend --> Client
@@ -109,7 +110,7 @@ it happens again. See [Policy Enforcement](policy-enforcement.md).
 | --- | --- |
 | [System Architecture](system-architecture.md) | The runtime structure of both lanes |
 | [Request Lifecycle](request-lifecycle.md) | The middleware chain and why it is ordered as it is |
-| [Detection Signals](detection-signals.md) | The five detectors and the evidence they produce |
+| [Detection Signals](detection-signals.md) | The six detectors and the evidence they produce |
 | [Policy Enforcement](policy-enforcement.md) | How the gateway acts on the control plane's decisions |
 | [Control Plane](control-plane.md) | The agent cycle, campaigns, and the escalation ladder |
 | [Identifying the Client](client-ip.md) | Why the attributed IP is the foundation of everything else |

@@ -1,32 +1,29 @@
-## Docker Commands :
+## Docker Commands
 
-docker compose up -d
-docker compose logs -f gateway
+docker compose -f infra/docker-compose.yml up -d
+docker compose -f infra/docker-compose.yml logs -f gateway
 
 ## Path Traversal Attack Demonstration
 
 A path traversal attack attempts to access directories or files outside the web root by using ../ sequences.
 
-# Using standard ../
+# Using the demo traversal fixture
 
-curl http://localhost:8082/api/v1/resource?file=../../../../etc/shadow
-
-# Using URL encoded values (%2e%2e%2f is ../)
-
-curl http://localhost:8082/api/v1/%2e%2e%2f%2e%2e%2fsecret
+curl "http://localhost:8082/api/demo-files?file=public%2F..%2Ffake-secret.txt"
 
 ## Enumeration / Forced Browsing Attack Demonstration
 
-An enumeration attack attempts to guess or find hidden, sensitive files and directories (like .env, .git, etc.).
+An enumeration attack attempts to guess or find hidden, sensitive files and directories.
 
-# Trying to access the .env file
+# Trying to access the demo .env fixture
 
-curl http://localhost:8082/.env
+curl http://localhost:8082/.env-demo
 
-# Trying to access the git repository directory
+# Traversal and enumeration together
 
-curl http://localhost:8082/.git/config
+curl "http://localhost:8082/.env-demo?file=public%2F..%2Ffake-config.txt"
 
-# Trying to access the wordpress admin panel
-
-curl http://localhost:8082/wp-admin
+These are the same requests `testing/signals/traversal.sh` sends — see
+[Signal Test Scripts](docs/modules/signal-tests.md) for the full detector
+suite and what to look for in the response and logs. Neither request should
+be throttled (no `429`); detection is evidence-only.

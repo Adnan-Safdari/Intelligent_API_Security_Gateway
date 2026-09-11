@@ -38,13 +38,14 @@ make, and *writes* evidence it does not interpret.
 
 | File | Catches |
 |---|---|
-| `brute_force.go` | Repeated failed logins against one account |
+| `brute_force.go` | Repeated failed logins against one account (`consecutive_failed_logins`) |
 | `api_flooding.go` | Request volume from one address |
 | `sqli_injection.go` | Injection patterns in path, decoded query values and body |
 | `enumeration_path_traversal.go` | Directory walking and resource enumeration |
+| `unknown_route_scanning.go` | A client walking several paths the route table does not recognise |
 | `ip_reputation.go` | Addresses already known to be malicious |
 
-Reputation is the odd one out, and deliberately so. The other four are behavioural and
+Reputation is the odd one out, and deliberately so. The other five are behavioural and
 windowed: they count requests, failures or pattern matches, and cannot say anything until
 the attacker has repeated themselves -- a flood needs a hundred requests before it exists.
 Reputation is a standing fact about an address, so it is the only one that *knows* on the

@@ -115,7 +115,7 @@ carrying the `403` and its timing. The block is visible in the data.
 Refusing at L4 happens *outside* that chain entirely. A dropped connection
 produces no arrival and no completion, which has three consequences:
 
-1. **The twelve anomaly features go blind.** `request_count`,
+1. **The anomaly features go blind.** `request_count`,
    `peak_1s_requests`, `interarrival_cv` and the rest are computed from
    telemetry records. No records, no features — the address simply stops
    existing for the minute.

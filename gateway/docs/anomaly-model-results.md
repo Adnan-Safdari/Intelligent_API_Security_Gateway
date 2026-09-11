@@ -1,5 +1,11 @@
 # Anomaly Model — Training Runs
 
+**This page has three iterations. The first two, against `datasets/v2`, are
+below and still accurate as history. The third — three more models against
+`datasets/v3`/`v4`, and the finding that pooled recall was the wrong number to
+chase — is under "Iteration 3" further down, and changes the conclusion: the
+recommended next step is deterministic rules, not another model.**
+
 | | Iteration 1 (baseline) | Iteration 2 (login-regularity) |
 | --- | --- | --- |
 | **Model** | `iforest-v2-spec1` | `iforest-v2-regularity` |
@@ -274,12 +280,86 @@ has 1–2 requests and abstains from scoring, so their `scored` count is zero
 in both iterations. This is not a defect introduced here — it was already
 true of iteration 1, just not previously surfaced per-persona.
 
-## Why neither model can be deployed
+## Iteration 3: v3/v4, and the metric that was wrong
+
+Iterations 1 and 2 above are frozen history against `datasets/v2`. A v3
+dataset (`datasets/v3`, schema `v2`, 13 features) and a v4 dataset
+(`datasets/v4`, schema `v3`, 14 features — `unmatched_route_ratio` inserted,
+see [Feature Specification](anomaly-features.md)) were built next, and three
+more Isolation Forest models were fit and measured the same way (1%
+per-persona budget, threshold on validation, test read once):
+
+| Model | Dataset | Pooled operational recall | Pooled false positives |
+| --- | --- | --- | --- |
+| `v3-iforest` (baseline) | v3 | 5.6% | 0.12% |
+| `v3-iforest-regularity` (+ login-regularity, reproducing iteration 2) | v3 | **27.4%** | 0.16% |
+| `v4-iforest` (+ `unmatched_route_ratio`) | v4 | 6.4% | 0.16% |
+
+**The second row is a trap, not a win.** Pooled recall counts every
+attack-minute, and most attack-minutes are already caught or blocked by the
+gateway's own deterministic detectors — a model that re-detects those adds
+nothing. The number that matters is coverage of the minutes the gateway
+*missed entirely*: in `datasets/v4`'s test split there are 76 such
+attack-minutes (`label=1`, no detector fired, nothing blocked — 64 are
+`low_and_slow_enumeration`, 10 are the opening minutes of `slow_brute_force`).
+Measured against that honest target:
+
+| Model | Missed-minutes caught |
+| --- | --- |
+| `v3-iforest` (baseline) | **10 / 76** — all ten are `slow_brute_force` opening minutes |
+| `v3-iforest-regularity` | **0 / 76** — it only re-catches attacks the gateway had already stopped |
+| `v4-iforest` | **10 / 76** — `unmatched_route_ratio` is perfect in the data; the model cannot use it |
+
+The third row is the more durable finding. Across all 23 collection runs,
+`unmatched_route_ratio` is **0.0% for every benign persona** — including
+`dead_link_visitor`, who exists specifically to produce ordinary 404s — and
+53.6–99.9% for the three scanning/traversal attacks. The separation is exact.
+But an Isolation Forest only ever trains on benign traffic, where this column
+is a constant zero across all 8,883 training rows. A model cannot learn a
+dividing line from a column that never moves, so a scanner arriving at 0.54
+looks like nothing has changed. **This is not fixable by tuning the model**:
+the better a feature separates attackers from normal traffic, the flatter it
+is in training, and the more invisible it is to an anomaly detector trained
+only on that traffic. No threshold adjustment changes this either — the
+scanning attacks score 0% at every threshold, because the model never learned
+to use the feature at all.
+
+**The conclusion drawn from this (full analysis: `attack-detection-options.pdf`
+at the repo root) is to stop engineering features for the model and build
+deterministic rules instead**: a per-address ratio of requests to
+non-existent pages, and a per-address streak of consecutive failed-login
+minutes, together simulated at 65/76 missed-minutes caught with 0 false
+positives on 13,572 benign minutes — because both signals are exact and
+explainable, which is exactly what an Isolation Forest cannot use them for.
+The Isolation Forest's ongoing job, per that analysis, narrows to the 10
+opening minutes of a slow attack that no rule has enough history to flag yet
+— which `v3-iforest`'s baseline result above already demonstrates it does at
+10/10.
+
+**What has since shipped, and where it differs from that recommendation.**
+`internal/signals/unknown_route_scanning.go` and the `consecutive_failed_logins`
+rename of `brute_force.go` (see [Detection Signals](detection-signals.md)) are
+deterministic Go detectors covering the same ground, but by different
+mechanics than the analysis proposed: route scanning is detected by counting
+*distinct* unmatched paths in a window rather than the ratio of unmatched
+requests, and brute force still counts a streak of consecutive failed
+*requests* per login target rather than consecutive failed *minutes*. Both are
+marked advisory-only — see [Detection Signals](detection-signals.md) — so
+today they feed the control plane rather than the gateway's own blocking
+reflex, which is a stricter posture than the recommendation assumed for rules
+that "hold on new attacks." Nobody has re-run the missed-minutes measurement
+against the shipped Go detectors; the 65/76 and 75/76 figures above are the
+offline simulation's numbers, not a confirmed result of what is running today.
+
+## Deployability
+
+### v2 (iterations 1–2)
 
 `datasets/v2` is frozen under feature spec **v1** (12 features). The runtime now
-declares spec **v2** (13 features — `endpoint_method_deviation` was added). The
-artifact records its own schema honestly, so `ModelScorer` refuses to load it
-rather than feeding a model a column it was never fitted on:
+declares spec **v3** (14 features — `unmatched_route_ratio` and
+`endpoint_method_deviation` were both added since). The artifact records its
+own schema honestly, so `ModelScorer` refuses to load it rather than feeding a
+model a column it was never fitted on:
 
 ```json
 "feature_schema_version": "v1",
@@ -312,27 +392,67 @@ Deploying this model needs `ModelScorer.score()` extended to compute the same
 feature the same way — a small, well-defined piece of work, and deliberately
 not done here since it was out of scope for this pass.
 
+### v3/v4 (iteration 3)
+
+Only `v4-iforest` is loadable by the runtime **today**. Its
+`feature_schema_version` is `v3`, matching the current
+`FEATURE_SPEC_VERSION` in `control-plane/iasg/anomaly/spec.py`:
+
+```json
+"feature_schema_version": "v3",
+"runtime_schema_version": "v3",
+"runtime_loadable": true
+```
+
+`v3-iforest` and `v3-iforest-regularity` both say `"feature_schema_version":
+"v2"`, and were stamped `runtime_loadable: true` when trained — but that
+stamp is a claim about the runtime *at that moment*, not a durable one. Both
+were trained on 2026-09-09 at 12:31 UTC, roughly ten minutes before the same
+day's spec bump to v3 (`unmatched_route_ratio`, `datasets/v4` frozen at
+12:44 UTC). The runtime has since moved on, so `ModelScorer.reload()` would
+reject both today (`"v2" != "v3"`) despite what their own metadata says. A
+model's `runtime_loadable` field is only ever a snapshot of the runtime it was
+trained against — worth remembering before trusting it without checking the
+current `FEATURE_SPEC_VERSION` too.
+
+None of the three is recommended for deployment regardless of loadability.
+Section "Iteration 3" above found that the highest-recall model
+(`v3-iforest-regularity`) adds nothing on the metric that matters
+(missed-minutes caught), and that the feature engineered specifically for
+scanning (`unmatched_route_ratio`) is structurally invisible to this model
+family. `v3-iforest`'s baseline — unmodified, no engineered features — is the
+one worth keeping, and only as a second layer behind deterministic rules, per
+`attack-detection-options.pdf`.
+
 ## What to do next
 
 1. **Do not loosen the budget to make the number look better.** The pooled 1%
    figure at iteration 1 was 8.92% on one persona. The per-persona rule is the
    only reason that was visible, and it should stay the mechanism regardless of
    which model is measured against it.
-2. **Wire `login_regularity` into `ModelScorer.score()`** if this model is
-   ever deployed. The formula and repeat count are stamped in `metadata.json`
-   specifically so this is mechanical rather than a rediscovery.
-3. **`low_and_slow_enumeration` still has no working signal.** The fix here
-   targeted the login axis on purpose; enumeration needs its own feature in
-   the same spirit — something that separates a scripted path walk from
-   `dead_link_visitor`'s legitimate 404s, the way `login_regularity` separates
-   a scripted login attempt from `forgetful_user`'s honest one.
+2. **Stop engineering features for this model family.** Two independent
+   attempts (`login_regularity` reproduced on v3; `unmatched_route_ratio` on
+   v4) both confirmed the same structural limit in section "Iteration 3"
+   above — the more exact a feature is, the flatter it is in training, and the
+   less an Isolation Forest can use it. Any future engineered feature should
+   be assumed to fail the same way unless there's a specific reason to expect
+   otherwise.
+3. **Verify the shipped Go detectors against the missed-minutes measurement.**
+   `unknown_route_scanning.go` and the reworked `brute_force.go` cover the same
+   ground as the recommended rules in `attack-detection-options.pdf`, but by
+   different mechanics (distinct-path counting, not a ratio; a
+   consecutive-failed-*request* streak, not a consecutive-failed-*minute*
+   one). Nobody has re-run the 65/76 or 75/76 figures against what's actually
+   running. That's the open item, not writing new rules.
 4. **The extrapolation failure is still open.** Any `request_count` beyond the
    benign training range still collapses to one score. The deterministic
    `api_flooding` detector covers this today; a monotone, non-saturating signal
-   alongside the forest would let this layer see it too.
-5. **A v3 dataset is still required** for anything deployable at all — the
-   schema mismatch is unconditional — and separately for the admission rule
-   and run-level benign holdout the protocol specifies.
+   alongside the forest would let this layer see it too — though per the point
+   above, don't expect an engineered feature to be the fix.
+5. **If `v4-iforest` is ever deployed**, promote it to `models/current` (the
+   path `Settings.model_path` actually reads) and treat it strictly as a
+   second layer behind the deterministic detectors, not the primary defense
+   for either held-out scenario — see "Deployability" above.
 
 ## Reproducing this
 
@@ -358,8 +478,28 @@ PYTHONPATH=. .venv/bin/python -m iasg.ml.train \
 PYTHONPATH=. .venv/bin/python -m iasg.ml.evaluate \
   --dataset ../datasets/v2 --artifact ../models/v2-iforest-regularity \
   --budget 0.01 --out ../models/v2-iforest-regularity/evaluation.json
+
+# Iteration 3 -- v3 (schema v2, 13 features) baseline and login-regularity.
+PYTHONPATH=. .venv/bin/python -m iasg.ml.train \
+  --dataset ../datasets/v3 --out ../models/v3-iforest --version v3-iforest
+PYTHONPATH=. .venv/bin/python -m iasg.ml.train \
+  --dataset ../datasets/v3 --out ../models/v3-iforest-regularity \
+  --version v3-iforest-regularity --login-regularity-feature
+
+# v4 (schema v3, 14 features -- unmatched_route_ratio added). Matches the
+# current runtime spec, so no --allow-schema-mismatch is needed here.
+PYTHONPATH=. .venv/bin/python -m iasg.ml.train \
+  --dataset ../datasets/v4 --out ../models/v4-iforest --version v4-iforest
+
+PYTHONPATH=. .venv/bin/python -m iasg.ml.evaluate \
+  --dataset ../datasets/v4 --artifact ../models/v4-iforest \
+  --budget 0.01 --out ../models/v4-iforest/evaluation.json
 ```
 
 `model.joblib` is gitignored — it is exactly reproducible from the frozen
 dataset and a fixed seed. `metadata.json` and `evaluation.json` are kept,
-because they are what makes a claim about this model checkable.
+because they are what makes a claim about this model checkable. The
+missed-minutes numbers in "Iteration 3" above are a separate, offline join of
+`features.csv`/`metadata.csv`/`quality.csv` on `row_id` — not something
+`iasg.ml.evaluate` produces — documented in full in
+`attack-detection-options.pdf`.
