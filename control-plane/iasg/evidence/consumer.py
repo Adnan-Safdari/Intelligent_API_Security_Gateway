@@ -4,6 +4,15 @@ Reads evidence off the iasg:events stream.
 Uses a consumer group so restarts neither lose nor replay events. Entries are
 acked only after a cycle finishes -- acking on read would drop evidence
 whenever the agent crashed mid-cycle.
+
+A "clear campaigns" reset does not trim this stream -- raw events are kept --
+but it does write a watermark (settings.reset_watermark_key), and this
+consumer refuses to turn any entry older than that watermark into Evidence.
+Those entries are still read and acked like any other (so a crash-recovery
+replay or a consumer that fell behind can't leave them stuck pending
+forever); they're just never handed to correlation, which is what stops
+pre-reset evidence from immediately reconstituting the campaign that was
+just cleared.
 """
 
 from __future__ import annotations
@@ -53,8 +62,11 @@ class EvidenceConsumer:
         # the whole backlog on each restart.
         self._read_ids.extend(eid for eid, _ in entries)
 
+        watermark = _reset_watermark_ms(self._store, self._settings.reset_watermark_key)
         out: list[Evidence] = []
         for eid, fields in entries:
+            if watermark and _stream_id_ms(eid) < watermark:
+                continue
             out.extend(Evidence.from_stream_entry(eid, fields))
         return out
 
@@ -78,3 +90,21 @@ class EvidenceConsumer:
         # than silently forgotten.
         self._read_ids.clear()
         return acked
+
+
+def _reset_watermark_ms(store: Store, key: str) -> int:
+    raw = store.get(key)
+    try:
+        return int(raw) if raw else 0
+    except (TypeError, ValueError):
+        return 0
+
+
+def _stream_id_ms(entry_id: str) -> int:
+    """The millisecond half of a Redis stream id ("<ms>-<seq>") -- ids sort by
+    this first, so comparing it against a watermark needs no clock sync
+    between whatever produced the entry and whatever set the watermark."""
+    try:
+        return int(entry_id.split("-", 1)[0])
+    except (ValueError, IndexError):
+        return 0

@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { PageHead } from "@/app/ui/chrome";
+import { ClearCampaignsControl, PageHead } from "@/app/ui/chrome";
 import { CampaignsIcon } from "@/app/ui/icons";
-import { CampaignCard, EmptyState, ExportMenu, SegmentedControl } from "@/app/ui/parts";
+import { CampaignCard, EmptyState, ExportMenu, IpFilterField, SegmentedControl } from "@/app/ui/parts";
 import { CAMPAIGN_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -20,12 +20,14 @@ export default function CampaignsPage() {
   const [sort, setSort] = useState("confidence");
   const [compact, setCompact] = useState(false);
   const [selected, setSelected] = useState([]);
+  const [ip, setIp] = useState("");
 
   const shown = useMemo(() => {
-    const filtered =
+    let filtered =
       status === "all" ? campaigns : campaigns.filter((c) => c.status === status);
+    if (ip) filtered = filtered.filter((c) => c.ips.includes(ip));
     return [...filtered].sort(SORTS[sort]);
-  }, [campaigns, status, sort]);
+  }, [campaigns, status, sort, ip]);
 
   const counts = {
     all: campaigns.length,
@@ -86,9 +88,13 @@ export default function CampaignsPage() {
           Compact
         </label>
 
+        <IpFilterField value={ip} onChange={setIp} placeholder="Only this IP…" />
+
         <span className="grow" />
 
         <ExportMenu rows={shown} columns={CAMPAIGN_COLUMNS} prefix="campaigns" />
+
+        <ClearCampaignsControl className="act" />
 
         {selected.length ? (
           <div className="bulk">

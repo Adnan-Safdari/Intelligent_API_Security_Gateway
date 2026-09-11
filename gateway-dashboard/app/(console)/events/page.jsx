@@ -1,10 +1,10 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PageHead } from "@/app/ui/chrome";
-import { matchesEvent, signalMeta, SIGNAL_OPTIONS } from "@/app/ui/format";
-import { EventTable, ExportMenu, Loading, SegmentedControl } from "@/app/ui/parts";
+import { isValidIp, matchesEvent, signalMeta, SIGNAL_OPTIONS } from "@/app/ui/format";
+import { EventTable, ExportMenu, IpFilterField, Loading, SegmentedControl } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -25,6 +25,8 @@ const RANGES = [
 function EventsView() {
   const { busy, instruct, paused, setPaused, sources } = useLive();
   const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
 
   // Reuses the same geo lookups the map already paid for -- Overview's poll
   // only geocodes the sources currently visible there, so a row outside that
@@ -40,6 +42,7 @@ function EventsView() {
 
   const [query, setQuery] = useState(params.get("q") || "");
   const [alertsOnly, setAlertsOnly] = useState(params.get("alerts") === "1");
+  const [ip, setIp] = useState(params.get("ip") || "");
   const [limit, setLimit] = useState(250);
   const [rangeMs, setRangeMs] = useState(0);
   const [frozen, setFrozen] = useState(false);
@@ -54,13 +57,33 @@ function EventsView() {
   useEffect(() => {
     setQuery(params.get("q") || "");
     setAlertsOnly(params.get("alerts") === "1");
+    setIp(params.get("ip") || "");
   }, [params]);
+
+  // Filters live in the URL, not just component state -- refreshing, sharing
+  // a link, or using the browser's back button (after following a row to an
+  // IP's own page) all have to land back on the same filtered view. Only a
+  // valid ip is written: an in-progress, not-yet-valid keystroke shouldn't
+  // spam history or query the server with garbage.
+  useEffect(() => {
+    const next = new URLSearchParams();
+    if (query) next.set("q", query);
+    if (alertsOnly) next.set("alerts", "1");
+    if (ip && isValidIp(ip)) next.set("ip", ip);
+    const search = next.toString();
+    router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, alertsOnly, ip]);
+
+  const effectiveIp = ip && isValidIp(ip) ? ip : "";
 
   const load = useCallback(
     async (size) => {
       setLoading(true);
       try {
-        const res = await fetch(`/api/events?limit=${size}`, { cache: "no-store" });
+        const qs = new URLSearchParams({ limit: String(size) });
+        if (effectiveIp) qs.set("ip", effectiveIp);
+        const res = await fetch(`/api/events?${qs}`, { cache: "no-store" });
         const data = await res.json();
         setRows(data.events || []);
         setCursor(data.cursor || null);
@@ -72,16 +95,16 @@ function EventsView() {
         setLoading(false);
       }
     },
-    [],
+    [effectiveIp],
   );
 
   const loadOlder = useCallback(async () => {
     if (!cursor) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/events?limit=${limit}&before=${encodeURIComponent(cursor)}`, {
-        cache: "no-store",
-      });
+      const qs = new URLSearchParams({ limit: String(limit), before: cursor });
+      if (effectiveIp) qs.set("ip", effectiveIp);
+      const res = await fetch(`/api/events?${qs}`, { cache: "no-store" });
       const data = await res.json();
       setRows((prev) => [...prev, ...(data.events || [])]);
       setCursor(data.cursor || null);
@@ -91,7 +114,7 @@ function EventsView() {
     } finally {
       setLoading(false);
     }
-  }, [cursor, limit]);
+  }, [cursor, limit, effectiveIp]);
 
   useEffect(() => {
     load(limit);
@@ -113,11 +136,16 @@ function EventsView() {
   const shown = useMemo(() => {
     const floor = rangeMs ? Date.now() - rangeMs : 0;
     return rows.filter((e) => {
+      // Defensive, not the source of truth: /api/events already filtered by
+      // ip server-side. This just keeps the table from flashing the previous
+      // filter's rows for the moment between changing it and the new fetch
+      // landing.
+      if (effectiveIp && e.ip !== effectiveIp) return false;
       if (alertsOnly && !e.fired?.length) return false;
       if (floor && new Date(e.ts).getTime() < floor) return false;
       return matchesEvent(e, query);
     });
-  }, [rows, query, alertsOnly, rangeMs]);
+  }, [rows, query, alertsOnly, rangeMs, effectiveIp]);
 
   const ips = useMemo(() => [...new Set(shown.map((e) => e.ip).filter(Boolean))], [shown]);
 
@@ -127,7 +155,7 @@ function EventsView() {
     return Object.entries(counts).sort((a, b) => b[1] - a[1]);
   }, [shown]);
 
-  const filtered = query || alertsOnly || rangeMs;
+  const filtered = query || alertsOnly || rangeMs || ip;
 
   return (
     <>
@@ -156,10 +184,11 @@ function EventsView() {
         <input
           type="search"
           className="search wide"
-          placeholder="Filter by IP, path, method, user agent or signal…"
+          placeholder="Filter by path, method, user agent or signal…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <IpFilterField value={ip} onChange={setIp} />
         <select
           value={SIGNAL_OPTIONS.includes(query) ? query : ""}
           onChange={(e) => setQuery(e.target.value)}
@@ -187,9 +216,10 @@ function EventsView() {
               setQuery("");
               setAlertsOnly(false);
               setRangeMs(0);
+              setIp("");
             }}
           >
-            clear
+            clear filters
           </button>
         ) : null}
         <span className="grow" />

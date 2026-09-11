@@ -7,8 +7,11 @@ import {
   ACTION_TONE,
   LADDER,
   actionLabel,
+  canonicalSignals,
   clampRiskScore,
   formatTime,
+  isValidIp,
+  modelStatusLabel,
   riskTone,
   signalMeta,
 } from "./format";
@@ -105,6 +108,65 @@ export function ActionRow({ ips, current, busyKey, busy, onInstruct, label = "Ov
         </button>
       ))}
     </div>
+  );
+}
+
+/**
+ * The same five fields for every policy type -- a recommendation on Adaptive,
+ * an active policy here or on an IP's own page. Everything but `explanation`
+ * is optional: a caller that already has clean top-level fields (Policy, IP
+ * detail -- see lib/plane.js's readPolicies) passes them directly; a caller
+ * that only has the raw explanation blob (Adaptive's recommendation rows,
+ * sourced from Postgres) falls back to reading it out of `explanation.ml`/
+ * `explanation.final`, which carries the same data because both are built
+ * from one PolicyDecision.
+ *
+ * The point of the fallback chain: risk score, policy confidence, and model
+ * score are three different numbers that must never collapse into one label.
+ * A signature match (SQLi, path traversal) can score 100 on risk with no
+ * model involved at all -- that is not the same thing as "the model scored
+ * this 100", and showing one where the other belongs is exactly the bug this
+ * exists to prevent.
+ */
+export function DecisionExplanation({
+  explanation = {},
+  riskScore,
+  confidence,
+  modelScore,
+  modelStatus,
+  modelVersion,
+}) {
+  const baseline = explanation.baseline || {};
+  const ml = explanation.ml || {};
+  const final = explanation.final || {};
+  const risk = riskScore ?? final.risk_score;
+  const conf = confidence ?? final.confidence;
+  const score = modelScore !== undefined ? modelScore : ml.anomaly_score;
+  const status = modelStatus !== undefined ? modelStatus : ml.reason;
+  const version = modelVersion ?? ml.model_version;
+
+  return (
+    <details className="decision-explanation">
+      <summary>Inspect scoring</summary>
+      <p>
+        Risk score {risk ?? "—"}/100. Policy confidence {conf ?? "—"}.
+      </p>
+      <p>
+        Model score:{" "}
+        {score != null
+          ? `${score} (${version || "unversioned model"})`
+          : modelStatusLabel(status)}
+        . This is advisory and is never policy confidence.
+      </p>
+      {baseline.threshold != null || baseline.observed != null ? (
+        <p>
+          Baseline {baseline.baseline_ready ? "ready" : "not ready"}: observed{" "}
+          {baseline.observed ?? "—"}, threshold {baseline.threshold ?? "—"}, deviation{" "}
+          {baseline.deviation ?? "—"}.
+        </p>
+      ) : null}
+      {(final.guardrails || []).length ? <p>{final.guardrails.join("; ")}</p> : null}
+    </details>
   );
 }
 
@@ -257,6 +319,45 @@ export function SegmentedControl({ options, value, onChange }) {
         </button>
       ))}
     </span>
+  );
+}
+
+/**
+ * One exact-IP filter, shared by Events (server-side, paged) and Campaigns/
+ * Policy (client-side, over whatever useLive() already has in memory) --
+ * same input, same "invalid" state, same Clear affordance, so filtering
+ * behaves identically wherever it appears. The caller owns the value (so it
+ * can sync it to a URL query param, as Events does) and decides what
+ * "matches" means for its own rows; this only validates shape and renders.
+ */
+export function IpFilterField({ value, onChange, placeholder = "Filter by IP…" }) {
+  const invalid = value && !isValidIp(value);
+  return (
+    <div className={invalid ? "ip-filter invalid" : "ip-filter"}>
+      <input
+        type="text"
+        inputMode="text"
+        autoComplete="off"
+        spellCheck={false}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-invalid={invalid || undefined}
+        aria-label="Filter by IP address"
+      />
+      {value ? (
+        <button
+          type="button"
+          className="ip-filter-clear"
+          onClick={() => onChange("")}
+          title="Clear filter"
+          aria-label="Clear IP filter"
+        >
+          ×
+        </button>
+      ) : null}
+      {invalid ? <small className="ip-filter-error">Not a valid IP address</small> : null}
+    </div>
   );
 }
 
@@ -476,7 +577,7 @@ export function EventTable({ events, empty, showSerialNumber = false, showGeo = 
                       {(event.fired || []).length === 0 ? (
                         <span className="faint">—</span>
                       ) : (
-                        event.fired.map((name) => {
+                        canonicalSignals(event.fired).map((name) => {
                           const meta = signalMeta(name);
                           return (
                             <span

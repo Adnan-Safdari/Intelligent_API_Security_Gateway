@@ -68,13 +68,14 @@ class ModelScorer:
 
     def score(self, row: WindowRow) -> AnomalyObservation:
         if self._bundle is None:
-            return AnomalyObservation(available=False)
+            return AnomalyObservation(available=False, reason="model_unavailable")
         if row.quality.insufficient_history:
             return AnomalyObservation(
                 available=True,
                 score=None,
                 model_version=str(self._metadata.get("model_version") or ""),
                 feature_schema_version=FEATURE_SPEC_VERSION,
+                reason="insufficient_history",
             )
         medians = self._bundle["medians"]
         vector = [
@@ -108,4 +109,5 @@ class ModelScorer:
             score=round(score, 6),
             model_version=str(self._metadata.get("model_version") or ""),
             feature_schema_version=FEATURE_SPEC_VERSION,
+            reason="scored",
         )

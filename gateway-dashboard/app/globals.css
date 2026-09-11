@@ -42,13 +42,13 @@
   --shadow-md: 0 -1px 0 rgba(255, 255, 255, 0.08), 0 20px 44px rgba(0, 0, 0, 0.62);
 
   /* Signal-type colors, one per detector, moved from format.js's SIGNAL_META
-     so both themes get real light-mode contrast rather than the same eight
+     so both themes get real light-mode contrast rather than the same six
      hexes doing service against a near-white background they were never
      tuned against. Hue is shared with light below; only lightness/saturation
-     differ. --sig-spray now colors "Route scan" (unknown_route_scanning) --
-     the token name is stale (password_spraying isn't a real gateway signal,
-     see the note in format.js) but renaming it isn't worth the churn for a
-     CSS variable nothing reads the name of. */
+     differ. --sig-spray now colors "Unknown-route scanning" -- the token
+     name is stale (password_spraying isn't a real gateway signal, see the
+     note in format.js) but renaming it isn't worth the churn for a CSS
+     variable nothing reads the name of. */
   --sig-flood: #35a7ff;
   --sig-sqli: #ff5d8f;
   --sig-brute: #ffab3d;
@@ -556,6 +556,49 @@ main > * + * {
   font-size: 10px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+.ip-filter {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.ip-filter input {
+  width: 168px;
+  padding: 6px 26px 6px 10px;
+  font-size: 12px;
+}
+.ip-filter.invalid input {
+  border-color: var(--bad);
+}
+.ip-filter-clear {
+  position: absolute;
+  right: 6px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px;
+}
+.ip-filter-clear:hover {
+  color: var(--text);
+}
+.ip-filter-error {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+  color: var(--bad);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .ip-filter input {
+    width: 100%;
+  }
 }
 
 .field,
@@ -2422,6 +2465,26 @@ tbody tr:hover td {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
+}
+
+/* Boot-time server wiring, reported not edited -- same card shell as the
+   editable ones so it doesn't read as a broken/missing section, but no
+   inputs, so nothing here can be mistaken for a live control. */
+.readonly-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+}
+.readonly-fields dt {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.readonly-fields dd {
+  margin: 2px 0 0;
+  font-size: 13px;
 }
 
 /* Adaptive starts with the enforcement boundary. Tuning comes later so the

@@ -380,6 +380,16 @@ class PolicyDecision:
     baseline_version: str = ""
     config_version: int = 1
     model_version: str = ""
+    # The anomaly model's own contribution, kept separate from risk_score
+    # (the blended total) and confidence (the ladder-selection number) so a
+    # dashboard never has to guess which one is "the model score" -- it is
+    # this field or none. None means the model did not contribute a number;
+    # model_status says why (see AnomalyObservation.reason in adaptive/risk.py:
+    # "scored", "insufficient_history", "no_window_observed",
+    # "model_unavailable", or "" for a decision that never asked at all --
+    # e.g. a plain human override).
+    model_score: float | None = None
+    model_status: str = ""
     supersedes_policy_id: str = ""
 
     @property
@@ -422,6 +432,10 @@ class PolicyDecision:
             "baseline_version": self.baseline_version,
             "config_version": self.config_version,
             "model_version": self.model_version,
+            "model_score": (
+                round(self.model_score, 6) if self.model_score is not None else None
+            ),
+            "model_status": self.model_status,
             "supersedes_policy_id": self.supersedes_policy_id or None,
         }
 
@@ -486,5 +500,9 @@ class PolicyDecision:
             baseline_version=str(value.get("baseline_version") or ""),
             config_version=int(value.get("config_version") or 1),
             model_version=str(value.get("model_version") or ""),
+            model_score=(
+                float(value["model_score"]) if value.get("model_score") is not None else None
+            ),
+            model_status=str(value.get("model_status") or ""),
             supersedes_policy_id=str(value.get("supersedes_policy_id") or ""),
         )

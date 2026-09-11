@@ -233,6 +233,49 @@ def test_ack_twice_does_not_double_count():
     assert c.ack(evidence) == 0, "already-acked entries were acked again"
 
 
+# A "clear campaigns" reset writes a watermark rather than trimming the
+# stream -- raw evidence is kept, but nothing older than the reset may ever
+# become Evidence again, or clearing would immediately be undone by whatever
+# was still sitting in the stream.
+def test_evidence_before_the_reset_watermark_is_acked_but_not_correlated():
+    store = MemoryStore()
+    e = Evidence(
+        timestamp=BASE, ip="203.0.113.9", endpoint="/api/login",
+        detector="bruteforce", severity="high", user_agent="curl/8.4",
+    )
+    pre_reset_id = store.append("iasg:events", e.to_stream_fields())
+    watermark_ms = int(pre_reset_id.split("-", 1)[0]) + 1
+    store.set(settings().reset_watermark_key, str(watermark_ms))
+
+    c = consumer(store)
+    evidence = c.fetch()
+
+    assert evidence == [], "evidence older than the reset watermark was correlated"
+    # Read and ackable like any other entry -- a reset must not leave it
+    # pending forever, or read_pending would keep re-delivering it.
+    assert c.ack([]) == 1, "pre-reset entry was left pending instead of acked"
+
+
+def test_evidence_at_or_after_the_reset_watermark_is_still_correlated():
+    store = MemoryStore()
+    store.set(settings().reset_watermark_key, "0")
+    seed(store, 1)
+
+    evidence = consumer(store).fetch()
+
+    assert len(evidence) == 1, "evidence at/after the watermark was wrongly dropped"
+
+
+def test_a_malformed_watermark_value_filters_nothing():
+    store = MemoryStore()
+    store.set(settings().reset_watermark_key, "not-a-number")
+    seed(store, 1)
+
+    evidence = consumer(store).fetch()
+
+    assert len(evidence) == 1, "a broken watermark should fail open, not swallow evidence"
+
+
 def test_group_is_created_on_construction():
     store = MemoryStore()
     consumer(store, evidence_stream="brand_new_stream")

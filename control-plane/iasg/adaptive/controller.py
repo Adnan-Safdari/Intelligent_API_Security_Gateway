@@ -129,7 +129,11 @@ class AdaptiveController:
         for ip in campaign.ips:
             assessment = self._windows.get(ip)
             context = assessment.most_deviant if assessment else None
-            anomaly = assessment.anomaly if assessment else AnomalyObservation()
+            # Distinct from the scorer's own "model_unavailable"/
+            # "insufficient_history" -- this ip has no completed rate window
+            # at all yet (e.g. its first-ever request just tripped a
+            # signature detector), so the model was never even asked.
+            anomaly = assessment.anomaly if assessment else AnomalyObservation(reason="no_window_observed")
             relevant = [row for row in evidence if row.ip == ip]
             result = calculate_risk(
                 self.config,
@@ -207,6 +211,8 @@ class AdaptiveController:
             baseline_version=baseline_version,
             config_version=self.config.version,
             model_version=anomaly.model_version,
+            model_score=anomaly.score,
+            model_status=anomaly.reason,
         )
 
 

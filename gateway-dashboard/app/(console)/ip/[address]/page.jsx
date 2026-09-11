@@ -6,7 +6,7 @@ import { PageHead } from "@/app/ui/chrome";
 import {
   ACTION_TONE, actionLabel, clampRiskScore, formatTime, formatTtl, signalMeta,
 } from "@/app/ui/format";
-import { ActionRow, CampaignCard, EventTable, ExportMenu, Loading } from "@/app/ui/parts";
+import { ActionRow, CampaignCard, DecisionExplanation, EventTable, ExportMenu, Loading } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -125,6 +125,14 @@ export default function IpPage({ params }) {
                 <span>{policy.source === "human" ? "set by a human" : "set by the agent"}</span>
                 <span>confidence {policy.confidence.toFixed(2)}</span>
               </div>
+              <DecisionExplanation
+                explanation={policy.explanation}
+                riskScore={policy.riskScore}
+                confidence={policy.confidence}
+                modelScore={policy.modelScore}
+                modelStatus={policy.modelStatus}
+                modelVersion={policy.modelVersion}
+              />
             </article>
           ) : null}
 

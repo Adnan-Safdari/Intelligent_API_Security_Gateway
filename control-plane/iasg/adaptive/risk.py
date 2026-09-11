@@ -23,6 +23,10 @@ class AnomalyObservation:
     score: float | None = None
     model_version: str = ""
     feature_schema_version: str = ""
+    # Precise cause when score is None, so a decision can say why the model
+    # didn't contribute instead of leaving it blank. "" only for the default
+    # instance built before any window/model lookup runs.
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -142,6 +146,7 @@ def calculate_risk(
             "anomaly_score": anomaly.score,
             "model_version": anomaly.model_version,
             "feature_schema_version": anomaly.feature_schema_version,
+            "reason": anomaly.reason,
             "note": "anomaly score is advisory and is not policy confidence",
         },
         "components": {

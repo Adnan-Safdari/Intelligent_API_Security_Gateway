@@ -60,6 +60,15 @@ const REDIS_STREAMS = [
 // Fixed live keys the gateway writes. Plain values, safe to delete outright.
 const REDIS_KEYS = ["iasg:stats", "iasg:attackers"];
 
+// Set before the streams are trimmed below, for the same reason
+// clear-campaigns sets it first: a control-plane cycle already mid-flight
+// when this runs could still write a campaign from evidence it read a
+// moment ago. Trimming iasg:events already removes that evidence for future
+// cycles, but the watermark closes the same narrow window belt-and-suspenders
+// -- see control-plane's EvidenceConsumer, which refuses to correlate
+// anything with a stream id older than this.
+const RESET_WATERMARK_KEY = process.env.IASG_RESET_WATERMARK_KEY || "iasg:reset_at";
+
 // Key families to sweep. campaign:* includes the campaign:next_id counter, so
 // numbering restarts with the Postgres sequence.
 const REDIS_PATTERNS = ["campaign:*", "feedback:*", "iasg:ip:*"];
@@ -100,6 +109,8 @@ async function clearRedis() {
   }
 
   try {
+    await redis.set(RESET_WATERMARK_KEY, String(Date.now()));
+
     // Empty the streams without dropping their consumer groups.
     let trimmed = 0;
     for (const stream of REDIS_STREAMS) {

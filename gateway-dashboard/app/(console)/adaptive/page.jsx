@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
 import { actionLabel, formatTime, formatTtl } from "@/app/ui/format";
-import { Field } from "@/app/ui/parts";
+import { DecisionExplanation, Field } from "@/app/ui/parts";
 import { MODE_OPTIONS, effectiveModeText, modeCopy } from "@/lib/adaptive-mode.mjs";
 
 const ACTIONS = ["monitor", "throttle", "temp_block"];
@@ -216,7 +216,7 @@ export default function AdaptivePage() {
                       <small className="scope-line">
                         {row.method} {row.routeTemplate}
                       </small>
-                      <DecisionExplanation value={row.explanation} />
+                      <DecisionExplanation explanation={row.explanation} riskScore={row.riskScore} confidence={row.confidence} />
                     </td>
                     <td>{row.riskScore.toFixed(1)}</td>
                     <td>{row.confidence.toFixed(3)}</td>
@@ -294,7 +294,7 @@ export default function AdaptivePage() {
                       {formatTtl(row.expiresIn)} · {row.method} {row.routeTemplate}
                     </small>
                   </div>
-                  <DecisionExplanation value={row.explanation} />
+                  <DecisionExplanation explanation={row.explanation} riskScore={row.riskScore} confidence={row.confidence} />
                 </li>
               ))
             ) : (
@@ -640,24 +640,3 @@ function splitRanges(value) {
     .filter(Boolean);
 }
 
-function DecisionExplanation({ value = {} }) {
-  const baseline = value.baseline || {};
-  const ml = value.ml || {};
-  const final = value.final || {};
-  return (
-    <details className="decision-explanation">
-      <summary>Inspect explanation</summary>
-      <p>
-        Risk {final.risk_score ?? "—"}/100; policy confidence {final.confidence ?? "—"}.
-        Baseline {baseline.baseline_ready ? "ready" : "not ready"}: observed{" "}
-        {baseline.observed ?? "—"}, threshold {baseline.threshold ?? "—"}, deviation{" "}
-        {baseline.deviation ?? "—"}.
-      </p>
-      <p>
-        Advisory anomaly score: {ml.anomaly_score ?? "unavailable"} ({ml.model_version || "no model"}).
-        This is not policy confidence.
-      </p>
-      <p>{(final.guardrails || []).join("; ")}</p>
-    </details>
-  );
-}

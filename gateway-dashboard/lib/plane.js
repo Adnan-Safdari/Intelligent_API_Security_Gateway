@@ -116,6 +116,15 @@ export async function readPolicies(redis) {
         baselineVersion: decision.baseline_version || "",
         configVersion: Number(decision.config_version || 0),
         modelVersion: decision.model_version || "",
+        // null means the anomaly model did not contribute a number to this
+        // decision -- modelStatus says why ("scored" when it's non-null,
+        // otherwise "insufficient_history"/"no_window_observed"/
+        // "model_unavailable", or "" for a decision that predates this field
+        // or never asked, e.g. a plain human override). Kept separate from
+        // riskScore/confidence above so a UI never has to guess which number
+        // is "the model's".
+        modelScore: decision.model_score ?? null,
+        modelStatus: decision.model_status || "",
         explanation: decision.explanation || {},
         // What Redis says is left, not what was originally asked for -- the
         // difference is the point of a policy that expires by itself.

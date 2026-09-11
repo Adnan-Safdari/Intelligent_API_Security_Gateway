@@ -16,7 +16,7 @@ import { useLive } from "@/app/ui/store";
 const SIGNALS = [
   { name: "api_flooding", label: "API flooding" },
   { name: "sql_injection", label: "SQL injection" },
-  { name: "path_traversal", label: "Path traversal" },
+  { name: "enumeration_path_traversal", label: "Path traversal & enumeration" },
   { name: "ip_reputation", label: "Known bad address" },
 ];
 
@@ -26,6 +26,9 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(null); // what the gateway reports
   const [draft, setDraft] = useState(null); // what the form holds
   const [source, setSource] = useState("file");
+  // Boot-time server wiring the GET response reports for visibility but never
+  // accepts back -- never belongs in draft, never gets POSTed.
+  const [readOnly, setReadOnly] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(null); // "apply" | "revert" | null
@@ -42,6 +45,7 @@ export default function SettingsPage() {
       setError(null);
       setSaved(data.settings);
       setSource(data.source);
+      setReadOnly(data.readOnly || null);
       return data.settings;
     } catch (err) {
       setError(`could not reach the server: ${err.message}`);
@@ -416,6 +420,40 @@ export default function SettingsPage() {
             hint="How long a throttled caller is held before being served."
           />
         </Card>
+
+        {readOnly?.adaptive_rate_limit ? (
+          <Card
+            title="Rate-limit wiring"
+            note="Set at boot, from the config file. Changing any of this means restarting the gateway."
+          >
+            <dl className="readonly-fields">
+              <div>
+                <dt>Fallback rate limit</dt>
+                <dd className="mono">{readOnly.adaptive_rate_limit.fallback_requests_per_minute} req/min</dd>
+              </div>
+              <div>
+                <dt>Burst allowance</dt>
+                <dd className="mono">{readOnly.adaptive_rate_limit.burst}</dd>
+              </div>
+              <div>
+                <dt>Redis timeout</dt>
+                <dd className="mono">{readOnly.adaptive_rate_limit.redis_timeout}</dd>
+              </div>
+              <div>
+                <dt>Policy refresh timeout</dt>
+                <dd className="mono">{readOnly.adaptive_rate_limit.policy_refresh_timeout}</dd>
+              </div>
+              <div>
+                <dt>Failure backoff</dt>
+                <dd className="mono">{readOnly.adaptive_rate_limit.failure_backoff}</dd>
+              </div>
+              <div>
+                <dt>Cache max age</dt>
+                <dd className="mono">{readOnly.adaptive_rate_limit.cache_max_age}</dd>
+              </div>
+            </dl>
+          </Card>
+        ) : null}
       </section>
 
       {confirming ? (

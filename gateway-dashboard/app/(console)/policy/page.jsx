@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { PageHead } from "@/app/ui/chrome";
-import { ACTION_TONE, LADDER, actionLabel, formatTtl } from "@/app/ui/format";
+import { ACTION_TONE, LADDER, actionLabel, formatTtl, normalizeAction } from "@/app/ui/format";
 import { useLive } from "@/app/ui/store";
-import { ExportMenu, Metric } from "@/app/ui/parts";
+import { DecisionExplanation, ExportMenu, IpFilterField, Metric } from "@/app/ui/parts";
 import { POLICY_COLUMNS } from "@/app/ui/export";
 import Link from "next/link";
 
@@ -16,10 +16,13 @@ export default function PolicyPage() {
   const [action, setAction] = useState("temp_block");
   const [reason, setReason] = useState("");
   const [sort, setSort] = useState("expiry");
+  // Separate from `ip` above, which is the target address for the "instruct
+  // the agent" form below -- this one filters the in-force table itself.
+  const [filterIp, setFilterIp] = useState("");
 
-  const rows = [...policies].sort((a, b) =>
-    sort === "expiry" ? a.expiresIn - b.expiresIn : b.confidence - a.confidence,
-  );
+  const rows = [...policies]
+    .filter((p) => !filterIp || p.ip === filterIp)
+    .sort((a, b) => (sort === "expiry" ? a.expiresIn - b.expiresIn : b.confidence - a.confidence));
 
   const blocked = policies.filter(
     (p) => p.action === "temp_block" || p.action === "temporary_block",
@@ -72,6 +75,7 @@ export default function PolicyPage() {
             <h2>In force</h2>
             <ExportMenu rows={rows} columns={POLICY_COLUMNS} prefix="policy" />
             <div className="head-controls">
+              <IpFilterField value={filterIp} onChange={setFilterIp} placeholder="Only this IP…" />
               <label className="field">
                 Sort
                 <select value={sort} onChange={(e) => setSort(e.target.value)}>
@@ -79,13 +83,17 @@ export default function PolicyPage() {
                   <option value="confidence">confidence</option>
                 </select>
               </label>
-              <span className="count">{policies.length}</span>
+              <span className="count">
+                {filterIp ? `${rows.length}/${policies.length}` : policies.length}
+              </span>
             </div>
           </div>
 
           {rows.length === 0 ? (
             <p className="empty">
-              No policy keys written. The gateway is observing but not enforcing.
+              {filterIp
+                ? `No active policy for ${filterIp}.`
+                : "No policy keys written. The gateway is observing but not enforcing."}
             </p>
           ) : (
             <div className="table-wrap">
@@ -116,6 +124,14 @@ export default function PolicyPage() {
                         {p.method && p.routeTemplate
                           ? `${p.method} ${p.routeTemplate}`
                           : p.reason || "Any request"}
+                        <DecisionExplanation
+                          explanation={p.explanation}
+                          riskScore={p.riskScore}
+                          confidence={p.confidence}
+                          modelScore={p.modelScore}
+                          modelStatus={p.modelStatus}
+                          modelVersion={p.modelVersion}
+                        />
                       </td>
                       <td>
                         <span className={`risk ${ACTION_TONE[p.action] || "low"}`}>
@@ -144,7 +160,7 @@ export default function PolicyPage() {
                               changing to {actionLabel(pendingPolicyActions[p.ip])}…
                             </span>
                           ) : (
-                            LADDER.filter((a) => a !== p.action).map((a) => (
+                            LADDER.filter((a) => a !== normalizeAction(p.action)).map((a) => (
                               <button
                                 key={a}
                                 type="button"

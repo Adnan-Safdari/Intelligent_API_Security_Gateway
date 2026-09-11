@@ -62,10 +62,10 @@ const DETECTORS = [
     blockName: null,
   },
   {
-    // Just the base id: the gateway appends it to every firing request's
-    // fired[] alongside a more specific one (path_traversal / enumeration /
-    // the compound "path_traversal+enumeration") -- summing all four would
-    // count one match as up to two.
+    // The gateway now only ever emits this base id (gateway/internal/signals/
+    // collector.go used to also append a more specific attack-type string --
+    // path_traversal / enumeration / the compound -- which would have
+    // double-counted one match as two here).
     signalKeys: ["enumeration_path_traversal"],
     name: "Path traversal & enumeration",
     rule: "traversal signatures + sequential identifier walk",
@@ -73,7 +73,12 @@ const DETECTORS = [
     scope: "All routes",
     window: "per request",
     threshold: () => "pattern match",
-    blockName: "path_traversal",
+    // Must match block.signals' actual vocabulary (api/settings/route.js's
+    // KNOWN_SIGNALS) -- the gateway's reflex matches on ev.Signal, which for
+    // this detector is always this same base id, never the attack-type
+    // string. "path_traversal" here would have been a switch that ticked on
+    // and silently blocked nothing.
+    blockName: "enumeration_path_traversal",
   },
   {
     signalKeys: ["ip_reputation"],

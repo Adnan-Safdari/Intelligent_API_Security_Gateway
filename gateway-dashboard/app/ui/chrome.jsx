@@ -338,6 +338,135 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
   );
 }
 
+/**
+ * Clear campaigns -- narrower than Reset console above: only the agent's
+ * groupings (campaigns + the feedback learned from them), never raw events
+ * and never active policy. See app/api/admin/clear-campaigns for exactly
+ * what is and is not touched, and why clearing here can't be undone by
+ * whatever evidence the control plane was mid-cycle on when this runs.
+ */
+export function ClearCampaignsControl({ className = "icon-btn", label = "Clear campaigns" }) {
+  const { refresh, refreshHistory, setToast } = useLive();
+  const [open, setOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    function escape(event) {
+      if (event.key === "Escape" && !busy) close();
+    }
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, [open, busy]);
+
+  function close() {
+    setOpen(false);
+    setConfirm("");
+  }
+
+  async function run() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/clear-campaigns", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "clear" }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        setToast({ tone: "bad", text: `clear failed: ${data.error || res.status}` });
+        return;
+      }
+      setToast({
+        tone: "good",
+        text:
+          `cleared ${data.cleared} record(s) — ${data.campaigns} campaign(s), ` +
+          `${data.feedback} feedback entr${data.feedback === 1 ? "y" : "ies"}. ` +
+          "Events and active policy are untouched.",
+      });
+      close();
+      // History reads Postgres on its own slower cadence -- refresh both
+      // lanes now so this doesn't leave cleared campaigns visible until the
+      // next 30-second history poll.
+      await Promise.all([refresh(), refreshHistory()]);
+    } catch (err) {
+      setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        className={className}
+        onClick={() => setOpen(true)}
+        disabled={busy}
+        title="Clear campaigns -- keeps raw events and active policy"
+      >
+        {label}
+      </button>
+
+      {open && typeof document !== "undefined"
+        ? createPortal(
+        <div className="modal-overlay" onMouseDown={() => !busy && close()}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="clear-campaigns-dialog-title"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h2 id="clear-campaigns-dialog-title">Clear campaigns?</h2>
+            <p>
+              Deletes every campaign and the feedback learned from them, in Postgres
+              and Redis. Campaigns rebuild from new evidence as the control plane
+              keeps running.
+            </p>
+            <p className="modal-note">
+              Raw events on the Events page and active policy on the Policy page are
+              not touched. A policy that named a cleared campaign keeps enforcing;
+              its campaign link just won't resolve to anything anymore.
+            </p>
+            <p className="modal-note">This cannot be undone.</p>
+            <label className="modal-label">
+              Type <b>clear</b> to confirm
+              <input
+                type="text"
+                value={confirm}
+                autoFocus
+                disabled={busy}
+                onChange={(e) => setConfirm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && confirm === "clear" && !busy) run();
+                }}
+                placeholder="clear"
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="act" onClick={close} disabled={busy}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="act danger"
+                onClick={run}
+                disabled={busy || confirm !== "clear"}
+              >
+                {busy ? "Clearing…" : "Clear campaigns"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+        : null}
+    </>
+  );
+}
+
 export function PageHead({ title, eyebrow, actions, children }) {
   return (
     <div className="page-head">

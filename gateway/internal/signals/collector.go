@@ -61,10 +61,14 @@ func summarize(evs []Evidence) Snapshot {
 	for _, ev := range evs {
 		snap.TotalScore += ev.Score
 		if ev.ThresholdCross {
+			// One canonical id per detector, even when AttackType carries a
+			// more specific label (enumeration_path_traversal.go sets it to
+			// "path_traversal"/"enumeration"/the compound). That detail
+			// still travels on this same Evidence in the Signals array
+			// (evidence.go's AttackType field) for anything that wants it --
+			// duplicating it into Fired only produced a second, detail-less
+			// event downstream for one detector.
 			snap.Fired = append(snap.Fired, ev.Signal)
-			if ev.AttackType != "" && ev.AttackType != ev.Signal {
-				snap.Fired = append(snap.Fired, ev.AttackType)
-			}
 		}
 	}
 	// Individual signals contribute on a 0-100 scale, but several can fire on

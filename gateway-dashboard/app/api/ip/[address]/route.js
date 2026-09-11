@@ -3,6 +3,7 @@ import { require as requireRole } from "@/lib/auth";
 import { isPrivateIP, lookupGeo } from "@/lib/geo";
 import { parseEventMessage } from "@/lib/telemetry";
 import { readCampaigns, readPolicyFor } from "@/lib/plane";
+import { canonicalSignals } from "@/app/ui/format";
 
 export const dynamic = "force-dynamic";
 
@@ -56,7 +57,9 @@ export async function GET(request, { params }) {
     let alerts = 0;
 
     for (const event of events) {
-      for (const name of event.fired || []) signals[name] = (signals[name] || 0) + 1;
+      // Deduped so a historical event recorded before the traversal/enumeration
+      // detector was consolidated to one signal id doesn't tally itself twice.
+      for (const name of canonicalSignals(event.fired)) signals[name] = (signals[name] || 0) + 1;
       if (event.fired?.length) alerts += 1;
       if (event.path) paths[event.path] = (paths[event.path] || 0) + 1;
       if (event.status) statuses[event.status] = (statuses[event.status] || 0) + 1;

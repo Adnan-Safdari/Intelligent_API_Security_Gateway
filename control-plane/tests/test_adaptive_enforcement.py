@@ -403,6 +403,46 @@ def test_runtime_learning_requires_complete_heartbeat_coverage():
     assert rows[0].route_counts == {("POST", "/api/login"): 1}
 
 
+def test_sqli_decision_reports_no_window_status_never_a_fabricated_score(tmp_path):
+    """A signature match (SQLi) can fire on an IP's very first request, before
+    any rate window has ever completed for it -- decisions() then falls back
+    to a bare AnomalyObservation(). That must show up as a precise, honest
+    status ("no_window_observed"), never as a silently-omitted or zeroed
+    model_score standing in for "the model ran and found nothing"."""
+    controller = AdaptiveController(
+        MemoryBaselineRepository(), MemoryLifecycleRepository(),
+        ModelScorer(str(tmp_path / "missing.joblib"), str(tmp_path / "missing.json")),
+        AdaptiveConfig(),
+    )
+    sqli_evidence = [Evidence(
+        timestamp=NOW, ip="203.0.113.9", endpoint="/api/search", method="GET",
+        detector="sqli", severity="high",
+    )]
+
+    selected, _, _ = controller.decisions(campaign(0.9), sqli_evidence)[0]
+
+    assert selected.model_score is None
+    assert selected.model_status == "no_window_observed"
+    # risk_score/confidence are real numbers from the deterministic signature
+    # match -- distinct fields, never conflated with the (absent) model score.
+    assert selected.risk_score > 0
+    assert selected.explanation["ml"]["reason"] == "no_window_observed"
+    assert selected.explanation["ml"]["anomaly_score"] is None
+
+
+def test_policy_decision_round_trips_model_score_and_status():
+    original = decision(ACTION_TEMP_BLOCK)
+    original.model_score = 0.734
+    original.model_status = "scored"
+    original.model_version = "v2-iforest-regularity"
+
+    restored = PolicyDecision.from_dict(json.loads(original.to_json()))
+
+    assert restored.model_score == 0.734
+    assert restored.model_status == "scored"
+    assert restored.model_version == "v2-iforest-regularity"
+
+
 def test_emergency_blocklist_is_an_explicit_global_override_even_in_monitor_mode(tmp_path):
     base = AdaptiveConfig()
     cfg = dataclasses.replace(

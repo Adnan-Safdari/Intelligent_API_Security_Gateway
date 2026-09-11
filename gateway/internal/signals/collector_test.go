@@ -1,6 +1,9 @@
 package signals
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 type fixedScoreDetector struct {
 	name  string
@@ -35,5 +38,25 @@ func TestCollectorTotalScoreIsAlwaysBounded(t *testing.T) {
 				t.Fatalf("TotalScore() = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+// A fired signal always contributes its canonical Signal id, never a more
+// specific AttackType -- enumeration_path_traversal.go is the one detector
+// where those differ, and used to make summarize() emit both, producing a
+// second, detail-less event downstream for one detector's single match.
+func TestSummarizeFiresCanonicalSignalNotAttackType(t *testing.T) {
+	ev := Evidence{
+		Signal:         SignalTraversal,
+		Score:          70,
+		ThresholdCross: true,
+		AttackType:     "path_traversal+enumeration",
+	}
+
+	got := summarize([]Evidence{ev}).Fired
+	want := []string{SignalTraversal}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Fired = %v, want %v", got, want)
 	}
 }
