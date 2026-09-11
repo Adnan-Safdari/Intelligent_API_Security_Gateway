@@ -200,8 +200,10 @@ export function CampaignCard({
           {c.explanation ? <p className="campaign-explain">{c.explanation}</p> : null}
 
           {c.assessment ? (
+            // Unlike the explanation above, this field has no offline
+            // template -- it exists only when a model actually wrote it.
             <p className="campaign-note assess">
-              <b>Assessment</b> {c.assessment}
+              <b>Ollama assessment</b> {c.assessment}
             </p>
           ) : null}
         </>

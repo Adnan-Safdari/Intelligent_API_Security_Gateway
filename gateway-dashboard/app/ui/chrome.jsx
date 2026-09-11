@@ -155,6 +155,14 @@ export function Shell({ children }) {
               Durable
             </>
           ) : null}
+          {beat.alive && beat.narrationProvider === "ollama" ? (
+            <>
+              <span className="sep" />
+              <span title="The explanation and assessment agents are writing with a local model instead of the offline template.">
+                Narration: Ollama
+              </span>
+            </>
+          ) : null}
           <span className="sep" />
           <PolicyCountIcon size={13} aria-hidden="true" />
           {policies.length > 0

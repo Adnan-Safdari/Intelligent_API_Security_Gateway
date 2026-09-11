@@ -193,6 +193,7 @@ export async function readHeartbeat(redis) {
     configVersion: Number(beat.config_version || 0),
     modelAvailable: Boolean(beat.model_available),
     modelError: beat.model_error || "",
+    narrationProvider: beat.narration_provider || "null",
     lastCycle: {
       evidence: Number(beat.evidence || 0),
       campaigns: Number(beat.campaigns || 0),

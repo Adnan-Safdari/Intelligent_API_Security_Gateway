@@ -231,6 +231,10 @@ class Runner:
                         "config_version": self.adaptive.config.version,
                         "model_available": self.adaptive.scorer.available,
                         "model_error": self.adaptive.scorer.error,
+                        # "null" when narration is off, "ollama" when a model
+                        # is configured -- reachability isn't tracked here, so
+                        # this says what's configured, not what's answering.
+                        "narration_provider": self.provider.name,
                     }
                 ),
                 ttl_seconds=max(self.settings.interval_seconds * 3, 90),
