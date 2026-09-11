@@ -125,22 +125,29 @@ class Lifecycle:
                 timezone.utc
             ).isoformat()
             return Recommendation(decision, previous.status, now, now), False, why
-        if previous and previous.decision.action != decision.action:
+        # A recommendation to monitor has no Redis key and therefore cannot
+        # protect anyone from a later, evidence-backed action. Applying the
+        # change cooldown to it would turn an advisory ML observation into a
+        # five-minute blind spot for the first real attack on that scope.
+        if (
+            previous
+            and previous.status == STATUS_ACTIVE
+            and previous.decision.action != decision.action
+        ):
             age = now - previous.updated_at
             emergency = decision.mode == "manual_override" or decision.source == "human"
             if not emergency and age < timedelta(seconds=config.guardrails.policy_cooldown_seconds):
                 enforce = False
                 status = STATUS_RECOMMENDED if config.mode != "manual" else STATUS_PENDING
                 why = "same-scope policy is inside the configured change cooldown"
-                if previous.status == STATUS_ACTIVE:
-                    final = decision.explanation.setdefault("final", {})
-                    final["lifecycle"] = why
-                    final["standing_action"] = previous.decision.action
-                    final["standing_policy_id"] = previous.decision.policy_id
-                    final["policy_expiry"] = previous.decision.expires_at.astimezone(
-                        timezone.utc
-                    ).isoformat()
-                    return Recommendation(decision, previous.status, now, now), False, why
+                final = decision.explanation.setdefault("final", {})
+                final["lifecycle"] = why
+                final["standing_action"] = previous.decision.action
+                final["standing_policy_id"] = previous.decision.policy_id
+                final["policy_expiry"] = previous.decision.expires_at.astimezone(
+                    timezone.utc
+                ).isoformat()
+                return Recommendation(decision, previous.status, now, now), False, why
             else:
                 decision.supersedes_policy_id = previous.decision.policy_id
 

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from iasg.anomaly.spec import FEATURE_NAMES, FEATURE_SPEC_VERSION
+from iasg.ml.login_regularity import LOGIN_REGULARITY_FORMULA, login_regularity
 
 # How many times the login-regularity signal is repeated in the training
 # vector. IsolationForest has no per-feature weight: at each split it draws a
@@ -28,33 +29,16 @@ from iasg.anomaly.spec import FEATURE_NAMES, FEATURE_SPEC_VERSION
 LOGIN_REGULARITY_REPEAT = 10
 
 
-def _login_regularity(login_ratio: float, interarrival_cv: float) -> float:
-    """
-    Near zero unless a window both talks to the login endpoint and arrives on
-    a near-fixed cadence -- which is what separates a slow, scripted
-    credential attack from the two benign behaviours that each share half of
-    that signature.
-
-    login_ratio alone cannot make the separation: a genuine user mistyping a
-    password produces login attempts too, and the training set contains that
-    case on purpose. interarrival_cv alone cannot either, in the other
-    direction -- automated polling is mechanically regular, often more so
-    than a slow attack, so weighting timing regularity alone promotes
-    legitimate scripted traffic instead. The product is small unless both
-    conditions hold at once, which no benign persona in this dataset does.
-    """
-    return login_ratio * max(0.0, 1.0 - interarrival_cv)
-
-
 def train(
     dataset: str | Path,
     out: str | Path,
     *,
     version: str = "",
-    false_positive_budget: float = 0.02,
+    false_positive_budget: float = 0.0,
     allow_schema_mismatch: bool = False,
     admitted_only: bool = False,
     login_regularity_feature: bool = False,
+    login_regularity_gate: bool = False,
 ) -> Path:
     try:
         import joblib
@@ -128,6 +112,11 @@ def train(
             "interarrival_cv in the dataset's feature header"
         )
 
+    if login_regularity_gate and not login_regularity_feature:
+        raise ValueError(
+            "login_regularity_gate requires login_regularity_feature"
+        )
+
     def vector(row_id):
         base = [
             medians[name] if features[row_id].get(name) in (None, "")
@@ -135,7 +124,7 @@ def train(
             for name in feature_names
         ]
         if add_login_regularity:
-            regularity = _login_regularity(
+            regularity = login_regularity(
                 base[feature_names.index("login_ratio")],
                 base[feature_names.index("interarrival_cv")],
             )
@@ -163,6 +152,24 @@ def train(
     test_ids = [row_id for row_id in features
                 if splits.get(row_id, {}).get("split") == "test" and admitted(row_id)]
     threshold = _threshold(model, vector, val_ids, metadata, false_positive_budget, np)
+    # The forest's broad anomaly score is useful context, but it can dilute a
+    # narrow login signature among unrelated request features.  This boundary
+    # is learned from validation benign traffic only: crossing the largest
+    # observed benign value deserves a maximal *advisory* observation, never
+    # authority to act without gateway evidence.
+    regularity_gate = None
+    if login_regularity_gate:
+        benign_validation = [
+            login_regularity(
+                float(features[row_id].get("login_ratio") or 0.0),
+                float(features[row_id].get("interarrival_cv") or 0.0),
+            )
+            for row_id in val_ids
+            if int(metadata[row_id].get("label") or 0) == 0
+        ]
+        if not benign_validation:
+            raise ValueError("login_regularity_gate needs benign validation windows")
+        regularity_gate = float(max(benign_validation))
     evaluation = {
         "validation": _evaluate(model, vector, val_ids, metadata, threshold),
         "test": _evaluate(model, vector, test_ids, metadata, threshold),
@@ -181,22 +188,29 @@ def train(
         "feature_schema_version": schema_version,
         "feature_names": list(feature_names),
         "runtime_schema_version": FEATURE_SPEC_VERSION,
-        # False whenever an engineered feature is added, regardless of schema
-        # match: ModelScorer builds a vector of exactly len(FEATURE_NAMES) and
-        # has no knowledge of this transform, so it would hand the model a
-        # vector of the wrong width. Deploying this model needs ModelScorer.
-        # score() extended to compute the same repeated feature the same way,
-        # not just a schema that matches.
-        "runtime_loadable": matches_runtime and not add_login_regularity,
+        # ModelScorer recognises this narrowly specified transform and rebuilds
+        # it before scoring.  Unknown transforms remain unloadable rather than
+        # risking a positional vector with a different meaning at runtime.
+        "runtime_loadable": matches_runtime,
         "engineered_features": (
             {
                 "login_regularity": {
-                    "formula": "login_ratio * max(0.0, 1.0 - interarrival_cv)",
+                    "formula": LOGIN_REGULARITY_FORMULA,
                     "repeated": LOGIN_REGULARITY_REPEAT,
                     "reason": "IsolationForest draws a split feature uniformly "
                               "at random; repeating the column is what raises "
                               "how often it is drawn, since per-feature linear "
                               "scaling has no effect on isolation depth.",
+                    **(
+                        {
+                            "benign_validation_max": regularity_gate,
+                            "gate_score": 1.0,
+                            "gate_reason": "A failed-login cadence above every "
+                                           "benign validation window is a strong "
+                                           "advisory anomaly, not enforcement authority.",
+                        }
+                        if regularity_gate is not None else {}
+                    ),
                 }
             }
             if add_login_regularity else {}
@@ -260,7 +274,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--version", default="")
-    parser.add_argument("--false-positive-budget", type=float, default=0.02)
+    parser.add_argument(
+        "--false-positive-budget", type=float, default=0.0,
+        help="validation benign quantile used for the forest boundary; 0 is "
+             "the conservative default, so a fresh artifact does not spend "
+             "the false-positive budget before it reaches a holdout.",
+    )
     parser.add_argument(
         "--admitted-only", action="store_true",
         help="apply the protocol's admission rule: use only fully observed "
@@ -276,15 +295,21 @@ def main(argv: list[str] | None = None) -> int:
         "--login-regularity-feature", action="store_true",
         help="add login_ratio * max(0, 1 - interarrival_cv), repeated, to "
              "separate a scripted login attack from a person mistyping a "
-             "password and from regular automated polling. Not runtime "
-             "loadable: ModelScorer does not yet compute this feature.",
+             "password and from regular automated polling.",
+    )
+    parser.add_argument(
+        "--login-regularity-gate", action="store_true",
+        help="record the maximum benign validation login-regularity value; "
+             "crossing it yields a strong advisory anomaly at runtime, never "
+             "an action without deterministic gateway evidence.",
     )
     args = parser.parse_args(argv)
     output = train(args.dataset, args.out, version=args.version,
                    false_positive_budget=args.false_positive_budget,
                    allow_schema_mismatch=args.allow_schema_mismatch,
                    admitted_only=args.admitted_only,
-                   login_regularity_feature=args.login_regularity_feature)
+                   login_regularity_feature=args.login_regularity_feature,
+                   login_regularity_gate=args.login_regularity_gate)
     print(f"[train] wrote model and metadata to {output}")
     return 0
 

@@ -14,7 +14,7 @@ import json
 from pathlib import Path
 
 from iasg.ml.evaluate import _by_id, _false_positives, _recall
-from iasg.ml.train import _login_regularity
+from iasg.ml.login_regularity import login_regularity
 
 
 def validate(dataset: str | Path, artifact: str | Path) -> dict:
@@ -50,7 +50,7 @@ def validate(dataset: str | Path, artifact: str | Path) -> dict:
             for name in names
         ]
         if regularity:
-            value = _login_regularity(
+            value = login_regularity(
                 base[names.index("login_ratio")],
                 base[names.index("interarrival_cv")],
             )
@@ -66,7 +66,18 @@ def validate(dataset: str | Path, artifact: str | Path) -> dict:
     raw = model.score_samples(np.asarray([vector(row_id) for row_id in scorable], dtype=float))
     ml_detected = dict.fromkeys(ids, False)
     ml_detected.update({
-        row_id: float(score) <= threshold for row_id, score in zip(scorable, raw)
+        row_id: (
+            float(score) <= threshold
+            or (
+                regularity is not None
+                and regularity.get("benign_validation_max") is not None
+                and login_regularity(
+                    float(features[row_id].get("login_ratio") or 0.0),
+                    float(features[row_id].get("interarrival_cv") or 0.0),
+                ) > float(regularity["benign_validation_max"])
+            )
+        )
+        for row_id, score in zip(scorable, raw)
     })
     rules_detected = {
         row_id: metadata[row_id].get("detector_fired") in ("1", "true", "True")

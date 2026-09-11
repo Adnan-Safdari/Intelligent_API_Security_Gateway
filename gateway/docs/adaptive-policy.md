@@ -239,7 +239,8 @@ PYTHONPATH=. .venv/bin/python -m iasg.dataset.export \
   --runs ../datasets/raw/benign-1 ../datasets/raw/attacks-1 \
   --out ../datasets/v2
 PYTHONPATH=. .venv/bin/python -m iasg.ml.train \
-  --dataset ../datasets/v2 --out models/current
+  --dataset ../datasets/v2 --out models/current \
+  --admitted-only --login-regularity-feature --login-regularity-gate
 ```
 
 For Compose, train into the persistent model volume, then restart only the
@@ -248,7 +249,8 @@ read-only and no live retraining job exists:
 
 ```bash
 docker compose -f infra/docker-compose.yml exec control_plane \
-  python -m iasg.ml.train --dataset /datasets/v2 --out /app/models/current
+  python -m iasg.ml.train --dataset /datasets/v2 --out /app/models/current \
+  --admitted-only --login-regularity-feature --login-regularity-gate
 docker compose -f infra/docker-compose.yml restart control_plane
 ```
 

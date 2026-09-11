@@ -20,10 +20,9 @@ import csv
 import json
 from pathlib import Path
 
-# Imported, not reimplemented: if train.py's formula or repeat count ever
-# changes, an evaluator computing its own copy would silently score a model
-# against a vector shape or definition it was not fitted on.
-from iasg.ml.train import _login_regularity
+# Imported, not reimplemented: a duplicated transform could silently score an
+# artifact against a vector with different semantics than training used.
+from iasg.ml.login_regularity import login_regularity
 
 # Below this many rows a false-positive rate is not a measurement. The protocol
 # reports these personas as a count with an interval instead of gating on them:
@@ -63,7 +62,7 @@ def evaluate(
             for name in names
         ]
         if regularity:
-            value = _login_regularity(
+            value = login_regularity(
                 base[names.index("login_ratio")],
                 base[names.index("interarrival_cv")],
             )

@@ -287,6 +287,31 @@ def test_mode_change_creates_the_new_mode_lifecycle_state():
     assert len(repository.rows) == 2
 
 
+def test_monitor_recommendation_never_delays_automatic_enforcement():
+    repository = MemoryLifecycleRepository()
+    lifecycle = Lifecycle(repository)
+    automatic = dataclasses.replace(AdaptiveConfig(), mode="automatic")
+
+    monitor, enforce, _ = lifecycle.stage(
+        dataclasses.replace(decision(ACTION_MONITOR), issued_at=NOW),
+        automatic,
+        now=NOW,
+    )
+    assert not enforce and monitor.status == STATUS_RECOMMENDED
+
+    block, enforce, why = lifecycle.stage(
+        dataclasses.replace(
+            decision(ACTION_TEMP_BLOCK), issued_at=NOW + timedelta(seconds=1)
+        ),
+        automatic,
+        now=NOW + timedelta(seconds=1),
+    )
+
+    assert enforce
+    assert block.status == STATUS_RECOMMENDED
+    assert "automatic guardrails" in why
+
+
 def test_automatic_mode_cannot_exceed_its_action_ceiling():
     base = AdaptiveConfig()
     guarded = dataclasses.replace(
