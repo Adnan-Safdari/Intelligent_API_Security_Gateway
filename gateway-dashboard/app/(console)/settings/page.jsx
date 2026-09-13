@@ -413,11 +413,11 @@ export default function SettingsPage() {
             onChange={(v) => edit("throttle", "enabled", v)}
           />
           <Field.Number
-            label="Throttle delay (ms)"
+            label="Legacy throttle delay (not used)"
             value={draft.throttle.delay_ms}
             min={0}
             onChange={(v) => edit("throttle", "delay_ms", v)}
-            hint="How long a throttled caller is held before being served."
+            hint="Kept only for compatibility with older configuration files. Throttled callers are limited by their request rate; the gateway does not pause a request here."
           />
         </Card>
 

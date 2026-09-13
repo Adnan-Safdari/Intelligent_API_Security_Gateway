@@ -1233,11 +1233,17 @@ a { color: var(--accent); }
 
 .signal-row {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) 118px 104px max-content 74px;
+  /* Every row is its own grid. Fixed utility columns keep a switch or a
+     short value from changing the column positions relative to the header. */
+  grid-template-columns: minmax(0, 1fr) 120px 140px 110px 74px;
   gap: 18px;
   align-items: center;
   padding: 16px 22px;
   border-bottom: 1px solid var(--line);
+}
+
+.signal-row > :not(:first-child) {
+  justify-self: start;
 }
 
 .signal-row:last-child {
