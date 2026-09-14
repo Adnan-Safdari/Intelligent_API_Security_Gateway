@@ -109,9 +109,11 @@ jobs:
         working-directory: desktop
         run: npm ci
 
-      - name: Stamp version from tag
+      - name: Stamp version and repository
         working-directory: desktop
-        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+        run: |
+          npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+          npm pkg set iasgRepo="${{ github.repository }}"
 
       - name: Build installer
         working-directory: desktop
@@ -129,5 +131,9 @@ jobs:
       - uses: actions/checkout@v5
       - name: Attach compose file and publish
         run: |
-          gh release upload "$TAG" infra/docker-compose.release.yml --clobber
+          # Point the default image registry at whoever published this release.
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          mkdir -p out
+          sed "s#ghcr.io/adnan-safdari#ghcr.io/${owner}#g" infra/docker-compose.release.yml > out/docker-compose.release.yml
+          gh release upload "$TAG" out/docker-compose.release.yml --clobber
           gh release edit "$TAG" --draft=false --latest
