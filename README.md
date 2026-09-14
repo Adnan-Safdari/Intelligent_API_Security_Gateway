@@ -73,6 +73,7 @@ decision boundaries and their safeguards.
 | [`gateway-dashboard/`](gateway-dashboard/README.md) | Next.js operations console |
 | [`infra/`](infra/README.md) | Docker Compose for everything |
 | [`testing/`](testing/README.md) | Load and attack scripts |
+| [`desktop/`](desktop/README.md) | Electron app that runs the packaged stack (.dmg / .exe) |
 
 Each has its own README covering how to run it, what it talks to, and what it does not do.
 
@@ -84,7 +85,24 @@ Each has its own README covering how to run it, what it talks to, and what it do
 
 ## Quick start
 
-### Everything at once
+### Desktop app (no clone needed)
+
+1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it.
+2. Download the `.dmg` (macOS) or `.exe` (Windows) from the
+   [latest release](https://github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/releases/latest).
+3. Open **IASG**. The first launch downloads the images (a few GB), then the
+   dashboard opens in the app window. Every later launch picks up a newer
+   release automatically. Quitting the app stops the containers; data is kept.
+
+The app is not code-signed, so the OS warns the first time:
+
+- **macOS:** System Settings → Privacy & Security → **Open Anyway**. If macOS
+  says the app is "damaged", run `xattr -cr /Applications/IASG.app`.
+- **Windows:** on the SmartScreen prompt, **More info** → **Run anyway**.
+
+See [`desktop/README.md`](desktop/README.md) for how releases are made.
+
+### Everything at once, from source
 
 ```bash
 docker compose -f infra/docker-compose.yml up -d

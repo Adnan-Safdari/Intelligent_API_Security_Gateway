@@ -1,5 +1,6 @@
 # Build stage
-FROM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+ARG TARGETARCH
 
 WORKDIR /build
 
@@ -14,10 +15,11 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o gateway ./cmd/server
+# Cross-compile on the build host's architecture; emulating arm64 is far slower.
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH go build -o gateway ./cmd/server
 
 # Final stage
-FROM alpine:latest
+FROM alpine:3.21
 
 RUN apk --no-cache add ca-certificates tzdata
 

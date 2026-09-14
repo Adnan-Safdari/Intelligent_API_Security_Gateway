@@ -1,0 +1,58 @@
+{
+  "name": "iasg-desktop",
+  "productName": "IASG",
+  "version": "0.0.0",
+  "description": "Desktop launcher for the Intelligent API Security Gateway",
+  "main": "main.js",
+  "private": true,
+  "author": "IASG team",
+  "scripts": {
+    "start": "node node_modules/electron/install.js && electron .",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "io.github.adnansafdari.iasg",
+    "productName": "IASG",
+    "files": [
+      "main.js",
+      "preload.js",
+      "status.html",
+      "status.js"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "category": "public.app-category.developer-tools",
+      "identity": null
+    },
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "devDependencies": {
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3"
+  }
+}
