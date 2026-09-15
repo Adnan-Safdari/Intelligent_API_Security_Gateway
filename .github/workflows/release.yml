@@ -1,0 +1,133 @@
+# Pushing a tag like v0.1.0 builds and publishes a release:
+#   - five Docker images to ghcr.io/<owner>/iasg-*:<version> (amd64 + arm64)
+#   - the desktop app (.dmg for macOS, .exe for Windows)
+#   - infra/docker-compose.release.yml, which the desktop app downloads
+# The release stays a draft until every job succeeds, so the desktop app
+# (which reads releases/latest, and that ignores drafts) never sees half of one.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  TAG: ${{ github.ref_name }}
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Create draft release
+        run: gh release create "$TAG" --draft --generate-notes --title "IASG $TAG"
+
+  images:
+    needs: draft
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: gateway
+            context: gateway
+            file: gateway/Dockerfile
+          - name: control-plane
+            context: .
+            file: control-plane/Dockerfile
+          - name: dashboard
+            context: gateway-dashboard
+            file: gateway-dashboard/Dockerfile
+          - name: vulnerable-api
+            context: vulnerable-app/backend
+            file: vulnerable-app/backend/Dockerfile
+          - name: vulnerable-web
+            context: vulnerable-app
+            file: vulnerable-app/Dockerfile
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Image name
+        id: meta
+        run: |
+          owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "image=ghcr.io/${owner}/iasg-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
+            ${{ steps.meta.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ steps.meta.outputs.version }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  desktop:
+    needs: draft
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-14
+            target: --mac
+            files: desktop/dist/*.dmg
+          - os: windows-latest
+            target: --win
+            files: desktop/dist/*.exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install
+        working-directory: desktop
+        run: npm ci
+
+      - name: Stamp version from tag
+        working-directory: desktop
+        run: npm version "${TAG#v}" --no-git-tag-version --allow-same-version
+
+      - name: Build installer
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: npx electron-builder ${{ matrix.target }} --publish never
+
+      - name: Upload to release
+        run: gh release upload "$TAG" ${{ matrix.files }} --clobber
+
+  publish:
+    needs: [images, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Attach compose file and publish
+        run: |
+          gh release upload "$TAG" infra/docker-compose.release.yml --clobber
+          gh release edit "$TAG" --draft=false --latest

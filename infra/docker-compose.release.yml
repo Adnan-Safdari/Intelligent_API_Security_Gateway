@@ -1,0 +1,142 @@
+# Packaged stack run by the desktop app (desktop/). Prebuilt images, no source
+# mounts. Attached to every GitHub Release; the dev stack is docker-compose.yml.
+#
+#   IASG_VERSION=0.1.0 docker compose -p iasg -f docker-compose.release.yml up -d
+#
+# The dashboard has no login, so every published port binds to 127.0.0.1 only.
+# Postgres and Redis publish nothing: containers reach them by service name.
+# IASG_REGISTRY can point at locally built images for testing.
+
+services:
+  postgres:
+    image: postgres:18.2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-iasg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-iasg}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iasg_user} -d ${POSTGRES_DB:-iasg}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vulnerable_postgres:
+    image: postgres:18.2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${VULN_POSTGRES_USER:-vuln_user}
+      POSTGRES_PASSWORD: ${VULN_POSTGRES_PASSWORD:-vuln_changeme}
+      POSTGRES_DB: ${VULN_POSTGRES_DB:-vuln_app}
+    volumes:
+      - vulnerable_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${VULN_POSTGRES_USER:-vuln_user} -d ${VULN_POSTGRES_DB:-vuln_app}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8.6
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  vulnerable_api:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-vulnerable-api:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    environment:
+      PORT: 5002
+      PGHOST: vulnerable_postgres
+      PGPORT: 5432
+      PGUSER: ${VULN_POSTGRES_USER:-vuln_user}
+      PGPASSWORD: ${VULN_POSTGRES_PASSWORD:-vuln_changeme}
+      PGDATABASE: ${VULN_POSTGRES_DB:-vuln_app}
+    ports:
+      - "127.0.0.1:5002:5002"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5002/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      vulnerable_postgres:
+        condition: service_healthy
+
+  vulnerable_web:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-vulnerable-web:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5175:80"
+    depends_on:
+      - vulnerable_api
+
+  gateway:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-gateway:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    environment:
+      IASG_CONFIG: configs/config.yaml
+      IASG_BACKEND_URL: http://vulnerable_api:5002
+      IASG_REDIS_HOST: redis
+    ports:
+      - "127.0.0.1:8082:8082"
+    depends_on:
+      vulnerable_api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+
+  control_plane:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-control-plane:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    environment:
+      IASG_REDIS_URL: redis://redis:6379/0
+      IASG_EVIDENCE_STREAM: iasg:events
+      IASG_DRY_RUN: "false"
+      IASG_LLM_PROVIDER: "null"
+      IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
+      IASG_HEALTH_STREAM: iasg:telemetry:health
+      # No models volume: the model is baked into the image, so it updates
+      # with every release instead of being pinned by the first one.
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+
+  gateway_dashboard:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-dashboard:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
+    ports:
+      - "127.0.0.1:5177:5177"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5177/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  vulnerable_postgres_data:
+  redis_data:
