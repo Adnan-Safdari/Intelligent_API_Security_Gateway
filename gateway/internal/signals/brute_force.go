@@ -243,6 +243,7 @@ func (d *BruteForceDetector) Metrics(ip string) Evidence {
 	ev := Evidence{Signal: SignalBruteForce, Details: map[string]any{
 		"consecutiveFailures": 0,
 		"failedLogins":        0,
+		"distinctUsers":       0,
 		"maxFailures":         tun.maxFailures,
 		"window":              tun.window.String(),
 		"route":               "",
@@ -256,10 +257,17 @@ func (d *BruteForceDetector) Metrics(ip string) Evidence {
 	d.mu.Lock()
 	byTarget := d.clients[ip]
 	var strongest *loginStreak
+	distinctUsers := 0
 	for key, streak := range byTarget {
 		if now.Sub(streak.lastFailure) > tun.window {
 			delete(byTarget, key)
 			continue
+		}
+		// Count only accounts whose own failure streak reached the configured
+		// threshold. Otherwise one brute-force target plus a few ordinary typos
+		// could be mislabeled as password spraying by the control plane.
+		if streak.target != "" && streak.consecutive >= tun.maxFailures {
+			distinctUsers++
 		}
 		if strongest == nil || streak.consecutive > strongest.consecutive {
 			strongest = streak
@@ -281,6 +289,7 @@ func (d *BruteForceDetector) Metrics(ip string) Evidence {
 	// Retained for evidence consumers that display the old name; it is now a
 	// streak, never a total count across unrelated login targets.
 	ev.Details["failedLogins"] = strongestValue.consecutive
+	ev.Details["distinctUsers"] = distinctUsers
 	ev.Details["route"] = strongestValue.route
 	ev.Details["target"] = strongestValue.target
 	ev.Score = ratioScore(strongestValue.consecutive, tun.maxFailures)

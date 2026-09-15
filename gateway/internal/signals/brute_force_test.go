@@ -70,6 +70,25 @@ func TestBruteForceConfiguredSuccessResetsOnlyItsTarget(t *testing.T) {
 	}
 }
 
+func TestBruteForceReportsOnlyThresholdCrossingTargetsAsDistinctUsers(t *testing.T) {
+	const ip = "203.0.113.54"
+	detector := newBruteForceTestDetector()
+	handler := detector.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+
+	for _, username := range []string{"alice", "bob", "carol", "dana"} {
+		for i := 0; i < 5; i++ {
+			probe(handler, http.MethodPost, "/api/login", ip, `{"username":"`+username+`"}`)
+		}
+	}
+	// A password spray is many accounts each crossing the failure threshold,
+	// not one attacked account plus a few unrelated login mistakes.
+	if got := detector.Metrics(ip).Int("distinctUsers"); got != 4 {
+		t.Fatalf("distinct threshold-crossing users = %d, want 4", got)
+	}
+}
+
 func TestBruteForceUsesOnlyConfiguredBackendOutcomes(t *testing.T) {
 	const ip = "203.0.113.46"
 	detector := newBruteForceTestDetector()
