@@ -18,6 +18,26 @@ export function parseStats(hash = {}) {
   return stats;
 }
 
+// Releases before the dedicated marker used wget's default user agent. Keeping
+// that variant here lets an upgraded console stop displaying old probes too;
+// the loopback, success and zero-signal checks keep an actual health-endpoint
+// attack in view.
+export function isRoutineDockerHealthcheck(event = {}) {
+  const userAgent = event.userAgent || "";
+  const loopback = event.ip === "::1" || event.ip === "127.0.0.1";
+  const successful = event.status >= 200 && event.status < 300;
+  const markedProbe = userAgent === "IASG-Docker-Healthcheck" || /^Wget(?:\/|$)/i.test(userAgent);
+
+  return (
+    loopback &&
+    event.method === "GET" &&
+    event.path === "/api/health" &&
+    successful &&
+    !event.fired?.length &&
+    markedProbe
+  );
+}
+
 /**
  * Fill in counters the gateway would have published, from the events we can see.
  *

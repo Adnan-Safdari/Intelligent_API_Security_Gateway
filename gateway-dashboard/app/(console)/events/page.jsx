@@ -41,7 +41,7 @@ function EventsView() {
   }, [sources]);
 
   const [query, setQuery] = useState(params.get("q") || "");
-  const [alertsOnly, setAlertsOnly] = useState(params.get("alerts") === "1");
+  const [alertsOnly, setAlertsOnly] = useState(params.get("alerts") !== "0");
   const [ip, setIp] = useState(params.get("ip") || "");
   const [limit, setLimit] = useState(250);
   const [rangeMs, setRangeMs] = useState(0);
@@ -56,7 +56,7 @@ function EventsView() {
   // Arriving from a campaign, a policy row or a signal should land pre-filtered.
   useEffect(() => {
     setQuery(params.get("q") || "");
-    setAlertsOnly(params.get("alerts") === "1");
+    setAlertsOnly(params.get("alerts") !== "0");
     setIp(params.get("ip") || "");
   }, [params]);
 
@@ -68,7 +68,9 @@ function EventsView() {
   useEffect(() => {
     const next = new URLSearchParams();
     if (query) next.set("q", query);
-    if (alertsOnly) next.set("alerts", "1");
+    // The alert-focused view is the default. Preserve an explicit opt-out in
+    // the URL so unchecking it does not immediately tick itself back on.
+    next.set("alerts", alertsOnly ? "1" : "0");
     if (ip && isValidIp(ip)) next.set("ip", ip);
     const search = next.toString();
     router.replace(search ? `${pathname}?${search}` : pathname, { scroll: false });

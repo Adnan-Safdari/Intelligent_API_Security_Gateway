@@ -9,6 +9,7 @@ import (
 	"io"
 	"log"
 	"log/slog"
+	"net"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -55,6 +56,8 @@ type bodyCaptureKey struct{}
 type bodyCapture struct {
 	snippet string
 }
+
+const dockerHealthcheckUserAgent = "IASG-Docker-Healthcheck"
 
 // Middleware records one Event after detectors and the backend have run.
 // Redis failures never change the client response.
@@ -195,6 +198,13 @@ func (rc *Recorder) Middleware(next http.Handler) http.Handler {
 				BackendMS: upstream.DurationMS,
 				GatewayMS: time.Since(started).Milliseconds(),
 			}
+			if isRoutineDockerHealthcheck(ev) {
+				// Docker needs this probe to decide whether to restart the gateway,
+				// but treating its known-good loopback call as client traffic makes a
+				// quiet console look busy. A non-loopback caller, a failed probe, or
+				// any request that fired a detector remains security evidence.
+				return
+			}
 
 			ctx, cancel := context.WithTimeout(context.Background(), 400*time.Millisecond)
 			defer cancel()
@@ -203,6 +213,16 @@ func (rc *Recorder) Middleware(next http.Handler) http.Handler {
 			}
 		})
 	}
+}
+
+func isRoutineDockerHealthcheck(ev Event) bool {
+	ip := net.ParseIP(ev.IP)
+	return ip != nil && ip.IsLoopback() &&
+		ev.Method == http.MethodGet &&
+		ev.Path == "/api/health" &&
+		ev.UserAgent == dockerHealthcheckUserAgent &&
+		ev.Status >= http.StatusOK && ev.Status < http.StatusMultipleChoices &&
+		len(ev.Fired) == 0
 }
 
 // recordArrival announces the request before it runs.
