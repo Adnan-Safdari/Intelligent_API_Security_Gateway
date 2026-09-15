@@ -1,7 +1,12 @@
 import { getRedis } from "@/lib/redis";
 import { require as requireRole } from "@/lib/auth";
 import { isPrivateIP, lookupGeo, lookupSelfGeo, summarizeSources } from "@/lib/geo";
-import { parseEventMessage, parseStats, withDerivedStats } from "@/lib/telemetry";
+import {
+  isRoutineDockerHealthcheck,
+  parseEventMessage,
+  parseStats,
+  withDerivedStats,
+} from "@/lib/telemetry";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +30,7 @@ export async function GET() {
         if (!event) return null;
         return { id: entry.id, ...event };
       })
-      .filter(Boolean);
+      .filter((event) => event && !isRoutineDockerHealthcheck(event));
 
     const summarized = summarizeSources(events);
     const [geo, lab] = await Promise.all([
@@ -67,9 +72,18 @@ export async function GET() {
           .slice(0, 10)
           .map((row) => ({ ip: row.ip, alerts: row.alerts }));
 
+    // The gateway counter predates the dedicated Docker-probe marker, so it
+    // cannot distinguish historical liveness calls. Overview is deliberately
+    // a visible-window view here: its count, source map and export all answer
+    // the same question instead of showing an empty map beside probe traffic.
+    const visibleStats = {
+      ...withDerivedStats({ ...parseStats(hash), requests: 0 }, events),
+      derived: true,
+    };
+
     return Response.json({
       redis: true,
-      stats: withDerivedStats(parseStats(hash), events),
+      stats: visibleStats,
       attackers: ranked,
       events,
       sources,

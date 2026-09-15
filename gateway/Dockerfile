@@ -40,8 +40,9 @@ USER iasg
 
 EXPOSE 8082
 
-# Health check
+# The distinct user agent lets telemetry omit only Docker's successful local
+# liveness probe. A caller merely using the same endpoint remains observable.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8082/api/health || exit 1
+    CMD wget -U IASG-Docker-Healthcheck --no-verbose --tries=1 --spider http://localhost:8082/api/health || exit 1
 
 ENTRYPOINT ["./gateway"]

@@ -191,6 +191,32 @@ func TestSQLiProductSearchTelemetryContainsEvidence(t *testing.T) {
 	}
 }
 
+// The Docker liveness probe must not make an idle console look like it has
+// client traffic, but the endpoint itself remains a normal attack surface.
+func TestDockerHealthcheckIsOmittedWithoutHidingHealthEndpointAttacks(t *testing.T) {
+	sqli := signals.NewSQLiDetector(signals.DefaultSQLiDetectorConfig())
+	collector := signals.NewCollector(sqli)
+	writer := &captureWriter{}
+	handler := Middleware(writer, collector, nil, nil)(sqli.Middleware(http.HandlerFunc(
+		func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) },
+	)))
+
+	probe := httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	probe.RemoteAddr = "[::1]:54321"
+	probe.Header.Set("User-Agent", dockerHealthcheckUserAgent)
+	handler.ServeHTTP(httptest.NewRecorder(), probe)
+	if len(writer.events) != 0 {
+		t.Fatalf("routine Docker healthcheck became telemetry: %+v", writer.events)
+	}
+
+	silenceAlerts(t, func() {
+		send(t, handler, http.MethodGet, "/api/health?q=%27+OR+1%3D1+--", "203.0.113.48", "")
+	})
+	if len(writer.events) != 1 || !firedContains(writer.last(), signals.SignalSQLi) {
+		t.Fatalf("attack through /api/health was hidden: %+v", writer.events)
+	}
+}
+
 func TestTelemetryRedactsSensitiveQueryValues(t *testing.T) {
 	writer := &captureWriter{}
 	handler := Middleware(writer, signals.NewCollector(), nil, nil)(http.HandlerFunc(
