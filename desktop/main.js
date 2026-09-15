@@ -4,7 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { fileURLToPath } = require("node:url");
 
-const REPO = "Adnan-Safdari/Intelligent_API_Security_Gateway";
+// Stamped by the release workflow, so a fork's build follows the fork's releases.
+const REPO =
+  require("./package.json").iasgRepo || "Adnan-Safdari/Intelligent_API_Security_Gateway";
 const RELEASE_API =
   process.env.IASG_RELEASE_API || `https://api.github.com/repos/${REPO}/releases/latest`;
 const COMPOSE_ASSET = "docker-compose.release.yml";
