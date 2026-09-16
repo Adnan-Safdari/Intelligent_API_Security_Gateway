@@ -121,14 +121,35 @@ func (sd *SQLiDetector) MetricsFor(ip, requestID string) Evidence {
 }
 
 func (sd *SQLiDetector) findMatches(text string, patterns []string) []string {
-	upper := strings.ToUpper(text)
+	normalizedText := normalizeSQLText(text)
 	var matched []string
 	for _, pattern := range patterns {
-		if strings.Contains(upper, strings.ToUpper(pattern)) {
+		if strings.Contains(normalizedText, normalizeSQLText(pattern)) {
 			matched = append(matched, pattern)
 		}
 	}
 	return matched
+}
+
+// normalizeSQLText treats a closed SQL block comment as a token separator. SQL
+// accepts UNION/**/SELECT as UNION SELECT, but literal matching did not. An
+// unterminated comment is retained so malformed input cannot hide text after it.
+func normalizeSQLText(text string) string {
+	var normalized strings.Builder
+	normalized.Grow(len(text))
+	for i := 0; i < len(text); {
+		if text[i] == '/' && i+1 < len(text) && text[i+1] == '*' {
+			end := strings.Index(text[i+2:], "*/")
+			if end >= 0 {
+				normalized.WriteByte(' ')
+				i += end + 4
+				continue
+			}
+		}
+		normalized.WriteByte(text[i])
+		i++
+	}
+	return strings.ToUpper(normalized.String())
 }
 
 func (sd *SQLiDetector) evidenceFrom(matched []string) Evidence {
