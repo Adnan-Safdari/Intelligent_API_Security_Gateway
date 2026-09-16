@@ -38,6 +38,7 @@ func main() {
 	server := proxy.NewServer(proxy.Config{
 		ListenAddr:        listenAddr,
 		BackendURL:        cfg.Proxy.BackendURL,
+		PreserveHost:      cfg.Proxy.PreserveHost,
 		ReadTimeout:       cfg.Server.ReadTimeout,
 		WriteTimeout:      cfg.Server.WriteTimeout,
 		IdleTimeout:       cfg.Server.IdleTimeout,

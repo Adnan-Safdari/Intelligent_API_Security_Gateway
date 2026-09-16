@@ -41,6 +41,10 @@ The main reverse proxy implementation lives in `gateway/internal/proxy/reverse_p
 - Creates a `httputil.NewSingleHostReverseProxy` for that backend.
 - Configures the outbound HTTP transport with timeout and connection limits.
 - Adds the `X-Gateway: IASG` header to proxied requests.
+- Sends the backend its own hostname in `Host` and the client's in
+  `X-Forwarded-Host`, which it always overwrites. `proxy.preserve_host: true`
+  forwards the client's `Host` instead. See
+  [Protecting your own API](protecting-your-own-api.md).
 
 ### Why it matters
 
