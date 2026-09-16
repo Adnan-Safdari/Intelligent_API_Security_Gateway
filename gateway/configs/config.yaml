@@ -25,6 +25,10 @@ server:
 proxy:
   # Backend API to protect
   backend_url: "http://localhost:5002"
+  # Send the client's Host header instead of the backend's own. The backend's
+  # is what a virtual host, PaaS or CDN needs to find the site; the client's
+  # always travels in X-Forwarded-Host.
+  preserve_host: false
   timeout: 30s
   max_idle_conns: 100
   max_conns_per_host: 10

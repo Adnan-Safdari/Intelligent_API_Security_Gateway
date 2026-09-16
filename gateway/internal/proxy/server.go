@@ -28,6 +28,9 @@ type Config struct {
 	// Format: "scheme://host:port" (e.g., "http://localhost:4000")
 	BackendURL string
 
+	// PreserveHost forwards the client's Host header rather than the backend's.
+	PreserveHost bool
+
 	// ReadTimeout is the maximum duration for reading the entire request, including the body.
 	// This prevents slow-client attacks and ensures timely request processing.
 	ReadTimeout time.Duration

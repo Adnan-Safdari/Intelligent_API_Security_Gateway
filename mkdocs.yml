@@ -76,3 +76,4 @@ nav:
   - Operations:
       - Running the Gateway Locally: running-locally.md
       - Running with Docker: running-with-docker.md
+      - Protecting Your Own API: protecting-your-own-api.md

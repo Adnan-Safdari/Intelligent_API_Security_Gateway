@@ -73,7 +73,16 @@ type ServerConfig struct {
 }
 
 type ProxyConfig struct {
-	BackendURL      string        `yaml:"backend_url"`
+	BackendURL string `yaml:"backend_url"`
+
+	// PreserveHost forwards the client's Host header unchanged instead of
+	// replacing it with the backend's. Off by default, because a backend that
+	// routes by name -- a virtual host, a PaaS, a CDN -- answers the gateway's
+	// own name with a 404 or a certificate mismatch. Turn it on only for a
+	// backend that must see the public hostname, such as one building absolute
+	// links from it; X-Forwarded-Host carries that name either way.
+	PreserveHost bool `yaml:"preserve_host"`
+
 	Timeout         time.Duration `yaml:"timeout"`
 	MaxIdleConns    int           `yaml:"max_idle_conns"`
 	MaxConnsPerHost int           `yaml:"max_conns_per_host"`

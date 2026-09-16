@@ -43,8 +43,22 @@ func NewReverseProxy(cfg Config) http.Handler {
 	originalDirector := proxy.Director
 
 	proxy.Director = func(req *http.Request) {
+		// Read before the director runs: it rewrites the URL, not req.Host, so
+		// this is still the name the client asked for.
+		clientHost := req.Host
 
 		originalDirector(req)
+
+		// NewSingleHostReverseProxy leaves Host as the client sent it, which is
+		// the gateway's own address. A backend that serves more than one site
+		// from an address picks the site by that header, so it would answer for
+		// a site that is not there.
+		if !cfg.PreserveHost {
+			req.Host = targetURL.Host
+		}
+		// Overwritten, never kept: a client-supplied value would let anyone
+		// choose the hostname a backend puts in password-reset links.
+		req.Header.Set("X-Forwarded-Host", clientHost)
 
 		req.Header.Set("X-Gateway", "IASG")
 	}

@@ -1,10 +1,16 @@
-# IASG Configuration Example
+# Gateway configuration for protecting your own API.
 #
-# This file is what the gateway boots with. The `enforcement` block below can
-# also be changed at runtime from the console's Settings page, which stores an
-# override in Redis and leaves this file untouched -- "Revert to file" there
-# brings the gateway back to exactly what is written here. Everything outside
-# `enforcement` is structural and only takes effect on a restart.
+# Start here instead of config.yaml, which describes the bundled demo backend.
+# Guide: gateway/docs/protecting-your-own-api.md
+#
+# Copy this file, then change the four sections marked CHANGE ME. Everything
+# from `enforcement:` down is identical to config.yaml.example, and a test
+# holds it that way. Leave it in place: a detector whose settings are missing
+# from this file is not given defaults -- it is switched off, and nothing says
+# so.
+#
+# The `enforcement` block can also be changed at runtime from the console's
+# Settings page. Everything above it only takes effect on a restart.
 
 server:
   port: 8082
@@ -12,72 +18,81 @@ server:
   read_timeout: 30s
   write_timeout: 30s
   idle_timeout: 120s
-
-  # Largest request body the gateway will read, in bytes. Every stage below the
-  # cap buffers the body, so this bounds what one request can make the gateway
-  # allocate. Omit for 1 MiB; it cannot be disabled.
   max_body_bytes: 1048576
 
-  # CIDRs whose X-Forwarded-For header is believed. Leave empty unless the
-  # gateway sits behind a proxy you control.
+  # CHANGE ME (1 of 4): who stands in front of the gateway.
+  #
+  # The gateway speaks plain HTTP, so on the internet something else -- nginx,
+  # Caddy, a cloud load balancer -- terminates HTTPS and forwards to it. List
+  # that proxy's addresses here so the gateway believes the X-Forwarded-For it
+  # sets.
+  #
+  # Get this wrong in either direction and it matters:
+  #   - Too narrow, and every request appears to come from the proxy. On a
+  #     private network that means nothing is ever blocked -- private addresses
+  #     are exempt -- and nothing says so. On a public address it means one
+  #     block refuses all of your users.
+  #   - Too wide, and any client can put someone else's address in the header
+  #     and have them blocked.
+  # Leave it empty only if clients connect to the gateway directly.
   trusted_proxies: []
+  #   - 172.16.0.0/12   # e.g. a reverse proxy in the same Docker network
 
 proxy:
-  # Backend API to protect
-  backend_url: "http://localhost:5002"
-  # Send the client's Host header instead of the backend's own. The backend's
-  # is what a virtual host, PaaS or CDN needs to find the site; the client's
-  # always travels in X-Forwarded-Host.
+  # CHANGE ME (2 of 4): the API being protected. IASG_BACKEND_URL overrides it.
+  #
+  # Clients must not be able to reach this address themselves. Anything that
+  # bypasses the gateway is not inspected, recorded or blocked -- firewall the
+  # backend so only the gateway can connect.
+  backend_url: "http://your-api:3000"
+
+  # The backend is sent its own hostname by default, which is what a virtual
+  # host, a PaaS or a CDN needs in order to find the site. Set true only if the
+  # backend must see the public hostname instead; X-Forwarded-Host carries it
+  # either way.
   preserve_host: false
+
   timeout: 30s
   max_idle_conns: 100
   max_conns_per_host: 10
 
-# The backend's own endpoints, so telemetry can record which template a path
-# matched rather than treating every resource id as a different endpoint --
-# /api/products/12 and /api/products/34 are one route, not two.
-#
-# Structural on purpose: changing a template changes what previously recorded
-# telemetry means, so this is read at boot and is not carried by the settings
-# watcher the way detector thresholds are. A path matching nothing here records
-# as unmatched, which is a real category -- it is what a client walking paths
-# the application does not serve looks like.
-#
-# Specificity decides, not the order below: /api/products/search wins over
-# /api/products/{id} however this list is sorted.
 routes:
-  templates:
-    - GET /api/health
-    - POST /api/login
-    - GET /api/products
-    - GET /api/products/search
-    - GET /api/products/search-secure
-    - GET /api/products/{id}
-    - GET /api/demo-files
-    - GET /backup-demo
-    - GET /config-demo
-    - GET /.env-demo
-
-  # What a backend status means about credentials, per endpoint. Configuration
-  # rather than an inference: 401 means "wrong password" here because
-  # vulnerable-app/backend/routes/auth.js documents it that way, and it means
-  # nothing of the sort on an endpoint that has not been checked. Re-verify
-  # this if the backend changes.
+  # CHANGE ME (3 of 4): every endpoint the API really serves.
   #
-  # A status in neither list is unknown, which is not the same as a success --
-  # a 500 says the database failed, not that the password was right. And a
-  # login the gateway itself refused never reached the backend at all, so it
-  # is an attempt with an unknown outcome rather than a failure.
+  # This is not optional tidying. A path matching none of these counts as
+  # unmatched, and unknown_route_scanning below treats a client requesting 8
+  # different unmatched paths in 5 minutes as a scanner. Left as the examples,
+  # an ordinary client using your API looks like an attack.
+  #
+  # Use {name} for a path segment that varies. The most specific template wins,
+  # whatever the order: /users/me beats /users/{id}.
+  templates:
+    - GET /health
+    - POST /auth/login
+    - GET /users/me
+    - GET /users/{id}
+    - GET /orders
+    - POST /orders
+    - GET /orders/{id}
+
+  # CHANGE ME (4 of 4): how your login endpoint reports the result.
+  #
+  # Brute-force detection counts a failure only when the backend returns a
+  # status listed under invalid_credentials for a matching template, so with no
+  # entry here it never fires. Check what your API actually returns -- plenty
+  # answer a wrong password with 400 or 403 rather than 401. A status in
+  # neither list is unknown: a 500 means the database failed, not that the
+  # password was right.
   auth_outcomes:
     - method: POST
-      template: /api/login
+      template: /auth/login
       success: [200]
       invalid_credentials: [401]
 
 storage:
   redis:
     enabled: true
-    host: localhost
+    host: redis       # IASG_REDIS_HOST overrides it
     port: 6379
     password: ""
     db: 0
@@ -85,19 +100,8 @@ storage:
     stream_key: iasg:events
     stream_maxlen: 2000
     ip_latest_ttl: 24h
-    # A full telemetry queue drops events instead of delaying API traffic.
     telemetry_queue_size: 1024
     telemetry_write_timeout: 100ms
-  
-  postgres:
-    host: localhost
-    port: 5434
-    database: iasg
-    username: iasg_user
-    password: changeme
-    ssl_mode: disable
-    max_open_conns: 25
-    max_idle_conns: 5
 
 enforcement:
   # Shared token buckets for policy throttles and the opt-in baseline.

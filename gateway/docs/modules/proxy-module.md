@@ -73,6 +73,12 @@ telemetry middleware without buffering their bodies.
 `X-Gateway: IASG` on the outbound request, so the backend can tell proxied
 traffic from anything that reached it directly.
 
+It also replaces `Host` with the backend's own hostname, because a backend that
+serves several sites from one address picks the site by that header. The name
+the client asked for travels in `X-Forwarded-Host`, which is always overwritten
+so a client cannot choose it. `proxy.preserve_host: true` keeps the client's
+`Host` for a backend that needs it.
+
 ## Where detection lives
 
 Not here. `internal/proxy` builds and runs the chain; the detectors themselves
