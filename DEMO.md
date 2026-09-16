@@ -113,6 +113,7 @@ path to be visible.
 | `flood_demo.jmx` | Overview alert count, Events signal filter, then Policy | API-flood evidence; the shipped gateway reflex may return `403` once its configured threshold is crossed. |
 | `sqli_probe.jmx` | Events filtered to SQL injection | Request-scoped SQLi evidence is recorded. A detector does not automatically block a single ambiguous request. |
 | `path_traversal_probe.jmx` | Events filtered to traversal / enumeration | Traversal and forced-browsing evidence is recorded for correlation. |
+| `ATTACK_IP=203.0.113.81 bash testing/signals/object_enumeration.sh` (script, not a plan) | Events filtered to Object ID enumeration (BOLA), then Campaigns | Once 20 distinct order ids are requested, `object_enumeration` evidence appears, keyed on `/api/orders/{id}`; the campaign is named Object ID Enumeration (BOLA). The vulnerable route answers 200 throughout: detection is not prevention. |
 | `distributed_attack.jmx` | Campaigns and Overview source map | Several identities and attack types demonstrate correlation and a multi-stage view. |
 
 For each plan, keep the explanation consistent:

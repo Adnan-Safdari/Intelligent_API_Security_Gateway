@@ -2,7 +2,7 @@
 
 A deliberately insecure API and a small front end for it. It exists only so the gateway has a safe, local target to detect.
 
-> **Do not deploy this anywhere.** The single intentionally unsafe route is isolated to the demo products table and must only run on a machine you control.
+> **Do not deploy this anywhere.** The intentionally unsafe routes are isolated to demo tables with fictional data and must only run on a machine you control.
 
 ## Endpoints
 
@@ -14,6 +14,9 @@ A deliberately insecure API and a small front end for it. It exists only so the 
 | `GET` | `/api/products/search-secure?q=<query>` | Parameterized comparison route. |
 | `GET` | `/backup-demo`, `/config-demo`, `/.env-demo` | Harmless planted resources for forced-browsing enumeration. |
 | `GET` | `/api/demo-files?file=<relative-path>` | Deliberately permissive, but filesystem-bounded traversal demonstration. |
+| `GET` | `/api/orders` | The caller's own orders. |
+| `GET` | `/api/orders/:id` | Intentionally vulnerable to BOLA / IDOR: returns any customer's order. |
+| `GET` | `/api/orders-secure/:id` | Ownership-checked comparison route: someone else's order is `404`. |
 
 ## SQL injection demo
 
@@ -115,3 +118,35 @@ bash testing/signals/flood.sh
 bash testing/signals/traversal.sh
 bash testing/signals/brute_force.sh
 ```
+
+## BOLA (object-level authorization) demo
+
+`/api/orders/:id` checks that the caller is logged in and never that the order
+is theirs. The SQL is parameterized: this is an authorization bug, not an
+injection one. The 40 seeded orders are fictional, and owners are interleaved,
+so counting through ids reaches other customers.
+
+The caller is identified by `Authorization: Bearer <base64 user id>`, the same
+demo token the storefront makes after login. Jane is usually user 2:
+
+```bash
+curl -s http://localhost:5002/api/login -H 'Content-Type: application/json' \
+  -d '{"email":"jane@example.com","password":"user123"}'   # note "id"
+TOKEN=$(printf 2 | base64)
+
+curl -s http://localhost:5002/api/orders -H "Authorization: Bearer $TOKEN"        # her orders
+curl -s http://localhost:5002/api/orders/2 -H "Authorization: Bearer $TOKEN"      # someone else's: 200
+curl -s http://localhost:5002/api/orders-secure/2 -H "Authorization: Bearer $TOKEN"  # 404
+```
+
+Through IASG, counting through ids records `object_enumeration` evidence once
+one client reaches 20 distinct ids in five minutes:
+
+```bash
+ATTACK_IP=203.0.113.81 bash testing/signals/object_enumeration.sh
+ATTACK_IP=203.0.113.82 ORDER_ROUTE=orders-secure bash testing/signals/object_enumeration.sh
+```
+
+The gateway cannot see who owns an order, so it detects the harvesting pattern,
+not the authorization failure. The fix is the ownership check `orders-secure`
+already has.

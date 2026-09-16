@@ -12,6 +12,7 @@ testing/
     sqli.sh
     traversal.sh
     brute_force.sh
+    object_enumeration.sh
     redis_inspect.sh
 ```
 
@@ -48,11 +49,14 @@ bash testing/signals/flood.sh
 bash testing/signals/sqli.sh
 bash testing/signals/traversal.sh
 bash testing/signals/brute_force.sh
+bash testing/signals/object_enumeration.sh
+ORDER_ROUTE=orders-secure bash testing/signals/object_enumeration.sh
 ```
 
 Watch the **gateway process logs** for `SECURITY ALERT` — this applies to
 `flood.sh`, `sqli.sh`, and `traversal.sh`. `brute_force.sh` is the exception:
-`brute_force.go` is advisory-only and evidence-only, and logs nothing at all,
+`brute_force.go` is advisory-only and evidence-only, and logs nothing at all
+(so is `object_enumeration.sh`'s detector),
 so its proof of detection is `Metrics(ip)` surfaced through the dashboard or
 `iasg:events`, not a log line. Every script's real pass condition is still
 that the request was **forwarded** (no `429`).

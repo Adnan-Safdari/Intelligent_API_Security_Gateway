@@ -124,7 +124,7 @@ Inspect the gateway event stream and control-plane policy keys.
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XLEN iasg:events
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 10
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 100 |
-  Select-String -Pattern 'sql_injection|api_flooding|consecutive_failed_logins|unknown_route_scanning|enumeration_path_traversal|ip_reputation'
+  Select-String -Pattern 'sql_injection|api_flooding|consecutive_failed_logins|unknown_route_scanning|object_enumeration|enumeration_path_traversal|ip_reputation'
 
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli KEYS 'policy:*'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli GET policy:198.51.100.91
@@ -321,6 +321,34 @@ docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg
 ```
 
 Traversal/enumeration are request-scoped evidence signals and are intentionally not listed as reflex-blocking signals in the current configuration.
+
+## Test 12B — Object ID enumeration / BOLA (`object_enumeration`)
+
+### Purpose
+
+Show that one logged-in client counting through order ids is recorded as object-level harvesting. `/api/orders/{id}` is deliberately missing its ownership check; `/api/orders-secure/{id}` has one. The detector is advisory-only: it raises evidence for the control plane and never blocks by itself. It cannot see who owns an order, so it detects the pattern, not the authorization failure.
+
+### Commands
+
+```powershell
+# Jane is usually user 2; the demo token is the base64 of the user id.
+$token = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("2"))
+
+# Normal use: her own order list.
+curl.exe -s http://localhost:8082/api/orders `
+  -H "Authorization: Bearer $token" -H "X-Forwarded-For: 198.51.100.95"
+
+# Harvesting: 30 ids, most belonging to other customers (200 on the vulnerable route).
+1..30 | ForEach-Object {
+  curl.exe -s -o NUL -w "%{http_code} " "http://localhost:8082/api/orders/$_" `
+    -H "Authorization: Bearer $token" -H "X-Forwarded-For: 198.51.100.95"
+}
+
+docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 50 |
+  Select-String -Pattern 'object_enumeration|198\.51\.100\.95'
+```
+
+Expect `object_enumeration` in `fired` from the 20th distinct id, with `template` `GET /api/orders/{id}` and `sequentialRun` 20 or more. Repeat against `/api/orders-secure/$_` from another address: most answers are `404`, and the higher `deniedShare` raises the score.
 
 ## Test 13 — Control-plane correlation
 

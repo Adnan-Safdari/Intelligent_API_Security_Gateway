@@ -1,0 +1,103 @@
+const assert = require('node:assert/strict');
+const { test } = require('node:test');
+const express = require('express');
+const { createOrdersRouter } = require('./orders');
+
+// Jane is user 2 and owns order 1; order 2 belongs to user 4.
+const orders = [
+  order(1, 2, 'Jane Cooper'),
+  order(2, 4, 'Arjun Mehta'),
+];
+
+function order(id, userId, customerName) {
+  return {
+    id,
+    order_number: `SF-${1000 + id}`,
+    user_id: userId,
+    customer_name: customerName,
+    shipping_address: `${customerName} address`,
+    items: [{ name: 'Wireless Charging Pad', quantity: 1, price: 24.5 }],
+    total: '24.50',
+    status: 'delivered',
+    created_at: '2026-09-01T10:00:00Z',
+  };
+}
+
+// Models only the WHERE clauses the router uses, so a test can tell which
+// query ran and with what.
+function demoDatabase() {
+  const calls = [];
+  return {
+    calls,
+    async query(text, values) {
+      calls.push({ text, values });
+      if (/WHERE user_id = \$1/.test(text)) {
+        return { rows: orders.filter((o) => o.user_id === values[0]) };
+      }
+      if (/WHERE id = \$1 AND user_id = \$2/.test(text)) {
+        return { rows: orders.filter((o) => o.id === values[0] && o.user_id === values[1]) };
+      }
+      return { rows: orders.filter((o) => o.id === values[0]) };
+    },
+  };
+}
+
+const tokenFor = (userId) => `Bearer ${Buffer.from(String(userId)).toString('base64')}`;
+
+async function get(router, path, userId) {
+  const app = express();
+  app.use('/api', router);
+  const server = await new Promise((resolve) => {
+    const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+  });
+  try {
+    const headers = userId ? { Authorization: tokenFor(userId) } : {};
+    const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { headers });
+    return { status: response.status, body: await response.json() };
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+}
+
+test('orders require a logged-in caller', async () => {
+  for (const path of ['/api/orders', '/api/orders/1', '/api/orders-secure/1']) {
+    const response = await get(createOrdersRouter(demoDatabase()), path);
+    assert.equal(response.status, 401, path);
+  }
+});
+
+test('the order list is only the caller\'s own orders', async () => {
+  const response = await get(createOrdersRouter(demoDatabase()), '/api/orders', 2);
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.orders.map((o) => o.id), [1]);
+});
+
+test('the vulnerable route returns another customer\'s order (BOLA)', async () => {
+  const db = demoDatabase();
+  const response = await get(createOrdersRouter(db), '/api/orders/2', 2);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.body.order.customerName, 'Arjun Mehta');
+  // Parameterized all the same: this is an authorization bug, not injection.
+  assert.deepEqual(db.calls[0].values, [2]);
+});
+
+test('the secure route answers 404 for someone else\'s order', async () => {
+  const db = demoDatabase();
+  const router = createOrdersRouter(db);
+
+  const own = await get(router, '/api/orders-secure/1', 2);
+  assert.equal(own.status, 200);
+  assert.equal(own.body.order.customerName, 'Jane Cooper');
+
+  const other = await get(router, '/api/orders-secure/2', 2);
+  assert.equal(other.status, 404);
+  assert.deepEqual(db.calls.at(-1).values, [2, 2]);
+});
+
+test('non-numeric ids are not found rather than a database error', async () => {
+  const db = demoDatabase();
+  const response = await get(createOrdersRouter(db), '/api/orders/abc', 2);
+  assert.equal(response.status, 404);
+  assert.equal(db.calls.length, 0);
+});
