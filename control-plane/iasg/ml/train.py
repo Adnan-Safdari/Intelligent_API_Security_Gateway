@@ -34,11 +34,10 @@ def train(
     out: str | Path,
     *,
     version: str = "",
-    false_positive_budget: float = 0.0,
+    false_positive_budget: float = 0.02,
     allow_schema_mismatch: bool = False,
     admitted_only: bool = False,
     login_regularity_feature: bool = False,
-    login_regularity_gate: bool = False,
 ) -> Path:
     try:
         import joblib
@@ -112,11 +111,6 @@ def train(
             "interarrival_cv in the dataset's feature header"
         )
 
-    if login_regularity_gate and not login_regularity_feature:
-        raise ValueError(
-            "login_regularity_gate requires login_regularity_feature"
-        )
-
     def vector(row_id):
         base = [
             medians[name] if features[row_id].get(name) in (None, "")
@@ -152,24 +146,6 @@ def train(
     test_ids = [row_id for row_id in features
                 if splits.get(row_id, {}).get("split") == "test" and admitted(row_id)]
     threshold = _threshold(model, vector, val_ids, metadata, false_positive_budget, np)
-    # The forest's broad anomaly score is useful context, but it can dilute a
-    # narrow login signature among unrelated request features.  This boundary
-    # is learned from validation benign traffic only: crossing the largest
-    # observed benign value deserves a maximal *advisory* observation, never
-    # authority to act without gateway evidence.
-    regularity_gate = None
-    if login_regularity_gate:
-        benign_validation = [
-            login_regularity(
-                float(features[row_id].get("login_ratio") or 0.0),
-                float(features[row_id].get("interarrival_cv") or 0.0),
-            )
-            for row_id in val_ids
-            if int(metadata[row_id].get("label") or 0) == 0
-        ]
-        if not benign_validation:
-            raise ValueError("login_regularity_gate needs benign validation windows")
-        regularity_gate = float(max(benign_validation))
     evaluation = {
         "validation": _evaluate(model, vector, val_ids, metadata, threshold),
         "test": _evaluate(model, vector, test_ids, metadata, threshold),
@@ -195,22 +171,16 @@ def train(
         "engineered_features": (
             {
                 "login_regularity": {
+                    # The constant, not a copy of it: ModelScorer refuses a model
+                    # whose stamped formula differs from the one it will apply,
+                    # which only catches train/serve skew while both sides read
+                    # the same definition.
                     "formula": LOGIN_REGULARITY_FORMULA,
                     "repeated": LOGIN_REGULARITY_REPEAT,
                     "reason": "IsolationForest draws a split feature uniformly "
                               "at random; repeating the column is what raises "
                               "how often it is drawn, since per-feature linear "
                               "scaling has no effect on isolation depth.",
-                    **(
-                        {
-                            "benign_validation_max": regularity_gate,
-                            "gate_score": 1.0,
-                            "gate_reason": "A failed-login cadence above every "
-                                           "benign validation window is a strong "
-                                           "advisory anomaly, not enforcement authority.",
-                        }
-                        if regularity_gate is not None else {}
-                    ),
                 }
             }
             if add_login_regularity else {}
@@ -274,12 +244,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--version", default="")
-    parser.add_argument(
-        "--false-positive-budget", type=float, default=0.0,
-        help="validation benign quantile used for the forest boundary; 0 is "
-             "the conservative default, so a fresh artifact does not spend "
-             "the false-positive budget before it reaches a holdout.",
-    )
+    parser.add_argument("--false-positive-budget", type=float, default=0.02)
     parser.add_argument(
         "--admitted-only", action="store_true",
         help="apply the protocol's admission rule: use only fully observed "
@@ -297,19 +262,12 @@ def main(argv: list[str] | None = None) -> int:
              "separate a scripted login attack from a person mistyping a "
              "password and from regular automated polling.",
     )
-    parser.add_argument(
-        "--login-regularity-gate", action="store_true",
-        help="record the maximum benign validation login-regularity value; "
-             "crossing it yields a strong advisory anomaly at runtime, never "
-             "an action without deterministic gateway evidence.",
-    )
     args = parser.parse_args(argv)
     output = train(args.dataset, args.out, version=args.version,
                    false_positive_budget=args.false_positive_budget,
                    allow_schema_mismatch=args.allow_schema_mismatch,
                    admitted_only=args.admitted_only,
-                   login_regularity_feature=args.login_regularity_feature,
-                   login_regularity_gate=args.login_regularity_gate)
+                   login_regularity_feature=args.login_regularity_feature)
     print(f"[train] wrote model and metadata to {output}")
     return 0
 
