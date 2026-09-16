@@ -245,3 +245,35 @@ func ExampleChainMiddleware() {
 	// middleware
 	// handler
 }
+
+// The liveness probe must not reach anything behind it. Docker polls it every
+// thirty seconds for as long as the container runs, so anything it touches sees
+// traffic no client sent.
+func TestLivenessProbeNeverReachesTheChain(t *testing.T) {
+	reached := false
+	behind := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		reached = true
+		w.WriteHeader(http.StatusOK)
+	})
+
+	handler := WithLiveness(behind)
+
+	probe := httptest.NewRecorder()
+	handler.ServeHTTP(probe, httptest.NewRequest(http.MethodGet, LivenessPath, nil))
+	if probe.Code != http.StatusOK {
+		t.Fatalf("liveness probe answered %d, want 200", probe.Code)
+	}
+	if reached {
+		t.Fatal("liveness probe was passed through to the handler behind it")
+	}
+
+	// Everything else still goes through, including the backend's own health
+	// endpoint -- that one belongs to the application and stays observable.
+	for _, path := range []string{"/api/health", "/api/products", "/"} {
+		reached = false
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, path, nil))
+		if !reached {
+			t.Fatalf("%s was swallowed; only %s may be answered here", path, LivenessPath)
+		}
+	}
+}

@@ -40,9 +40,10 @@ USER iasg
 
 EXPOSE 8082
 
-# The distinct user agent lets telemetry omit only Docker's successful local
-# liveness probe. A caller merely using the same endpoint remains observable.
+# The gateway answers this path itself, in front of the middleware chain, so
+# the probe is never proxied to the backend nor recorded as client traffic.
+# /api/health would be: the gateway forwards every path it serves.
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD wget -U IASG-Docker-Healthcheck --no-verbose --tries=1 --spider http://localhost:8082/api/health || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8082/__iasg/alive || exit 1
 
 ENTRYPOINT ["./gateway"]
