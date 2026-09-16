@@ -87,17 +87,27 @@ Each has its own README covering how to run it, what it talks to, and what it do
 
 ### Desktop app (no clone needed)
 
-1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and start it.
-2. Download the `.dmg` (macOS) or `.exe` (Windows) from the
-   [latest release](https://github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/releases/latest).
-3. Open **IASG**. The first launch downloads the images (a few GB), then the
-   dashboard opens in the app window. Every later launch picks up a newer
-   release automatically. Quitting the app stops the containers; data is kept.
+1. Download from the
+   [latest release](https://github.com/Pranav-Hirawat/Intelligent_API_Security_Gateway/releases/latest):
+   `IASG-<version>-arm64.dmg` for Apple Silicon Macs, `IASG-<version>.dmg` for
+   Intel Macs, or `IASG.Setup.<version>.exe` for Windows.
+2. Open **IASG**. If Docker Desktop is missing or stopped, the app walks you
+   through installing or starting it and carries on by itself once it runs.
+3. The first launch downloads the images (a few GB), then the dashboard opens
+   in the app window. Later launches pick up newer images automatically.
+   Quitting the app stops the containers; data is kept.
 
-The app is not code-signed, so the OS warns the first time:
+Opening the app keeps the services up to date, but not the app itself. When a
+newer app exists, the **IASG** menu shows **Download Launcher**; install that
+to get changes to the app, such as its setup screens.
 
-- **macOS:** System Settings → Privacy & Security → **Open Anyway**. If macOS
-  says the app is "damaged", run `xattr -cr /Applications/IASG.app`.
+The app is not signed with an Apple or Microsoft developer certificate, so the
+OS warns the first time:
+
+- **macOS:** open IASG and choose **Done** on the "could not verify" message,
+  then System Settings → Privacy & Security → **Open Anyway**. Versions 0.1.7
+  and earlier may instead say the app is "damaged"; for those, run
+  `xattr -cr /Applications/IASG.app`.
 - **Windows:** on the SmartScreen prompt, **More info** → **Run anyway**.
 
 See [`desktop/README.md`](desktop/README.md) for how releases are made.
