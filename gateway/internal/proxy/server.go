@@ -291,8 +291,10 @@ func (s *Server) Start() error {
 
 	// Configure the HTTP server with timeouts and the middleware-wrapped handler
 	server := &http.Server{
-		Addr:         s.config.ListenAddr,
-		Handler:      handler,
+		Addr: s.config.ListenAddr,
+		// Outside the chain, so the liveness probe reaches neither the
+		// detectors, the recorder, nor the backend.
+		Handler:      WithLiveness(handler),
 		ReadTimeout:  s.config.ReadTimeout,
 		WriteTimeout: s.config.WriteTimeout,
 		IdleTimeout:  s.config.IdleTimeout,
