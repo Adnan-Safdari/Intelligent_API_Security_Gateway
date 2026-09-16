@@ -41,16 +41,25 @@ let stackStarted = false;
 let quitting = false;
 let launcherUpdate = null;
 
+// `win?.` is not enough: closing the window destroys the BrowserWindow but
+// leaves the variable pointing at it, and every property access on a destroyed
+// object throws "Object has been destroyed". That is reachable during quit --
+// window-all-closed fires after the window is gone -- so the handler that stops
+// the containers threw before it got to them.
+function liveWindow() {
+  return win && !win.isDestroyed() ? win : null;
+}
+
 function setStatus(phase, message) {
   status = { phase, message };
-  win?.webContents.send("status", status);
+  liveWindow()?.webContents.send("status", status);
 }
 
 function log(text) {
   const lines = String(text).split(/\r?\n/).filter((line) => line.trim());
   if (lines.length === 0) return;
   logBuffer = logBuffer.concat(lines).slice(-LOG_LINES);
-  win?.webContents.send("log", lines);
+  liveWindow()?.webContents.send("log", lines);
 }
 
 function docker(args, { version, quiet = false } = {}) {
@@ -224,21 +233,22 @@ async function boot() {
     }
 
     setStatus("ready", `IASG ${version} is running.`);
-    win?.loadURL(DASHBOARD);
+    liveWindow()?.loadURL(DASHBOARD);
   } finally {
     busy = false;
   }
 }
 
 function showStatusPage() {
-  if (win && !win.webContents.getURL().startsWith("file:")) {
-    win.loadFile(path.join(__dirname, "status.html"));
+  const live = liveWindow();
+  if (live && !live.webContents.getURL().startsWith("file:")) {
+    live.loadFile(path.join(__dirname, "status.html"));
   }
 }
 
 function buildMenu() {
   const iasgMenu = [
-    { label: "Open Dashboard", click: () => status.phase === "ready" && win?.loadURL(DASHBOARD) },
+    { label: "Open Dashboard", click: () => status.phase === "ready" && liveWindow()?.loadURL(DASHBOARD) },
     { label: "Show Status and Logs", click: showStatusPage },
     { label: "Restart", click: boot },
   ];
@@ -294,7 +304,7 @@ function createWindow() {
 ipcMain.handle("get-state", () => ({ status, log: logBuffer }));
 ipcMain.on("retry", () => boot());
 ipcMain.on("open-docker", () => shell.openExternal(DOCKER_DOWNLOAD));
-ipcMain.on("open-dashboard", () => status.phase === "ready" && win?.loadURL(DASHBOARD));
+ipcMain.on("open-dashboard", () => status.phase === "ready" && liveWindow()?.loadURL(DASHBOARD));
 
 app.whenReady().then(() => {
   buildMenu();
