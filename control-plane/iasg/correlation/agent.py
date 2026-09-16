@@ -30,6 +30,14 @@ from iasg.models import (
 # Below this, a single IP acting alone is filed as noise rather than a campaign.
 MIN_SOLO_EVENTS = 3
 
+# The consumer hands correlation only the evidence newly received in one
+# control-plane cycle. A signature-confirmed injection probe must not vanish
+# merely because an operator sent it once per cycle rather than three times in
+# thirty seconds. Other single-IP detectors still need volume before they are
+# called campaigns; SQLi earns this exception only when the gateway already
+# rated its evidence high.
+IMMEDIATE_SOLO_CAMPAIGN_DETECTORS = frozenset({DETECTOR_SQLI})
+
 # Events a phase needs before it counts as a phase. One stray detection from
 # another detector should not turn a single-purpose attack into a staged
 # intrusion, because staging raises enforcement.
@@ -90,7 +98,11 @@ class CorrelationAgent:
             # A lone IP with a couple of events is an incident, not a campaign.
             # Without this the agent files a campaign for every stray detection
             # and its memory fills with noise.
-            if len(members) == 1 and members[0].event_count < MIN_SOLO_EVENTS:
+            if (
+                len(members) == 1
+                and members[0].event_count < MIN_SOLO_EVENTS
+                and not _is_immediate_solo_campaign(members[0])
+            ):
                 continue
 
             # Report and score on what the whole group shares, not on what some
@@ -246,6 +258,17 @@ class CorrelationAgent:
         }
         shared = ", ".join(readable[t] for t in traits if t in readable)
         return f"{len(members)} IPs sharing {shared}"
+
+
+def _is_immediate_solo_campaign(member: IPProfile) -> bool:
+    """Allow a confirmed injection probe through the singleton noise gate."""
+    return (
+        member.worst_severity == SEVERITY_HIGH
+        and any(
+            detector in IMMEDIATE_SOLO_CAMPAIGN_DETECTORS
+            for detector in member.detectors
+        )
+    )
 
 
 def _stages(members: list[IPProfile]) -> list[str]:

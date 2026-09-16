@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from iasg.adaptive.config import AdaptiveConfig
+from iasg.adaptive.risk import calculate_risk
 from iasg.correlation.agent import CorrelationAgent
 from iasg.correlation.cluster import UnionFind
-from iasg.models import Evidence
+from iasg.models import ACTION_THROTTLE, Evidence
 
 BASE = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
 
@@ -59,6 +61,21 @@ def test_unrelated_ips_stay_separate():
 
 def test_lone_ip_with_one_event_is_noise_not_a_campaign():
     assert CorrelationAgent().analyse([evidence("203.0.113.5")]) == []
+
+
+def test_one_high_severity_sqli_probe_becomes_a_campaign():
+    """A confirmed injection probe must survive a cycle by itself."""
+    row = evidence("203.0.113.61", detector="sqli", severity="high")
+    campaigns = CorrelationAgent().analyse([row])
+
+    assert len(campaigns) == 1
+    assert campaigns[0].type == "SQL Injection Probing"
+    assert campaigns[0].ips == ["203.0.113.61"]
+
+    result = calculate_risk(AdaptiveConfig(), campaigns[0], [row])
+    assert result.action == ACTION_THROTTLE
+    assert result.score == 52.1
+    assert result.confidence == 0.582
 
 
 def test_same_time_same_detector_alone_does_not_group():
