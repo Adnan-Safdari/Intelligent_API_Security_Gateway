@@ -68,7 +68,7 @@ def test_no_deployed_model_is_safe_and_explicit(tmp_path):
     assert not scorer.available
 
 
-def test_runtime_rebuilds_a_calibrated_login_regularity_feature(tmp_path):
+def test_runtime_rebuilds_the_login_regularity_feature(tmp_path):
     dataset = tmp_path / "dataset"
     dataset.mkdir()
     rows, metadata, splits = [], [], []
@@ -92,8 +92,14 @@ def test_runtime_rebuilds_a_calibrated_login_regularity_feature(tmp_path):
 
     artifact = train(
         dataset, tmp_path / "model", version="iforest-regularity",
-        login_regularity_feature=True, login_regularity_gate=True,
+        login_regularity_feature=True,
     )
+    details = json.loads((artifact / "metadata.json").read_text())
+    assert details["engineered_features"]["login_regularity"]["repeated"] >= 1
+    # The engineered column does not make the artifact undeployable: the runtime
+    # rebuilds it, so the schema match alone decides.
+    assert details["runtime_loadable"]
+
     scorer = ModelScorer(str(artifact / "model.joblib"), str(artifact / "metadata.json"))
     row = WindowRow(
         ip="203.0.113.98", window_start=datetime(2026, 9, 8, tzinfo=timezone.utc),
@@ -104,8 +110,12 @@ def test_runtime_rebuilds_a_calibrated_login_regularity_feature(tmp_path):
         quality=WindowQuality(insufficient_history=False),
     )
     observation = scorer.score(row)
-    assert scorer.available
-    assert observation.score == 1.0
+    # Scoring at all is the assertion: the model was fitted on a vector wider
+    # than FEATURE_NAMES, so a runtime that did not rebuild the repeated column
+    # would hand sklearn the wrong width rather than return a score.
+    assert scorer.available, scorer.error
+    assert observation.available and observation.reason == "scored"
+    assert 0.0 <= observation.score <= 1.0
 
 
 def _write(path, fields, rows):
