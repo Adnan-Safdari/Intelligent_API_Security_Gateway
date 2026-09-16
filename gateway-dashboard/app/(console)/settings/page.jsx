@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { PageHead } from "@/app/ui/chrome";
+import { PageHead, ResetControl } from "@/app/ui/chrome";
 import { Field } from "@/app/ui/parts";
 import { useLive } from "@/app/ui/store";
 
@@ -137,6 +137,7 @@ export default function SettingsPage() {
     <>
       <PageHead eyebrow="Detection & enforcement" title="Protection">One place to manage detectors, automatic blocking, and control-plane policy.</PageHead>
       <div className="protection-bar">
+        <ResetControl className="settings-reset" />
         <span className={source === "console" ? "pill on" : "pill"}>{source === "console" ? "Console override" : "Config file"}</span>
         <span className="protection-status">{enabledCount}/6 detectors active</span>
         <span className="protection-status">{autoBlockCount}/4 auto-blocking</span>
