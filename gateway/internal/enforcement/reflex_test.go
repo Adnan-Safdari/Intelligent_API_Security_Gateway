@@ -87,6 +87,18 @@ func TestOnlyListedSignalsMayBlock(t *testing.T) {
 	}
 }
 
+func TestTraversalEvidenceCanArmTheReflex(t *testing.T) {
+	r := armed(t, func(c *Config) {
+		c.Signals = []string{signals.SignalTraversal}
+	})
+
+	r.Observe("203.0.113.32", snap(signals.SignalTraversal, 80, true))
+
+	if _, found := r.Lookup("203.0.113.32"); !found {
+		t.Fatal("high-confidence traversal evidence did not arm the reflex")
+	}
+}
+
 func TestEnabledWithNoSignalsEnforcesNothing(t *testing.T) {
 	r := armed(t, func(c *Config) { c.Signals = []string{} })
 

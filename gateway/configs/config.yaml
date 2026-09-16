@@ -145,7 +145,8 @@ enforcement:
     max_clients: 10000
     max_paths_per_client: 64
 
-  # Path traversal + forced-browsing enumeration (detect + emit metrics only)
+  # Path traversal + forced-browsing enumeration evidence. A traversal hit can
+  # arm the configured reflex below; enumeration still goes to correlation.
   enumeration_path_traversal:
     enabled: true
     traversal_patterns:
@@ -213,6 +214,9 @@ enforcement:
 
     signals:
       - api_flooding
+      # A traversal signature is high-confidence (score 80). The request that
+      # produced it is observed; this reflex refuses subsequent requests.
+      - enumeration_path_traversal
 
     min_score: 80
 

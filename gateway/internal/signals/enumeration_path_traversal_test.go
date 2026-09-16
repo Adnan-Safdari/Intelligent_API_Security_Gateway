@@ -35,6 +35,7 @@ func TestTraversalDetectedInQueryString(t *testing.T) {
 		"/api/file?path=../../etc/passwd",
 		"/api/file?path=%2e%2e%2fsecret",
 		"/api/file?path=..%2fsecret",
+		"/api/file?path=%252e%252e%252fsecret",
 	} {
 		out := captureAlerts(t, func() {
 			probe(traversalHandler(), http.MethodGet, target, "203.0.113.5", "")
@@ -43,6 +44,16 @@ func TestTraversalDetectedInQueryString(t *testing.T) {
 		if !strings.Contains(out, traversalMarker) {
 			t.Errorf("target %q went undetected", target)
 		}
+	}
+}
+
+func TestTraversalDetectsDoubleEncodedPath(t *testing.T) {
+	out := captureAlerts(t, func() {
+		probe(traversalHandler(), http.MethodGet, "/api/%252e%252e%252fsecret", "203.0.113.5", "")
+	})
+
+	if !strings.Contains(out, traversalMarker) {
+		t.Fatal("double-encoded traversal path should be detected")
 	}
 }
 

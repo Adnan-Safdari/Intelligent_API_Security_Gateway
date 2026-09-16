@@ -3,6 +3,7 @@ package signals
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -83,8 +84,7 @@ func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 		}
 
 		ip := netutil.ClientIP(r)
-		path := r.URL.Path
-		query := r.URL.RawQuery
+		path, query := urlInspectionText(r)
 		traversalHits := findPatternHits(path+" "+query, tun.traversalPatterns)
 		enumHits := findPatternHits(path, tun.enumerationPatterns)
 		ev := ted.evidenceFrom(traversalHits, enumHits)
@@ -99,6 +99,27 @@ func (ted *TraversalEnumDetector) Middleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// urlInspectionText retains both the escaped request target and up to two
+// decoded forms. Backends often decode a value after the proxy has parsed it;
+// inspecting only one form let %252e%252e%252f bypass a ../ signature.
+func urlInspectionText(r *http.Request) (string, string) {
+	return decodedURLForms(r.URL.Path, r.URL.RawPath), decodedURLForms(r.URL.RawQuery, "")
+}
+
+func decodedURLForms(values ...string) string {
+	forms := append([]string(nil), values...)
+	for pass := 0; pass < 2; pass++ {
+		end := len(forms)
+		for _, value := range forms[:end] {
+			decoded, err := url.PathUnescape(value)
+			if err == nil && decoded != value {
+				forms = append(forms, decoded)
+			}
+		}
+	}
+	return strings.Join(forms, " ")
 }
 
 // Metrics returns the latest traversal/enumeration evidence for an IP, from
