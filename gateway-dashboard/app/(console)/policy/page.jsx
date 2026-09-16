@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { PageHead } from "@/app/ui/chrome";
 import { ACTION_TONE, LADDER, actionLabel, formatTtl, normalizeAction } from "@/app/ui/format";
 import { useLive } from "@/app/ui/store";
 import { DecisionExplanation, ExportMenu, IpFilterField, Metric } from "@/app/ui/parts";
 import { POLICY_COLUMNS } from "@/app/ui/export";
-import Link from "next/link";
 
 export default function PolicyPage() {
   const {
@@ -16,23 +16,31 @@ export default function PolicyPage() {
   const [action, setAction] = useState("temp_block");
   const [reason, setReason] = useState("");
   const [sort, setSort] = useState("expiry");
-  // Separate from `ip` above, which is the target address for the "instruct
-  // the agent" form below -- this one filters the in-force table itself.
   const [filterIp, setFilterIp] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  useEffect(() => {
+    if (!advancedOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setAdvancedOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [advancedOpen]);
 
   const rows = [...policies]
-    .filter((p) => !filterIp || p.ip === filterIp)
+    .filter((policy) => !filterIp || policy.ip === filterIp)
     .sort((a, b) => (sort === "expiry" ? a.expiresIn - b.expiresIn : b.confidence - a.confidence));
 
   const blocked = policies.filter(
-    (p) => p.action === "temp_block" || p.action === "temporary_block",
+    (policy) => policy.action === "temp_block" || policy.action === "temporary_block",
   ).length;
   const expiringSoon = policies.filter(
-    (p) => p.expiresIn != null && p.expiresIn >= 0 && p.expiresIn <= 3600,
+    (policy) => policy.expiresIn != null && policy.expiresIn >= 0 && policy.expiresIn <= 3600,
   ).length;
 
-  async function submit(e) {
-    e.preventDefault();
+  async function submit(event) {
+    event.preventDefault();
     const ok = await instruct([ip.trim()], action, "manual", reason.trim());
     if (ok) {
       setIp("");
@@ -51,11 +59,20 @@ export default function PolicyPage() {
   return (
     <>
       <PageHead eyebrow="Enforcement" title="Policy">
-        What the gateway is currently enforcing, and the one place to tell the agent it
-        got something wrong. Nothing here writes policy directly — instructions go to the
-        override stream and are applied on the next cycle, after the same allowlist and
-        collateral checks the agent’s own decisions face.
+        What the gateway is currently enforcing. Human instructions go to the override stream
+        and are applied on the next agent cycle, after the same allowlist and collateral checks
+        as the agent&apos;s own decisions.
       </PageHead>
+
+      <section className="policy-advanced-launch" aria-label="Human review controls">
+        <div>
+          <strong>Need to correct or review the agent?</strong>
+          <span>Send a manual instruction or inspect what the agent learned from past corrections.</span>
+        </div>
+        <button type="button" className="act" onClick={() => setAdvancedOpen(true)}>
+          Human Review / Advanced
+        </button>
+      </section>
 
       <section className="metrics">
         <Metric label="Active rules" value={policies.length} detail="Redis policy keys in force" />
@@ -69,16 +86,16 @@ export default function PolicyPage() {
         underlying campaign, so the agent may create a new policy on a later cycle.
       </p>
 
-      <section className="workbench">
+      <section className="policy-in-force">
         <article className="card panel-primary">
           <div className="card-head">
             <h2>In force</h2>
             <ExportMenu rows={rows} columns={POLICY_COLUMNS} prefix="policy" />
             <div className="head-controls">
-              <IpFilterField value={filterIp} onChange={setFilterIp} placeholder="Only this IP…" />
+              <IpFilterField value={filterIp} onChange={setFilterIp} placeholder="Only this IP..." />
               <label className="field">
                 Sort
-                <select value={sort} onChange={(e) => setSort(e.target.value)}>
+                <select value={sort} onChange={(event) => setSort(event.target.value)}>
                   <option value="expiry">expiring first</option>
                   <option value="confidence">confidence</option>
                 </select>
@@ -100,79 +117,56 @@ export default function PolicyPage() {
               <table>
                 <thead>
                   <tr>
-                    <th>#</th>
-                    <th>Scope</th>
-                    <th>Condition</th>
-                    <th>Action</th>
-                    <th>Expires</th>
-                    <th>Origin</th>
-                    <th>State</th>
-                    <th>Change to</th>
-                    <th>Remove</th>
+                    <th>#</th><th>Scope</th><th>Condition</th><th>Action</th><th>Expires</th>
+                    <th>Origin</th><th>State</th><th>Change to</th><th>Remove</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((p, i) => (
-                    <tr key={p.policyId || `${p.ip}-${p.method}-${p.routeTemplate}`}>
-                      <td className="mono">{String(i + 1).padStart(2, "0")}</td>
+                  {rows.map((policy, index) => (
+                    <tr key={policy.policyId || `${policy.ip}-${policy.method}-${policy.routeTemplate}`}>
+                      <td className="mono">{String(index + 1).padStart(2, "0")}</td>
                       <td>
-                        <Link href={`/events?q=${encodeURIComponent(p.ip)}`} className="mono">
-                          {p.ip}
+                        <Link href={`/events?q=${encodeURIComponent(policy.ip)}`} className="mono">
+                          {policy.ip}
                         </Link>
                       </td>
                       <td>
-                        {p.method && p.routeTemplate
-                          ? `${p.method} ${p.routeTemplate}`
-                          : p.reason || "Any request"}
+                        {policy.method && policy.routeTemplate
+                          ? `${policy.method} ${policy.routeTemplate}`
+                          : policy.reason || "Any request"}
                         <DecisionExplanation
-                          explanation={p.explanation}
-                          riskScore={p.riskScore}
-                          confidence={p.confidence}
-                          modelScore={p.modelScore}
-                          modelStatus={p.modelStatus}
-                          modelVersion={p.modelVersion}
+                          explanation={policy.explanation}
+                          riskScore={policy.riskScore}
+                          confidence={policy.confidence}
+                          modelScore={policy.modelScore}
+                          modelStatus={policy.modelStatus}
+                          modelVersion={policy.modelVersion}
                         />
                       </td>
+                      <td><span className={`risk ${ACTION_TONE[policy.action] || "low"}`}>{actionLabel(policy.action)}</span></td>
+                      <td className="mono">{formatTtl(policy.expiresIn)}</td>
                       <td>
-                        <span className={`risk ${ACTION_TONE[p.action] || "low"}`}>
-                          {actionLabel(p.action)}
-                        </span>
+                        {policy.source === "human" ? <span className="tag">human</span>
+                          : policy.campaignId && policy.campaignId !== "manual" ? <Link href="/campaigns">campaign #{policy.campaignId}</Link>
+                            : <span className="tag">agent</span>}
                       </td>
-                      <td className="mono">{formatTtl(p.expiresIn)}</td>
-                      <td>
-                        {p.source === "human" ? (
-                          <span className="tag">human</span>
-                        ) : p.campaignId && p.campaignId !== "manual" ? (
-                          <Link href="/campaigns">campaign #{p.campaignId}</Link>
-                        ) : (
-                          <span className="tag">agent</span>
-                        )}
-                      </td>
-                      <td>
-                        {/* A row here is by definition still active -- an
-                            expired Redis key is gone, not listed. */}
-                        <span className="tag good">Active</span>
-                      </td>
+                      <td><span className="tag good">Active</span></td>
                       <td>
                         <div className="row-actions">
-                          {pendingPolicyActions[p.ip] ? (
-                            <span className="tag">
-                              changing to {actionLabel(pendingPolicyActions[p.ip])}…
-                            </span>
-                          ) : (
-                            LADDER.filter((a) => a !== normalizeAction(p.action)).map((a) => (
-                              <button
-                                key={a}
-                                type="button"
-                                className="act small"
-                                disabled={Boolean(busy)}
-                                onClick={() => instruct([p.ip], a, `row-${p.ip}`)}
-                                title={`Instruct ${actionLabel(a)} for ${p.ip}`}
-                              >
-                                {busy === `row-${p.ip}:${a}` ? "…" : actionLabel(a)}
-                              </button>
-                            ))
-                          )}
+                          {pendingPolicyActions[policy.ip] ? (
+                            <span className="tag">changing to {actionLabel(pendingPolicyActions[policy.ip])}...</span>
+                          ) : LADDER.filter((nextAction) => nextAction !== normalizeAction(policy.action)).map((nextAction) => (
+                            <button
+                              key={nextAction}
+                              type="button"
+                              className="act small"
+                              disabled={Boolean(busy)}
+                              onClick={() => instruct([policy.ip], nextAction, `row-${policy.ip}`)}
+                              title={`Instruct ${actionLabel(nextAction)} for ${policy.ip}`}
+                            >
+                              {busy === `row-${policy.ip}:${nextAction}` ? "..." : actionLabel(nextAction)}
+                            </button>
+                          ))}
                         </div>
                       </td>
                       <td>
@@ -180,10 +174,10 @@ export default function PolicyPage() {
                           type="button"
                           className="act danger small"
                           disabled={Boolean(busy)}
-                          onClick={() => removePolicy(p)}
-                          title={`Remove the active policy for ${p.ip}`}
+                          onClick={() => removePolicy(policy)}
+                          title={`Remove the active policy for ${policy.ip}`}
                         >
-                          {busy === `delete-policy:${p.ip}` ? "Removing..." : "Delete policy"}
+                          {busy === `delete-policy:${policy.ip}` ? "Removing..." : "Delete policy"}
                         </button>
                       </td>
                     </tr>
@@ -193,111 +187,87 @@ export default function PolicyPage() {
             </div>
           )}
         </article>
-
-        <div className="side">
-          <article className="card">
-            <div className="card-head">
-              <h2>Instruct the agent</h2>
-              <span>Any address, campaign or not</span>
-            </div>
-            <form className="form" onSubmit={submit}>
-              <label className="field block">
-                Address
-                <input
-                  type="text"
-                  value={ip}
-                  onChange={(e) => setIp(e.target.value)}
-                  placeholder="203.0.113.5"
-                  required
-                />
-              </label>
-
-              <label className="field block">
-                Action
-                <select value={action} onChange={(e) => setAction(e.target.value)}>
-                  {LADDER.map((a) => (
-                    <option key={a} value={a}>
-                      {actionLabel(a)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="field block">
-                Reason
-                <input
-                  type="text"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="confirmed attack"
-                />
-              </label>
-
-              <button type="submit" className="act primary" disabled={Boolean(busy) || !ip.trim()}>
-                {busy?.startsWith("manual") ? "sending…" : `Instruct ${actionLabel(action)}`}
-              </button>
-
-              <p className="form-note">
-                Applied on the agent’s next cycle. An allowlisted range is protected from a
-                mistyped instruction exactly as it is from the agent — and{" "}
-                <b>{actionLabel("monitor")}</b> stops future enforcement rather than
-                clearing a block that is already standing; that expires on its own TTL.
-              </p>
-            </form>
-          </article>
-
-          {escalations.length > 0 ? (
-            <article className="card">
-              <div className="card-head">
-                <h2>Escalated</h2>
-                <span>Raised once per campaign</span>
-              </div>
-              <ul className="policy-list">
-                {escalations.map((a) => (
-                  <li key={a.id}>
-                    <div className="policy-top">
-                      <Link href="/campaigns">#{a.campaignId}</Link>
-                      <span className="risk high">{a.ipCount} IPs</span>
-                    </div>
-                    <small>
-                      {a.type} · confidence {a.confidence.toFixed(2)}
-                    </small>
-                  </li>
-                ))}
-              </ul>
-            </article>
-          ) : null}
-
-          <article className="card">
-            <div className="card-head">
-              <h2>Learned from humans</h2>
-              <span>One rung, never more</span>
-            </div>
-            {learned.length === 0 ? (
-              <p className="empty">
-                Nothing learned yet. Overrule the agent twice in the same direction on one
-                campaign type and it starts making that correction itself.
-              </p>
-            ) : (
-              <ul className="policy-list">
-                {learned.map((row) => (
-                  <li key={row.type}>
-                    <div className="policy-top">
-                      <span className="grow">{row.type}</span>
-                      <span className={`risk ${row.net > 0 ? "high" : "low"}`}>
-                        {row.net > 0 ? "stronger" : "weaker"}
-                      </span>
-                    </div>
-                    <small>
-                      +{row.up} / -{row.down} corrections
-                    </small>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
-        </div>
       </section>
+
+      {advancedOpen ? (
+        <div className="modal-overlay" onMouseDown={() => setAdvancedOpen(false)}>
+          <section
+            className="modal-card policy-advanced-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="human-review-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="policy-advanced-head">
+              <div>
+                <p className="eyebrow">Human control</p>
+                <h2 id="human-review-title">Human Review / Advanced</h2>
+                <p>Manual instructions take effect on the next agent cycle; they do not write a gateway policy directly.</p>
+              </div>
+              <button type="button" className="act small" onClick={() => setAdvancedOpen(false)} aria-label="Close human review">
+                Close
+              </button>
+            </div>
+
+            <div className="policy-advanced-grid">
+              <article className="card">
+                <div className="card-head"><h2>Instruct the agent</h2><span>Any address, campaign or not</span></div>
+                <form className="form" onSubmit={submit}>
+                  <label className="field block">Address
+                    <input type="text" value={ip} onChange={(event) => setIp(event.target.value)} placeholder="203.0.113.5" required />
+                  </label>
+                  <label className="field block">Action
+                    <select value={action} onChange={(event) => setAction(event.target.value)}>
+                      {LADDER.map((nextAction) => <option key={nextAction} value={nextAction}>{actionLabel(nextAction)}</option>)}
+                    </select>
+                  </label>
+                  <label className="field block">Reason
+                    <input type="text" value={reason} onChange={(event) => setReason(event.target.value)} placeholder="confirmed attack" />
+                  </label>
+                  <button type="submit" className="act primary" disabled={Boolean(busy) || !ip.trim()}>
+                    {busy?.startsWith("manual") ? "Sending..." : `Instruct ${actionLabel(action)}`}
+                  </button>
+                  <p className="form-note">
+                    An allowlisted range is protected from a mistyped instruction. <b>{actionLabel("monitor")}</b> stops future enforcement; it does not clear a policy that already exists.
+                  </p>
+                </form>
+              </article>
+
+              <div className="policy-advanced-stack">
+                {escalations.length > 0 ? (
+                  <article className="card">
+                    <div className="card-head"><h2>Escalated</h2><span>Raised once per campaign</span></div>
+                    <ul className="policy-list">
+                      {escalations.map((escalation) => (
+                        <li key={escalation.id}>
+                          <div className="policy-top"><Link href="/campaigns">#{escalation.campaignId}</Link><span className="risk high">{escalation.ipCount} IPs</span></div>
+                          <small>{escalation.type} - confidence {escalation.confidence.toFixed(2)}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </article>
+                ) : null}
+
+                <article className="card">
+                  <div className="card-head"><h2>Learned from humans</h2><span>One rung, never more</span></div>
+                  {learned.length === 0 ? (
+                    <p className="empty">Nothing learned yet. Overrule the agent twice in the same direction on one campaign type and it starts making that correction itself.</p>
+                  ) : (
+                    <ul className="policy-list">
+                      {learned.map((row) => (
+                        <li key={row.type}>
+                          <div className="policy-top"><span className="grow">{row.type}</span><span className={`risk ${row.net > 0 ? "high" : "low"}`}>{row.net > 0 ? "stronger" : "weaker"}</span></div>
+                          <small>+{row.up} / -{row.down} corrections</small>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </>
   );
 }
