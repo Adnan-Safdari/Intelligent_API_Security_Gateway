@@ -91,6 +91,23 @@ example routes left in place, ordinary clients of your API look like attackers.
 
 Templates are read at startup. Restart the gateway after changing them.
 
+### Object endpoints
+
+```yaml
+routes:
+  object_templates:
+    - GET /users/{id}
+    - GET /orders/{id}
+```
+
+List the endpoints that return one object belonging to someone. The
+`object_enumeration` detector watches them for a client requesting many
+different ids (BOLA / IDOR harvesting). Each entry must also be in
+`routes.templates`, or the gateway refuses to start. Leave out public lookups
+such as a product catalogue, where one client opening many ids is normal. The
+detector sees the pattern, not ownership: the ownership check in your API is
+still what stops the data leaking.
+
 ### Login outcomes
 
 ```yaml

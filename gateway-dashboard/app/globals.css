@@ -57,6 +57,7 @@
   --sig-traversal: #3f97b8;
   --sig-enum: #2fd48f;
   --sig-reputation: #8a97a8;
+  --sig-objenum: #b58cff;
 
   /* The traffic map's legend dots. --map-public/--map-site/--map-alert/
      --map-private are the mockup's own map palette (its --map-own renamed
@@ -114,6 +115,7 @@
   --sig-traversal: #1e5a70;
   --sig-enum: #0f8a5c;
   --sig-reputation: #5e6b7a;
+  --sig-objenum: #6b3fb8;
 
   --map-public: #68778c;
   --map-site: #0d9a83;

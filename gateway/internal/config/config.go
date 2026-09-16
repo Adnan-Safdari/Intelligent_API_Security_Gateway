@@ -39,6 +39,14 @@ type RoutesConfig struct {
 	// because 401 does not mean "wrong password" in general -- it means that
 	// on an endpoint documented to answer that way, and nowhere else.
 	AuthOutcomes []AuthOutcomeConfig `yaml:"auth_outcomes"`
+
+	// ObjectTemplates names the endpoints that return one object belonging to
+	// someone -- "GET /api/orders/{id}" -- and are therefore worth watching for
+	// a client walking through identifiers. Configuration rather than an
+	// inference: the gateway cannot tell a public catalogue lookup from a
+	// private record, and a shopper browsing many products is not an attack.
+	// Each must also appear in Templates and carry at least one {param}.
+	ObjectTemplates []string `yaml:"object_templates"`
 }
 
 type AuthOutcomeConfig struct {
@@ -146,6 +154,7 @@ type EnforcementConfig struct {
 	AttackDetection   AttackDetectionConfig   `yaml:"attack_detection"`
 	BruteForce        BruteForceConfig        `yaml:"brute_force"`
 	UnknownRouteScan  UnknownRouteScanConfig  `yaml:"unknown_route_scanning"`
+	ObjectEnumeration ObjectEnumerationConfig `yaml:"object_enumeration"`
 	Enumeration       EnumerationConfig       `yaml:"enumeration_path_traversal"`
 	IPReputation      IPReputationConfig      `yaml:"ip_reputation"`
 	Throttle          ThrottleConfig          `yaml:"throttle"`
@@ -216,6 +225,18 @@ type UnknownRouteScanConfig struct {
 	Window            time.Duration `yaml:"window"`
 	MaxClients        int           `yaml:"max_clients"`
 	MaxPathsPerClient int           `yaml:"max_paths_per_client"`
+}
+
+// ObjectEnumerationConfig bounds the detector that notices one client
+// requesting many distinct object identifiers on an object template (BOLA /
+// IDOR). Which endpoints are watched is structural and lives in
+// routes.object_templates; these behavioural limits may move at runtime.
+type ObjectEnumerationConfig struct {
+	Enabled         bool          `yaml:"enabled"`
+	DistinctIDs     int           `yaml:"distinct_ids"`
+	Window          time.Duration `yaml:"window"`
+	MaxClients      int           `yaml:"max_clients"`
+	MaxIDsPerClient int           `yaml:"max_ids_per_client"`
 }
 
 type AttackDetectionConfig struct {
@@ -409,6 +430,14 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	cfg.Enforcement.UnknownRouteScan = scan
+	objects, err := ValidatedObjectEnumeration(cfg.Enforcement.ObjectEnumeration)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Enforcement.ObjectEnumeration = objects
+	if err := validateObjectTemplates(cfg.Routes); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -455,4 +484,54 @@ func ValidatedUnknownRouteScan(cfg UnknownRouteScanConfig) (UnknownRouteScanConf
 		return UnknownRouteScanConfig{}, fmt.Errorf("unknown_route_scanning requires distinct_paths 2..max_paths_per_client, max_paths_per_client <= 10000, max_clients 1..100000, and window 1s..24h")
 	}
 	return cfg, nil
+}
+
+// ValidatedObjectEnumeration limits every retained dimension. Identifiers are
+// attacker input, so capacity is part of correctness rather than tuning.
+func ValidatedObjectEnumeration(cfg ObjectEnumerationConfig) (ObjectEnumerationConfig, error) {
+	if cfg.DistinctIDs == 0 {
+		cfg.DistinctIDs = 20
+	}
+	if cfg.Window == 0 {
+		cfg.Window = 5 * time.Minute
+	}
+	if cfg.MaxClients == 0 {
+		cfg.MaxClients = 10_000
+	}
+	if cfg.MaxIDsPerClient == 0 {
+		cfg.MaxIDsPerClient = 256
+	}
+	if cfg.DistinctIDs < 2 || cfg.DistinctIDs > cfg.MaxIDsPerClient || cfg.MaxIDsPerClient > 10_000 || cfg.MaxClients < 1 || cfg.MaxClients > 100_000 || cfg.Window < time.Second || cfg.Window > 24*time.Hour {
+		return ObjectEnumerationConfig{}, fmt.Errorf("object_enumeration requires distinct_ids 2..max_ids_per_client, max_ids_per_client <= 10000, max_clients 1..100000, and window 1s..24h")
+	}
+	return cfg, nil
+}
+
+// validateObjectTemplates refuses an object template the gateway could never
+// match. One missing from routes.templates, or with no {param} to read an
+// identifier from, would leave the detector silently watching nothing -- which
+// looks exactly like an API nobody is enumerating.
+func validateObjectTemplates(routes RoutesConfig) error {
+	known := make(map[string]bool, len(routes.Templates))
+	for _, raw := range routes.Templates {
+		known[normalizeTemplate(raw)] = true
+	}
+	for _, raw := range routes.ObjectTemplates {
+		template := normalizeTemplate(raw)
+		if !strings.Contains(template, "{") {
+			return fmt.Errorf("routes.object_templates entry %q has no {param} to read an identifier from", raw)
+		}
+		if !known[template] {
+			return fmt.Errorf("routes.object_templates entry %q is not listed in routes.templates", raw)
+		}
+	}
+	return nil
+}
+
+func normalizeTemplate(raw string) string {
+	fields := strings.Fields(raw)
+	if len(fields) != 2 {
+		return strings.TrimSpace(raw)
+	}
+	return strings.ToUpper(fields[0]) + " " + fields[1]
 }

@@ -234,6 +234,11 @@ func TestLowAndSlowDetectorLimitsAreValidated(t *testing.T) {
 		"scanner threshold exceeds retained paths": `unknown_route_scanning:
     distinct_paths: 9
     max_paths_per_client: 8`,
+		"unbounded object-enumeration clients": `object_enumeration:
+    max_clients: 100001`,
+		"object threshold exceeds retained ids": `object_enumeration:
+    distinct_ids: 300
+    max_ids_per_client: 256`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(write(t, minimal+"\nenforcement:\n  "+body+"\n")); err == nil {
@@ -268,5 +273,47 @@ func TestOwnAPITemplateDetectsWhatTheExampleDetects(t *testing.T) {
 	}
 	if len(template.Routes.AuthOutcomes) == 0 {
 		t.Error("the template must show an auth_outcomes entry, or brute-force detection is off")
+	}
+}
+
+// An object template the route table cannot match would leave the detector
+// watching nothing while looking healthy, so it stops the gateway instead.
+func TestObjectTemplatesMustBeMatchableRoutes(t *testing.T) {
+	cases := map[string]string{
+		"not in the route table": `
+routes:
+  templates:
+    - GET /api/orders
+  object_templates:
+    - GET /api/orders/{id}
+`,
+		"no parameter to read": `
+routes:
+  templates:
+    - GET /api/orders
+  object_templates:
+    - GET /api/orders
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, minimal+body)); err == nil {
+				t.Fatal("unmatchable object template was accepted")
+			}
+		})
+	}
+
+	cfg, err := Load(write(t, minimal+`
+routes:
+  templates:
+    - GET /api/orders/{id}
+  object_templates:
+    - get /api/orders/{id}
+`))
+	if err != nil {
+		t.Fatalf("a listed object template was refused: %v", err)
+	}
+	if got := cfg.Enforcement.ObjectEnumeration; got.DistinctIDs != 20 || got.Window != 5*time.Minute || got.MaxIDsPerClient != 256 {
+		t.Errorf("object_enumeration defaults = %+v", got)
 	}
 }

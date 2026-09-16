@@ -10,6 +10,7 @@ export const SECTIONS = [
   "attack_detection",
   "brute_force",
   "unknown_route_scanning",
+  "object_enumeration",
   "enumeration_path_traversal",
   "ip_reputation",
   "throttle",
@@ -26,6 +27,11 @@ export const SECTIONS = [
 // string, "path_traversal", never appears there). Listing it let an operator
 // tick a checkbox that silently armed nothing, exactly the typo-shaped
 // failure this allowlist exists to catch.
+// Sections a gateway older than the console may not publish. The gateway keeps
+// its file's values when one is absent (settings.go ObjectEnumeration), so
+// leaving it out is safe where leaving out any other section is not.
+export const OPTIONAL_SECTIONS = ["object_enumeration"];
+
 export const KNOWN_SIGNALS = [
   "api_flooding",
   "sql_injection",
@@ -77,7 +83,7 @@ export function validateSettings(s) {
   // -- it is "set every value in it to zero", which would quietly disarm a
   // detector. The page always sends what it was given, so this only catches a
   // hand-written request.
-  const missing = SECTIONS.filter((name) => !s[name]);
+  const missing = SECTIONS.filter((name) => !s[name] && !OPTIONAL_SECTIONS.includes(name));
   if (missing.length) {
     return `send the whole settings block — missing ${missing.join(", ")}`;
   }
@@ -105,6 +111,16 @@ export function validateSettings(s) {
       return "unknown_route_scanning limits must keep distinct paths within bounded client and path capacity";
     }
     if (!isDuration(scan.window)) return `unknown_route_scanning.window: ${JSON.stringify(scan.window)} is not a duration like "5m"`;
+  }
+
+  const objects = s.object_enumeration;
+  if (objects) {
+    if (!Number.isInteger(objects.distinct_ids) || objects.distinct_ids < 2 ||
+        !Number.isInteger(objects.max_ids_per_client) || objects.max_ids_per_client < objects.distinct_ids || objects.max_ids_per_client > 10000 ||
+        !Number.isInteger(objects.max_clients) || objects.max_clients < 1 || objects.max_clients > 100000) {
+      return "object_enumeration limits must keep distinct ids within bounded client and id capacity";
+    }
+    if (!isDuration(objects.window)) return `object_enumeration.window: ${JSON.stringify(objects.window)} is not a duration like "5m"`;
   }
 
   const duration = s.block?.duration;

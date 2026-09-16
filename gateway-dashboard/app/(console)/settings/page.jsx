@@ -300,6 +300,45 @@ export default function SettingsPage() {
           />
         </Card>
 
+        {draft.object_enumeration ? (
+          <Card
+            title="Object ID enumeration (BOLA)"
+            note="Counts distinct object ids one client requests on the endpoints listed in routes.object_templates in the gateway config. Refused lookups and ids counted in sequence score higher. Raises a signal only; the gateway cannot see who owns an object."
+          >
+            <Field.Toggle
+              label="Detector on"
+              checked={draft.object_enumeration.enabled}
+              onChange={(v) => edit("object_enumeration", "enabled", v)}
+            />
+            <Field.Number
+              label="Distinct ids"
+              value={draft.object_enumeration.distinct_ids}
+              min={2}
+              onChange={(v) => edit("object_enumeration", "distinct_ids", v)}
+            />
+            <Field.Text
+              label="Window"
+              value={draft.object_enumeration.window}
+              onChange={(v) => edit("object_enumeration", "window", v)}
+              hint='How long a requested id counts toward the total, like "5m".'
+            />
+            <Field.Number
+              label="Maximum clients"
+              value={draft.object_enumeration.max_clients}
+              min={1}
+              max={100000}
+              onChange={(v) => edit("object_enumeration", "max_clients", v)}
+            />
+            <Field.Number
+              label="Maximum ids per client"
+              value={draft.object_enumeration.max_ids_per_client}
+              min={2}
+              max={10000}
+              onChange={(v) => edit("object_enumeration", "max_ids_per_client", v)}
+            />
+          </Card>
+        ) : null}
+
         <Card
           title="Path traversal and enumeration"
           note="Matches traversal signatures in the path and query, and known-sensitive paths."

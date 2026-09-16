@@ -9,6 +9,7 @@ const (
 	SignalTraversal  = "enumeration_path_traversal"
 	SignalBruteForce = "consecutive_failed_logins"
 	SignalRouteScan  = "unknown_route_scanning"
+	SignalObjectEnum = "object_enumeration"
 	SignalReputation = "ip_reputation"
 )
 
@@ -52,6 +53,7 @@ var (
 	_ Detector = (*TraversalEnumDetector)(nil)
 	_ Detector = (*BruteForceDetector)(nil)
 	_ Detector = (*UnknownRouteScanDetector)(nil)
+	_ Detector = (*ObjectEnumerationDetector)(nil)
 	_ Detector = (*ReputationDetector)(nil)
 
 	// Windowed detectors (flood, brute force) are deliberately absent: their
@@ -116,7 +118,7 @@ func clampScore(score int) int {
 // the control plane before it can affect a request. Their behavioural state is
 // useful context, not an authority to install a gateway reflex block.
 func AdvisoryOnly(signal string) bool {
-	return signal == SignalBruteForce || signal == SignalRouteScan
+	return signal == SignalBruteForce || signal == SignalRouteScan || signal == SignalObjectEnum
 }
 
 func evidenceSeverity(score int) string {

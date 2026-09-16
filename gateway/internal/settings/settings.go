@@ -43,11 +43,17 @@ type Wire struct {
 	AttackDetection   AttackDetection   `json:"attack_detection"`
 	BruteForce        BruteForce        `json:"brute_force"`
 	UnknownRouteScan  UnknownRouteScan  `json:"unknown_route_scanning"`
-	Enumeration       Enumeration       `json:"enumeration_path_traversal"`
-	IPReputation      IPReputation      `json:"ip_reputation"`
-	Throttle          Throttle          `json:"throttle"`
-	Block             Block             `json:"block"`
-	Policy            Policy            `json:"policy"`
+	// A pointer, unlike the sections around it: overrides saved before this
+	// detector existed have no such section, and reading that absence as
+	// all-zero would switch the detector off on upgrade. Absent keeps the file's
+	// values; the console always sends it, because it edits what the gateway
+	// republishes.
+	ObjectEnumeration *ObjectEnumeration `json:"object_enumeration,omitempty"`
+	Enumeration       Enumeration        `json:"enumeration_path_traversal"`
+	IPReputation      IPReputation       `json:"ip_reputation"`
+	Throttle          Throttle           `json:"throttle"`
+	Block             Block              `json:"block"`
+	Policy            Policy             `json:"policy"`
 }
 
 type AdaptiveRateLimit struct {
@@ -86,6 +92,14 @@ type UnknownRouteScan struct {
 	Window            string `json:"window"`
 	MaxClients        int    `json:"max_clients"`
 	MaxPathsPerClient int    `json:"max_paths_per_client"`
+}
+
+type ObjectEnumeration struct {
+	Enabled         bool   `json:"enabled"`
+	DistinctIDs     int    `json:"distinct_ids"`
+	Window          string `json:"window"`
+	MaxClients      int    `json:"max_clients"`
+	MaxIDsPerClient int    `json:"max_ids_per_client"`
 }
 
 // IPReputation carries only what may move at runtime. feed_path, feed_url and
@@ -158,6 +172,13 @@ func FromConfig(c config.EnforcementConfig) Wire {
 			MaxClients:        c.UnknownRouteScan.MaxClients,
 			MaxPathsPerClient: c.UnknownRouteScan.MaxPathsPerClient,
 		},
+		ObjectEnumeration: &ObjectEnumeration{
+			Enabled:         c.ObjectEnumeration.Enabled,
+			DistinctIDs:     c.ObjectEnumeration.DistinctIDs,
+			Window:          durationString(c.ObjectEnumeration.Window),
+			MaxClients:      c.ObjectEnumeration.MaxClients,
+			MaxIDsPerClient: c.ObjectEnumeration.MaxIDsPerClient,
+		},
 		IPReputation: IPReputation{
 			Enabled:  c.IPReputation.Enabled,
 			Score:    c.IPReputation.Score,
@@ -221,6 +242,24 @@ func (w Wire) ToConfig(base config.EnforcementConfig) (config.EnforcementConfig,
 		return config.EnforcementConfig{}, err
 	}
 	out.UnknownRouteScan, err = config.ValidatedUnknownRouteScan(out.UnknownRouteScan)
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
+
+	if o := w.ObjectEnumeration; o != nil {
+		objectWindow, err := parseDuration(o.Window, "object_enumeration.window")
+		if err != nil {
+			return config.EnforcementConfig{}, err
+		}
+		out.ObjectEnumeration = config.ObjectEnumerationConfig{
+			Enabled:         o.Enabled,
+			DistinctIDs:     o.DistinctIDs,
+			Window:          objectWindow,
+			MaxClients:      o.MaxClients,
+			MaxIDsPerClient: o.MaxIDsPerClient,
+		}
+	}
+	out.ObjectEnumeration, err = config.ValidatedObjectEnumeration(out.ObjectEnumeration)
 	if err != nil {
 		return config.EnforcementConfig{}, err
 	}

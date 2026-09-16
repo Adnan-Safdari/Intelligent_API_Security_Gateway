@@ -12,6 +12,7 @@ testing/
     sqli.sh
     traversal.sh
     brute_force.sh
+    object_enumeration.sh
     redis_inspect.sh
     README.md
 ```
@@ -19,6 +20,7 @@ testing/
 `gateway/internal/signals/` also has Go unit tests beside every detector
 (`api_flooding_test.go`, `brute_force_test.go`, `sqli_injection_test.go`,
 `enumeration_path_traversal_test.go`, `unknown_route_scanning_test.go`,
+`object_enumeration_test.go`,
 `ip_reputation_test.go`, `collector_test.go`, and more) — these scripts exist
 for a different reason than "Go tests aren't allowed in that package."
 

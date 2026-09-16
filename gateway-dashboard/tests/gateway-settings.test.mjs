@@ -17,6 +17,10 @@ function fullSettings(overrides = {}) {
       enabled: true, window: "10m", distinct_paths: 8,
       max_paths_per_client: 200, max_clients: 500,
     },
+    object_enumeration: {
+      enabled: true, window: "5m", distinct_ids: 20,
+      max_ids_per_client: 256, max_clients: 10000,
+    },
     enumeration_path_traversal: { enabled: true },
     ip_reputation: { enabled: true, score: 70, cooldown: "15m" },
     throttle: { enabled: true, delay_ms: 0 },
@@ -89,4 +93,24 @@ test("isCidrOrAddress rejects an out-of-range octet and an oversized prefix", ()
   assert.ok(isCidrOrAddress("203.0.113.0/24"));
   assert.ok(!isCidrOrAddress("203.0.999.0/24"));
   assert.ok(!isCidrOrAddress("203.0.113.0/99"));
+});
+
+test("object_enumeration may be absent, for a gateway that predates it", () => {
+  const settings = fullSettings();
+  delete settings.object_enumeration;
+  assert.equal(validateSettings(settings), null);
+});
+
+test("object_enumeration limits are bounded", () => {
+  const bad = [
+    { distinct_ids: 1 },
+    { distinct_ids: 300, max_ids_per_client: 256 },
+    { max_clients: 100001 },
+    { window: "soon" },
+  ];
+  for (const change of bad) {
+    const settings = fullSettings();
+    settings.object_enumeration = { ...settings.object_enumeration, ...change };
+    assert.match(validateSettings(settings) || "", /object_enumeration/, JSON.stringify(change));
+  }
 });

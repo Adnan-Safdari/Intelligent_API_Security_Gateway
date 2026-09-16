@@ -12,11 +12,12 @@ import { useLive } from "@/app/ui/store";
  * is a control-plane campaign classification derived FROM brute-force
  * evidence, never its own signal -- see the note in ui/format.js). Six
  * real detectors, matched to the six config sections Settings already
- * edits, is what's actually here to show.
+ * edits, is what's actually here to show. (Seven since object enumeration;
+ * the page now counts rather than stating a number.)
  *
  * blockName is the id Settings' "Gateway reflex" checkbox row uses for
- * this detector, when it has one -- only four of six can arm the reflex
- * to block on their own; the other two (brute-force, route scanning) can
+ * this detector, when it has one -- only four can arm the reflex to block
+ * on their own; the rest (brute-force, route scanning, object enumeration) can
  * only ever raise a signal, a real architectural fact this page shows
  * rather than papering over with a control that would do nothing.
  */
@@ -59,6 +60,16 @@ const DETECTORS = [
     scope: "Unmatched routes",
     window: (d) => d.unknown_route_scanning.window,
     threshold: (d) => `${d.unknown_route_scanning.distinct_paths} paths`,
+    blockName: null,
+  },
+  {
+    signalKeys: ["object_enumeration"],
+    name: "Object ID enumeration (BOLA)",
+    rule: "distinct object ids per client, per object template",
+    section: "object_enumeration",
+    scope: "Object templates",
+    window: (d) => d.object_enumeration.window,
+    threshold: (d) => `${d.object_enumeration.distinct_ids} ids`,
     blockName: null,
   },
   {
@@ -173,8 +184,10 @@ export default function SignalsPage() {
     }
   }
 
-  const enabledCount = draft ? DETECTORS.filter((d) => draft[d.section].enabled).length : 0;
-  const autoBlockEligible = DETECTORS.filter((d) => d.blockName);
+  // A gateway older than this console may not publish every section.
+  const detectors = draft ? DETECTORS.filter((d) => draft[d.section]) : [];
+  const enabledCount = detectors.filter((d) => draft[d.section].enabled).length;
+  const autoBlockEligible = detectors.filter((d) => d.blockName);
   const autoBlockCount =
     draft?.block.enabled ? autoBlockEligible.filter((d) => (draft.block.signals || []).includes(d.blockName)).length : 0;
   const policyBlocked = policies.filter(
@@ -223,21 +236,21 @@ export default function SignalsPage() {
           </button>
         }
       >
-        Six detectors run on every inspected request. Turning one off stops it from
-        raising a signal at all. Only four of the six can be trusted to block traffic
-        on their own — the other two only ever raise a signal for the agent to
-        correlate and the control plane to act on.
+        {detectors.length} detectors run on every inspected request. Turning one off stops
+        it from raising a signal at all. Only {autoBlockEligible.length} of the{" "}
+        {detectors.length} can be trusted to block traffic on their own — the rest only
+        ever raise a signal for the agent to correlate and the control plane to act on.
       </PageHead>
 
       <section className="metrics">
-        <Metric label="Detectors enabled" value={enabledCount} detail="of 6 detectors" />
+        <Metric label="Detectors enabled" value={enabledCount} detail={`of ${detectors.length} detectors`} />
         <Metric
           label="At temp block"
           value={policyBlocked}
           tone={policyBlocked > 0 ? "high" : undefined}
           detail="addresses, right now"
         />
-        <Metric label="Trusted to auto-block" value={autoBlockCount} detail="of 4 eligible" />
+        <Metric label="Trusted to auto-block" value={autoBlockCount} detail={`of ${autoBlockEligible.length} eligible`} />
         <Metric label="Learned corrections" value={learned.length} detail="human overrides applied" />
       </section>
 
@@ -250,7 +263,7 @@ export default function SignalsPage() {
             <div>Auto-block</div>
             <div>Enabled</div>
           </div>
-          {DETECTORS.map((d) => {
+          {detectors.map((d) => {
             const enabled = draft[d.section].enabled;
             const alerts = alertsFor(d.signalKeys);
             const window = typeof d.window === "function" ? d.window(draft) : d.window;

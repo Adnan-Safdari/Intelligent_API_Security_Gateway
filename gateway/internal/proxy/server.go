@@ -76,6 +76,10 @@ type Config struct {
 	// UnknownRouteScan holds bounded route-scanning detector settings.
 	UnknownRouteScan config.UnknownRouteScanConfig
 
+	// ObjectEnumeration holds the BOLA detector's behavioural limits. Which
+	// endpoints it watches is structural and comes from Routes.ObjectTemplates.
+	ObjectEnumeration config.ObjectEnumerationConfig
+
 	// Enumeration holds path-traversal and forced-browsing detection settings.
 	Enumeration config.EnumerationConfig
 
@@ -195,9 +199,16 @@ func (s *Server) Start() error {
 		s.config.BruteForce, s.config.Routes.AuthOutcomes, routeMatch,
 	)
 	unknownRouteScanDetector := signals.NewUnknownRouteScanDetector(s.config.UnknownRouteScan, routeMatch)
+	var routeParams func(string, string) (string, []string)
+	if len(s.config.Routes.Templates) > 0 {
+		routeParams = routes.MatchParams
+	}
+	objectEnumDetector := signals.NewObjectEnumerationDetector(
+		s.config.ObjectEnumeration, s.config.Routes.ObjectTemplates, routeParams,
+	)
 
 	s.collector = signals.NewCollector(
-		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, unknownRouteScanDetector, reputationDetector,
+		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, unknownRouteScanDetector, objectEnumDetector, reputationDetector,
 	)
 
 	// The gateway's own reflex, and the enforcer that acts on both it and the
@@ -226,6 +237,7 @@ func (s *Server) Start() error {
 		sqli:       sqliDetector,
 		brute:      bruteForceDetector,
 		routeScan:  unknownRouteScanDetector,
+		objectEnum: objectEnumDetector,
 		traversal:  traversalEnumDetector,
 		reputation: reputationDetector,
 		reflex:     reflex,
@@ -288,6 +300,9 @@ func (s *Server) Start() error {
 			unknownRouteScanDetector.Middleware,
 			sqliDetector.Middleware,
 			traversalEnumDetector.Middleware,
+			// Beside brute force, next to the proxy, because both read the
+			// backend's status: nothing between them and it may answer first.
+			objectEnumDetector.Middleware,
 			bruteForceDetector.Middleware,
 		),
 	)(proxy)
@@ -458,6 +473,7 @@ func (c Config) Enforcement() config.EnforcementConfig {
 		AttackDetection:   c.AttackDetection,
 		BruteForce:        c.BruteForce,
 		UnknownRouteScan:  c.UnknownRouteScan,
+		ObjectEnumeration: c.ObjectEnumeration,
 		Enumeration:       c.Enumeration,
 		IPReputation:      c.IPReputation,
 		Throttle:          c.Throttle,

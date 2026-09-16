@@ -52,6 +52,7 @@ func main() {
 		AttackDetection:   cfg.Enforcement.AttackDetection,
 		BruteForce:        cfg.Enforcement.BruteForce,
 		UnknownRouteScan:  cfg.Enforcement.UnknownRouteScan,
+		ObjectEnumeration: cfg.Enforcement.ObjectEnumeration,
 		Enumeration:       cfg.Enforcement.Enumeration,
 		IPReputation:      cfg.Enforcement.IPReputation,
 		Policy:            cfg.Enforcement.Policy,

@@ -88,34 +88,60 @@ func NewTable(templates []string) (*Table, error) {
 // A nil Table answers UnmatchedRoute for everything, so a gateway configured
 // without a route table records a consistent value rather than an empty one.
 func (t *Table) Match(method, path string) string {
-	if t == nil {
+	route, _ := t.best(method, path)
+	if route == nil {
 		return UnmatchedRoute
+	}
+	return route.template
+}
+
+// MatchParams answers like Match, and also with the values the request put in
+// the template's wildcard segments, in order: GET /api/orders/17 against
+// /api/orders/{id} gives ["17"]. Nil for an unmatched request or a template
+// with no wildcards.
+//
+// It shares Match's route selection rather than repeating it, so the two can
+// never disagree about which template a request belongs to.
+func (t *Table) MatchParams(method, path string) (string, []string) {
+	route, parts := t.best(method, path)
+	if route == nil {
+		return UnmatchedRoute, nil
+	}
+	var params []string
+	for i, seg := range route.segments {
+		if seg.wildcard {
+			params = append(params, parts[i])
+		}
+	}
+	return route.template, params
+}
+
+func (t *Table) best(method, path string) (*compiledRoute, []string) {
+	if t == nil {
+		return nil, nil
 	}
 
 	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
 	if len(parts) > maxPathSegments {
-		return UnmatchedRoute
+		return nil, nil
 	}
 
 	// Specificity decides, not the order the templates were configured in.
 	// /api/products/search must beat /api/products/{id} however the YAML is
 	// written, because someone reordering a config file should not be able to
 	// change what past telemetry means.
-	best := ""
+	var best *compiledRoute
 	bestLiterals := -1
-	for _, route := range t.routes {
+	for i := range t.routes {
+		route := &t.routes[i]
 		if route.method != method || !route.matches(parts) {
 			continue
 		}
 		if route.literals > bestLiterals {
-			best, bestLiterals = route.template, route.literals
+			best, bestLiterals = route, route.literals
 		}
 	}
-
-	if best == "" {
-		return UnmatchedRoute
-	}
-	return best
+	return best, parts
 }
 
 func (r compiledRoute) matches(parts []string) bool {

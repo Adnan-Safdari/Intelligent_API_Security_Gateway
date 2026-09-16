@@ -15,6 +15,7 @@ from iasg.models import (
     DETECTOR_BRUTE_FORCE,
     DETECTOR_ENUMERATION,
     DETECTOR_FLOOD,
+    DETECTOR_OBJECT_ENUMERATION,
     DETECTOR_REPUTATION,
     DETECTOR_SQLI,
     DETECTOR_TRAVERSAL,
@@ -210,6 +211,8 @@ class CorrelationAgent:
             return "SQL Injection Probing"
         if detector in (DETECTOR_TRAVERSAL, DETECTOR_ENUMERATION, DETECTOR_UNKNOWN_ROUTE_SCAN):
             return "Reconnaissance"
+        if detector == DETECTOR_OBJECT_ENUMERATION:
+            return "Object ID Enumeration (BOLA)"
         if detector == DETECTOR_REPUTATION:
             return "Known Bad Address"
         return "Unclassified Activity"

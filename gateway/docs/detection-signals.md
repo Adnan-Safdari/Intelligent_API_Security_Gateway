@@ -2,7 +2,7 @@
 
 ## Overview
 
-Six detectors run on every allowed request. **Detectors never enforce.** They
+Seven detectors run on every allowed request. **Detectors never enforce.** They
 observe, fill in a standard `Evidence` struct, and let the request continue.
 Deciding what to do about what they saw is the control plane's job, and acting
 on that decision is the enforcer's.
@@ -19,6 +19,7 @@ false positive costs a log line, not a refused customer.
 | `enumeration_path_traversal` | `TraversalEnumDetector` | `../` traversal and probes for `/.env`, `/.git`, `/wp-admin` | No |
 | `consecutive_failed_logins` | `BruteForceDetector` | Consecutive configured invalid-credential outcomes, per client and login target | Yes |
 | `unknown_route_scanning` | `UnknownRouteScanDetector` | Distinct raw paths classified as `<unmatched>` by the route table | Yes |
+| `object_enumeration` | `ObjectEnumerationDetector` | One client requesting many distinct ids on an object endpoint (BOLA / IDOR) | Yes |
 | `ip_reputation` | `ReputationDetector` | Addresses on a known-bad list | No — see below |
 
 All are configured under `enforcement:` in `configs/config.yaml`, and each
@@ -40,7 +41,23 @@ link remains one path; the detector needs several distinct paths in its rolling
 window. `max_clients` and `max_paths_per_client` bound retained attacker input,
 and inactive entries are swept after the configured window.
 
-Both signals are advisory-only: the gateway reflex rejects them even if they
+`object_enumeration` watches only the endpoints listed in
+`routes.object_templates` -- ones that return a single object belonging to
+someone, like `GET /api/orders/{id}`. Public lookups such as a product page are
+left out on purpose: a shopper opening many products is not an attack. Per
+client and per template it counts distinct identifiers in the window, and once
+`distinct_ids` is reached the score rises by 20 when at least half the lookups
+were refused (401/403/404) and by 10 when the ids include a run of five
+consecutive numbers -- a script counting, rather than a person reopening their
+own orders. It sits beside `brute_force`, next to the proxy, because it reads
+the backend's status after the request.
+
+Its limit is stated rather than hidden: the gateway cannot see who owns an
+object. It detects the harvesting *pattern*; the fix for BOLA itself is an
+ownership check in the application, which `GET /api/orders-secure/{id}` in the
+demo backend shows.
+
+All three are advisory-only: the gateway reflex rejects them even if they
 are named in `block.signals`. They become an expiring throttle or block only
 after control-plane correlation and the policy writer's safety checks.
 
@@ -180,6 +197,7 @@ cd gateway && go test ./internal/signals/... ./internal/telemetry/...
 | `internal/signals/enumeration_path_traversal.go` | Traversal and forced browsing |
 | `internal/signals/brute_force.go` | Failed-login tracking |
 | `internal/signals/unknown_route_scanning.go` | Bounded distinct unmatched-path tracking |
+| `internal/signals/object_enumeration.go` | Bounded distinct object-id tracking per template (BOLA) |
 | `internal/signals/ip_reputation.go` | Known-bad address lookup and its cooldown |
 | `internal/reputation/` | Loading the list, refreshing it, and the lookup itself |
 | `internal/signals/body.go` | Body reading shared by the request-scoped detectors |

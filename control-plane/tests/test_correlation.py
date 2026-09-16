@@ -189,3 +189,20 @@ def test_a_coordinated_group_outscores_one_ip():
     group_score = CorrelationAgent().analyse(group)[0].confidence
 
     assert group_score > solo_score
+
+
+def test_coordinated_object_harvesting_is_named_bola():
+    events = [
+        evidence(f"203.0.113.{n}", endpoint="/api/orders/{id}", ua="python-requests/2.32",
+                 detector="object_enumeration", offset=n + i, distinctIds=25)
+        for n in (81, 82, 83)
+        for i in range(4)
+    ]
+    campaigns = CorrelationAgent().analyse(events)
+
+    assert len(campaigns) == 1
+    campaign = campaigns[0]
+    assert campaign.type == "Object ID Enumeration (BOLA)"
+    assert sorted(campaign.ips) == ["203.0.113.81", "203.0.113.82", "203.0.113.83"]
+    assert campaign.signature["endpoint"] == "/api/orders/{id}"
+    assert campaign.stages == ["abuse"]
