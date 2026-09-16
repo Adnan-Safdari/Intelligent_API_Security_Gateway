@@ -270,7 +270,7 @@ export default function IpPage({ params }) {
 
           <article className="card">
             <div className="card-head">
-              <h2>Seen</h2>
+              <h2>Seen (IST)</h2>
             </div>
             <ul className="fact-list">
               <li>
