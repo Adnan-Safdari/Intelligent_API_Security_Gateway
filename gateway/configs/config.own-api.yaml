@@ -1,0 +1,290 @@
+# Gateway configuration for protecting your own API.
+#
+# Start here instead of config.yaml, which describes the bundled demo backend.
+# Guide: gateway/docs/protecting-your-own-api.md
+#
+# Copy this file, then change the four sections marked CHANGE ME. Everything
+# from `enforcement:` down is identical to config.yaml.example, and a test
+# holds it that way. Leave it in place: a detector whose settings are missing
+# from this file is not given defaults -- it is switched off, and nothing says
+# so.
+#
+# The `enforcement` block can also be changed at runtime from the console's
+# Settings page. Everything above it only takes effect on a restart.
+
+server:
+  port: 8082
+  host: 0.0.0.0
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 120s
+  max_body_bytes: 1048576
+
+  # CHANGE ME (1 of 4): who stands in front of the gateway.
+  #
+  # The gateway speaks plain HTTP, so on the internet something else -- nginx,
+  # Caddy, a cloud load balancer -- terminates HTTPS and forwards to it. List
+  # that proxy's addresses here so the gateway believes the X-Forwarded-For it
+  # sets.
+  #
+  # Get this wrong in either direction and it matters:
+  #   - Too narrow, and every request appears to come from the proxy. On a
+  #     private network that means nothing is ever blocked -- private addresses
+  #     are exempt -- and nothing says so. On a public address it means one
+  #     block refuses all of your users.
+  #   - Too wide, and any client can put someone else's address in the header
+  #     and have them blocked.
+  # Leave it empty only if clients connect to the gateway directly.
+  trusted_proxies: []
+  #   - 172.16.0.0/12   # e.g. a reverse proxy in the same Docker network
+
+proxy:
+  # CHANGE ME (2 of 4): the API being protected. IASG_BACKEND_URL overrides it.
+  #
+  # Clients must not be able to reach this address themselves. Anything that
+  # bypasses the gateway is not inspected, recorded or blocked -- firewall the
+  # backend so only the gateway can connect.
+  backend_url: "http://your-api:3000"
+
+  # The backend is sent its own hostname by default, which is what a virtual
+  # host, a PaaS or a CDN needs in order to find the site. Set true only if the
+  # backend must see the public hostname instead; X-Forwarded-Host carries it
+  # either way.
+  preserve_host: false
+
+  timeout: 30s
+  max_idle_conns: 100
+  max_conns_per_host: 10
+
+routes:
+  # CHANGE ME (3 of 4): every endpoint the API really serves.
+  #
+  # This is not optional tidying. A path matching none of these counts as
+  # unmatched, and unknown_route_scanning below treats a client requesting 8
+  # different unmatched paths in 5 minutes as a scanner. Left as the examples,
+  # an ordinary client using your API looks like an attack.
+  #
+  # Use {name} for a path segment that varies. The most specific template wins,
+  # whatever the order: /users/me beats /users/{id}.
+  templates:
+    - GET /health
+    - POST /auth/login
+    - GET /users/me
+    - GET /users/{id}
+    - GET /orders
+    - POST /orders
+    - GET /orders/{id}
+
+  # CHANGE ME (4 of 4): how your login endpoint reports the result.
+  #
+  # Brute-force detection counts a failure only when the backend returns a
+  # status listed under invalid_credentials for a matching template, so with no
+  # entry here it never fires. Check what your API actually returns -- plenty
+  # answer a wrong password with 400 or 403 rather than 401. A status in
+  # neither list is unknown: a 500 means the database failed, not that the
+  # password was right.
+  auth_outcomes:
+    - method: POST
+      template: /auth/login
+      success: [200]
+      invalid_credentials: [401]
+
+storage:
+  redis:
+    enabled: true
+    host: redis       # IASG_REDIS_HOST overrides it
+    port: 6379
+    password: ""
+    db: 0
+    pool_size: 10
+    stream_key: iasg:events
+    stream_maxlen: 2000
+    ip_latest_ttl: 24h
+    telemetry_queue_size: 1024
+    telemetry_write_timeout: 100ms
+
+enforcement:
+  # Shared token buckets for policy throttles and the opt-in baseline.
+  # Structural settings: restart all replicas after changing this block.
+  adaptive_rate_limit:
+    fallback_requests_per_minute: 60 # legacy throttle policies without a rate
+    burst: 20                       # capacity = min(burst, policy rate)
+    redis_timeout: 25ms              # total quota-call budget; no retries
+    policy_refresh_timeout: 2s       # total background scan budget, separate from quota
+    failure_backoff: 1s              # fail open while Redis recovers
+    cache_max_age: 10s               # >= policy.refresh_interval; TTL may be shorter
+    bucket_key_prefix: "iasg:rate:"
+
+  # Rate limiting
+  rate_limit:
+    enabled: true              # count requests per address and signal a flood
+    requests_per_minute: 100
+    burst: 20
+
+    # Turn the threshold above into a limit the gateway acts on: anything over
+    # it is refused with 429 instead of only being reported.
+    #
+    # Off by default, and separate from `enabled`, because noticing a flood and
+    # refusing traffic are different decisions -- only the second can turn a
+    # legitimate spike into an outage.
+    #
+    # This is the baseline. An address the control plane has throttled is held
+    # to the rate *its* policy names instead, and the ranges in
+    # `block.exempt_cidrs` skip the limit entirely.
+    enforce: false
+
+  # Attack detection (SQL injection signatures)
+  attack_detection:
+    enabled: true
+    sql_patterns:
+      - "' OR"
+      - "--"
+      - "UNION SELECT"
+      - " OR 1=1"
+
+  # Consecutive configured invalid-login outcomes (detect + emit evidence only).
+  # Login endpoints and their accepted/invalid backend statuses live in
+  # routes.auth_outcomes above; a gateway-generated response is never counted.
+  brute_force:
+    enabled: true
+    max_failures: 5 # consecutive invalid credentials for one client + target
+    window: 60s     # a gap longer than this starts a new streak
+    # Both dimensions are attacker-controlled. Evicting the stalest entry is
+    # safer than retaining an address or account spray indefinitely.
+    max_clients: 10000
+    max_targets_per_client: 64
+
+  # Low-and-slow route scanning. Only different raw paths that the configured
+  # route table classifies as <unmatched> count; repeated backend 404s do not.
+  unknown_route_scanning:
+    enabled: true
+    distinct_paths: 8
+    window: 5m
+    max_clients: 10000
+    max_paths_per_client: 64
+
+  # Path traversal + forced-browsing enumeration (detect + emit metrics only)
+  enumeration_path_traversal:
+    enabled: true
+    traversal_patterns:
+      - "../"
+      - "..\\"
+      - "%2e%2e%2f"
+      - "%2e%2e/"
+      - "..%2f"
+      - "%2e%2e%5c"
+    enumeration_patterns:
+      - "/.env"
+      - "/.git"
+      - "/.aws"
+      - "/wp-admin"
+      - "/etc/passwd"
+      - "/.bash_history"
+      - "/.ssh"
+
+
+  # Addresses already known to be malicious.
+  #
+  # Every other detector here is behavioural: it counts requests, failures or
+  # pattern matches, and needs the attacker to repeat themselves before it
+  # knows anything. This one answers on the first request, because being
+  # listed is a fact about the address rather than something it just did.
+  #
+  # It does NOT block on its own. Like every detector it emits evidence; to let
+  # it act, name `ip_reputation` in `block.signals` below.
+  ip_reputation:
+    enabled: true
+
+    # The bundled list. Ships almost empty on purpose -- see the file. Whatever
+    # `feed_url` returns is ADDED to this, never replaces it.
+    feed_path: configs/reputation.txt
+
+    # Optional live feed: a plain list of addresses or CIDRs, one per line.
+    # Left empty, the gateway makes no outbound requests at all.
+    #   Tor exits    https://check.torproject.org/torbulkexitlist
+    #   FireHOL L1   https://raw.githubusercontent.com/firehol/blocklists/master/firehol_level1.netset
+    feed_url: ""
+    refresh_interval: 1h
+    fetch_timeout: 10s
+
+    # What a listed address contributes. Defaults to the same value as
+    # `block.min_score`, so naming this in `block.signals` actually lets it
+    # act -- a lower score would make that entry look armed and do nothing.
+    score: 80
+
+    # A listed address is listed on every request it makes. Without a cooldown
+    # it would raise a fresh signal each time, which floods the event stream
+    # and makes every campaign it touches look like a "reputation" campaign.
+    # Inside the cooldown the address still scores; it just does not re-fire.
+    cooldown: 5m
+
+  # Legacy settings retained for console compatibility. Throttles consume
+  # adaptive_rate_limit quota; delay_ms no longer sleeps on the request path.
+  throttle:
+    enabled: true
+    delay_ms: 500
+  
+  # Blocking
+  # The gateway's own blocking -- its reflex, as opposed to the considered
+  # decisions the control plane writes as policy keys.
+  #
+  # A policy decision takes up to one agent cycle (30s) plus one snapshot
+  # refresh (5s) to reach the gateway, which is too slow for a flood. This
+  # closes that gap for signals you are willing to trust without a second
+  # opinion, and leaves correlation, campaigns and escalation to the agent.
+  #
+  # `enabled` alone does nothing: `signals` has to name at least one detector.
+  # Naming them is the act of consent, because this flag existed in config
+  # files long before anything read it.
+  block:
+    enabled: true
+    duration: 300s # how long a gateway-side block lasts; nothing renews it
+
+    # Only these may block on their own. Both are windowed -- they fire on
+    # repetition rather than on one request that happened to look odd. The
+    # request-scoped detectors (sql_injection, enumeration_path_traversal) are
+    # left out on purpose: a single request carrying "UNION" may be an attack
+    # or may be someone searching a catalogue, and that judgement is the
+    # control plane's job.
+    signals:
+      - api_flooding
+
+    # A score floor on top of each detector's own threshold, so a marginal hit
+    # is not enough. Raise it to make this less trigger-happy without turning
+    # a detector off.
+    min_score: 80
+
+    # Never blocked. Omit the key entirely to take loopback and the private
+    # ranges. The RFC 5737 documentation ranges are deliberately blockable:
+    # they can never belong to a real host, and the demo drives traffic from
+    # them.
+    exempt_cidrs:
+      - 127.0.0.0/8
+      - ::1/128
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+
+  # Acting on decisions written by the Python control plane at policy:<ip>.
+  # Off by default so detectors stay recommend-only until you opt in.
+  policy:
+    enabled: false
+    key_prefix: "policy:"
+    refresh_interval: 5s
+
+signals:
+  geo_location:
+    enabled: true
+  
+  payload_analysis:
+    enabled: true
+    max_body_size: 1MB
+  
+  behavioral:
+    enabled: true
+    learning_period: 24h
+
+logging:
+  level: info
+  format: json
+  output: stdout

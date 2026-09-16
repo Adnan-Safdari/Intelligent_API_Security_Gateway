@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -239,5 +240,33 @@ func TestLowAndSlowDetectorLimitsAreValidated(t *testing.T) {
 				t.Fatal("unsafe low-and-slow detector limits were accepted")
 			}
 		})
+	}
+}
+
+// config.own-api.yaml is what someone protecting their own API starts from. Its
+// detection and enforcement must stay the example's: a detector left out of a
+// config file is not defaulted, it is silently off, so a template that drifted
+// would ship a gateway that detects less than the documentation describes.
+func TestOwnAPITemplateDetectsWhatTheExampleDetects(t *testing.T) {
+	template, err := Load(filepath.Join("..", "..", "configs", "config.own-api.yaml"))
+	if err != nil {
+		t.Fatalf("configs/config.own-api.yaml does not load: %v", err)
+	}
+	example, err := Load(filepath.Join("..", "..", "configs", "config.yaml.example"))
+	if err != nil {
+		t.Fatalf("configs/config.yaml.example does not load: %v", err)
+	}
+
+	if !reflect.DeepEqual(template.Enforcement, example.Enforcement) {
+		t.Error("enforcement block differs from config.yaml.example; copy it across")
+	}
+	if !reflect.DeepEqual(template.Signals, example.Signals) {
+		t.Error("signals block differs from config.yaml.example; copy it across")
+	}
+	if template.Proxy.PreserveHost {
+		t.Error("preserve_host must default to false: most backends need their own Host")
+	}
+	if len(template.Routes.AuthOutcomes) == 0 {
+		t.Error("the template must show an auth_outcomes entry, or brute-force detection is off")
 	}
 }

@@ -115,3 +115,4 @@ it happens again. See [Policy Enforcement](policy-enforcement.md).
 | [Control Plane](control-plane.md) | The agent cycle, campaigns, and the escalation ladder |
 | [Identifying the Client](client-ip.md) | Why the attributed IP is the foundation of everything else |
 | [Running Locally](running-locally.md) / [Running with Docker](running-with-docker.md) | Getting it started |
+| [Protecting Your Own API](protecting-your-own-api.md) | Putting the gateway in front of an API you run |

@@ -1,0 +1,120 @@
+# IASG in front of your own API: the gateway, the control plane, the console
+# and their stores, with no demo backend. Guide:
+# gateway/docs/protecting-your-own-api.md
+#
+# Download this file from a GitHub Release, where the image registry and
+# version are already filled in. Put your gateway config beside it:
+#
+#   gateway.yaml   copied from gateway/configs/config.own-api.yaml and edited
+#
+#   docker compose -f docker-compose.own-api.yml up -d
+#
+# From a checkout of the repository instead, set IASG_VERSION to a released
+# version and IASG_REGISTRY to the registry that release published to.
+#
+# The console has no login. Its port binds to 127.0.0.1 and must stay that way;
+# reach it over an SSH tunnel rather than publishing it. Postgres and Redis
+# publish nothing.
+
+# Named apart from the desktop app's "iasg" project. Sharing its name would let
+# either one's `down` stop the other's containers and share its databases.
+name: iasg-own-api
+
+services:
+  postgres:
+    image: postgres:18.2
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-iasg_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-iasg}
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-iasg_user} -d ${POSTGRES_DB:-iasg}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8.6
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  gateway:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-gateway:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    environment:
+      IASG_CONFIG: configs/config.yaml
+      IASG_REDIS_HOST: redis
+      # Optional: overrides proxy.backend_url in gateway.yaml.
+      IASG_BACKEND_URL: ${IASG_BACKEND_URL:-}
+    volumes:
+      # Fails with a clear error when gateway.yaml is missing, instead of Docker
+      # creating an empty directory in its place and the gateway failing to
+      # read a "file" that is a folder.
+      - type: bind
+        source: ${IASG_GATEWAY_CONFIG:-./gateway.yaml}
+        target: /app/configs/config.yaml
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      # Loopback by default, so nothing is exposed until you decide how traffic
+      # arrives. Set IASG_GATEWAY_BIND=0.0.0.0 when your HTTPS proxy runs on
+      # another machine -- and add that machine to server.trusted_proxies.
+      - "${IASG_GATEWAY_BIND:-127.0.0.1}:${IASG_GATEWAY_PORT:-8082}:8082"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  control_plane:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-control-plane:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    environment:
+      IASG_REDIS_URL: redis://redis:6379/0
+      IASG_EVIDENCE_STREAM: iasg:events
+      IASG_DRY_RUN: "false"
+      IASG_LLM_PROVIDER: "null"
+      IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
+      IASG_HEALTH_STREAM: iasg:telemetry:health
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+
+  gateway_dashboard:
+    image: ${IASG_REGISTRY:-ghcr.io/adnan-safdari}/iasg-dashboard:${IASG_VERSION:?IASG_VERSION is required}
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      IASG_POSTGRES_URL: postgresql://${POSTGRES_USER:-iasg_user}:${POSTGRES_PASSWORD:-changeme}@postgres:5432/${POSTGRES_DB:-iasg}
+    ports:
+      - "127.0.0.1:5177:5177"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:5177/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:

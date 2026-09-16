@@ -2,6 +2,7 @@
 #   - five Docker images to ghcr.io/<owner>/iasg-*:<version> (amd64 + arm64)
 #   - the desktop app (.dmg for macOS, .exe for Windows)
 #   - infra/docker-compose.release.yml, which the desktop app downloads
+#   - infra/docker-compose.own-api.yml, for running in front of your own API
 # The release stays a draft until every job succeeds, so the desktop app
 # (which reads releases/latest, and that ignores drafts) never sees half of one.
 name: Release
@@ -135,5 +136,11 @@ jobs:
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
           mkdir -p out
           sed "s#ghcr.io/adnan-safdari#ghcr.io/${owner}#g" infra/docker-compose.release.yml > out/docker-compose.release.yml
-          gh release upload "$TAG" out/docker-compose.release.yml --clobber
+          # For people running the gateway in front of their own API. Nothing
+          # launches this one, so it also carries its version instead of
+          # requiring IASG_VERSION.
+          sed -e "s#ghcr.io/adnan-safdari#ghcr.io/${owner}#g" \
+              -e "s#\${IASG_VERSION:?IASG_VERSION is required}#\${IASG_VERSION:-${TAG#v}}#g" \
+              infra/docker-compose.own-api.yml > out/docker-compose.own-api.yml
+          gh release upload "$TAG" out/docker-compose.release.yml out/docker-compose.own-api.yml --clobber
           gh release edit "$TAG" --draft=false --latest
