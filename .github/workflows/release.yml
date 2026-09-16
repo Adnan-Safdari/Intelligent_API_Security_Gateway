@@ -1,12 +1,9 @@
 # Pushing a tag like v0.1.0 builds and publishes a release:
-#   - five Docker images to ghcr.io/<owner>/iasg-*:<version>
-#     (amd64 + arm64)
+#   - five Docker images to ghcr.io/<owner>/iasg-*:<version> (amd64 + arm64)
 #   - the desktop app (.dmg for macOS, .exe for Windows)
 #   - infra/docker-compose.release.yml, which the desktop app downloads
-#
 # The release stays a draft until every job succeeds, so the desktop app
 # (which reads releases/latest, and that ignores drafts) never sees half of one.
-
 name: Release
 
 on:
@@ -22,80 +19,47 @@ env:
   TAG: ${{ github.ref_name }}
 
 jobs:
-
-  # ============================================================
-  # CREATE DRAFT RELEASE
-  # ============================================================
-
   draft:
     runs-on: ubuntu-latest
-
     steps:
       - uses: actions/checkout@v5
-
       - name: Create draft release
-        run: |
-          gh release create "$TAG" \
-            --draft \
-            --generate-notes \
-            --title "IASG $TAG"
-
-
-  # ============================================================
-  # FOUR NORMAL IMAGES
-  #
-  # gateway
-  # control-plane
-  # vulnerable-api
-  # vulnerable-web
-  #
-  # These continue using the existing multi-platform QEMU build.
-  # Only dashboard gets the special native ARM64 treatment below.
-  # ============================================================
+        run: gh release create "$TAG" --draft --generate-notes --title "IASG $TAG"
 
   images:
     needs: draft
-
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: true
-
       matrix:
         include:
-
           - name: gateway
             context: gateway
             file: gateway/Dockerfile
-
           - name: control-plane
             context: .
             file: control-plane/Dockerfile
-
+          - name: dashboard
+            context: gateway-dashboard
+            file: gateway-dashboard/Dockerfile
           - name: vulnerable-api
             context: vulnerable-app/backend
             file: vulnerable-app/backend/Dockerfile
-
           - name: vulnerable-web
             context: vulnerable-app
             file: vulnerable-app/Dockerfile
-
     steps:
-
       - uses: actions/checkout@v5
 
       - name: Image name
         id: meta
         run: |
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-
           echo "image=ghcr.io/${owner}/iasg-${{ matrix.name }}" >> "$GITHUB_OUTPUT"
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-qemu-action@v3
-
       - uses: docker/setup-buildx-action@v3
-
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -106,193 +70,35 @@ jobs:
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
-
           platforms: linux/amd64,linux/arm64
-
           push: true
-
           tags: |
             ${{ steps.meta.outputs.image }}:${{ steps.meta.outputs.version }}
             ${{ steps.meta.outputs.image }}:latest
-
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ steps.meta.outputs.version }}
-
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
-
-  # ============================================================
-  # DASHBOARD - NATIVE AMD64 BUILD
-  # ============================================================
-
-  dashboard-amd64:
-    needs: draft
-
-    runs-on: ubuntu-24.04
-
-    steps:
-
-      - uses: actions/checkout@v5
-
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Build dashboard AMD64
-        uses: docker/build-push-action@v6
-        with:
-          context: gateway-dashboard
-          file: gateway-dashboard/Dockerfile
-
-          platforms: linux/amd64
-
-          push: true
-
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/iasg-dashboard:${{ github.ref_name }}-amd64
-
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ github.ref_name }}
-
-          cache-from: type=gha,scope=dashboard-amd64
-          cache-to: type=gha,mode=max,scope=dashboard-amd64
-
-
-  # ============================================================
-  # DASHBOARD - NATIVE ARM64 BUILD
-  #
-  # IMPORTANT:
-  # This runs on an actual ARM64 GitHub runner.
-  # Therefore npm ci runs natively instead of through QEMU.
-  # ============================================================
-
-  dashboard-arm64:
-    needs: draft
-
-    runs-on: ubuntu-24.04-arm
-
-    steps:
-
-      - uses: actions/checkout@v5
-
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Build dashboard ARM64
-        uses: docker/build-push-action@v6
-        with:
-          context: gateway-dashboard
-          file: gateway-dashboard/Dockerfile
-
-          platforms: linux/arm64
-
-          push: true
-
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/iasg-dashboard:${{ github.ref_name }}-arm64
-
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ github.ref_name }}
-
-          cache-from: type=gha,scope=dashboard-arm64
-          cache-to: type=gha,mode=max,scope=dashboard-arm64
-
-
-  # ============================================================
-  # DASHBOARD - COMBINE AMD64 + ARM64
-  #
-  # This creates:
-  #
-  # ghcr.io/<owner>/iasg-dashboard:<version>
-  #
-  # containing:
-  #   linux/amd64
-  #   linux/arm64
-  #
-  # Docker automatically chooses the correct one.
-  # ============================================================
-
-  dashboard-manifest:
-    needs:
-      - dashboard-amd64
-      - dashboard-arm64
-
-    runs-on: ubuntu-latest
-
-    steps:
-
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
-
-      - name: Create multi-platform dashboard image
-        run: |
-
-          OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-          VERSION="${TAG#v}"
-
-          IMAGE="ghcr.io/${OWNER}/iasg-dashboard"
-
-          docker buildx imagetools create \
-            --tag "${IMAGE}:${VERSION}" \
-            "${IMAGE}:${TAG}-amd64" \
-            "${IMAGE}:${TAG}-arm64"
-
-          docker buildx imagetools create \
-            --tag "${IMAGE}:latest" \
-            "${IMAGE}:${TAG}-amd64" \
-            "${IMAGE}:${TAG}-arm64"
-
-
-  # ============================================================
-  # DESKTOP APPLICATION
-  #
-  # Windows .exe
-  # macOS .dmg
-  # ============================================================
-
   desktop:
     needs: draft
-
     strategy:
       fail-fast: true
-
       matrix:
         include:
-
           - os: macos-14
             target: --mac
             files: desktop/dist/*.dmg
-
           - os: windows-latest
             target: --win
             files: desktop/dist/*.exe
-
     runs-on: ${{ matrix.os }}
-
     defaults:
       run:
         shell: bash
-
     steps:
-
       - uses: actions/checkout@v5
-
       - uses: actions/setup-node@v5
         with:
           node-version: 22
@@ -306,71 +112,28 @@ jobs:
       - name: Stamp version and repository
         working-directory: desktop
         run: |
-          npm version "${TAG#v}" \
-            --no-git-tag-version \
-            --allow-same-version
-
+          npm version "${TAG#v}" --no-git-tag-version --allow-same-version
           npm pkg set iasgRepo="${{ github.repository }}"
 
       - name: Build installer
         working-directory: desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-
-        run: |
-          npx electron-builder \
-            ${{ matrix.target }} \
-            --publish never
+        run: npx electron-builder ${{ matrix.target }} --publish never
 
       - name: Upload to release
-        run: |
-          gh release upload "$TAG" \
-            ${{ matrix.files }} \
-            --clobber
-
-
-  # ============================================================
-  # PUBLISH RELEASE
-  #
-  # Only runs when:
-  #   - all four normal images succeeded
-  #   - dashboard AMD64 succeeded
-  #   - dashboard ARM64 succeeded
-  #   - dashboard manifest succeeded
-  #   - Windows .exe succeeded
-  #   - macOS .dmg succeeded
-  # ============================================================
+        run: gh release upload "$TAG" ${{ matrix.files }} --clobber
 
   publish:
-    needs:
-      - images
-      - dashboard-manifest
-      - desktop
-
+    needs: [images, desktop]
     runs-on: ubuntu-latest
-
     steps:
-
       - uses: actions/checkout@v5
-
       - name: Attach compose file and publish
         run: |
-
+          # Point the default image registry at whoever published this release.
           owner="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
-
           mkdir -p out
-
-          sed \
-            "s#ghcr.io/adnan-safdari#ghcr.io/${owner}#g" \
-            infra/docker-compose.release.yml \
-            > out/docker-compose.release.yml
-
-          gh release upload \
-            "$TAG" \
-            out/docker-compose.release.yml \
-            --clobber
-
-          gh release edit \
-            "$TAG" \
-            --draft=false \
-            --latest
+          sed "s#ghcr.io/adnan-safdari#ghcr.io/${owner}#g" infra/docker-compose.release.yml > out/docker-compose.release.yml
+          gh release upload "$TAG" out/docker-compose.release.yml --clobber
+          gh release edit "$TAG" --draft=false --latest
