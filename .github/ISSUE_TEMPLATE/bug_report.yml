@@ -1,0 +1,64 @@
+name: Bug report
+description: Something does not behave the way it is documented to
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If this is about `vulnerable-app/`, it is probably not a bug — that
+        target is insecure on purpose. See [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Which part
+      options:
+        - gateway (Go data plane)
+        - control-plane (Python agent)
+        - gateway-dashboard (console)
+        - desktop (Electron launcher)
+        - release / CI
+        - documentation
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, and what the result was.
+      placeholder: |
+        Sent 200 requests/s from 203.0.113.9 and expected api_flooding to fire.
+        Nothing appeared on /signals and no policy key was written.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: >
+        A request someone else can send is worth far more than a description of
+        one. Include the method, path, headers and body where relevant.
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: Gateway or control-plane logs, or the failing CI job.
+      render: shell
+
+  - type: input
+    id: how-running
+    attributes:
+      label: How are you running it
+      placeholder: docker compose / from source / desktop app v0.1.2
