@@ -271,20 +271,3 @@ enforcement:
     enabled: false
     key_prefix: "policy:"
     refresh_interval: 5s
-
-signals:
-  geo_location:
-    enabled: true
-  
-  payload_analysis:
-    enabled: true
-    max_body_size: 1MB
-  
-  behavioral:
-    enabled: true
-    learning_period: 24h
-
-logging:
-  level: info
-  format: json
-  output: stdout
