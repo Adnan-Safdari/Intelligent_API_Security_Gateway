@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Is it the vulnerable demo app?
+    url: https://github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/blob/main/SECURITY.md
+    about: vulnerable-app/ is insecure on purpose. Read this before reporting it.
+  - name: Security issue in the gateway itself
+    url: https://github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/blob/main/SECURITY.md
+    about: A detector bypass or a way past the enforcement rails — how to report it.

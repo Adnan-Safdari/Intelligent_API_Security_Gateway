@@ -1,0 +1,56 @@
+name: Feature or change
+description: Propose something the project should do differently
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve
+      description: >
+        Describe the situation, not the solution. A proposal is much easier to
+        judge when the thing it fixes is stated first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you are proposing
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Which lane does this touch
+      description: >
+        The data plane must stay fast and must not wait on Redis, the agent or a
+        model. Anything that would add a blocking call to the request path needs
+        a much stronger argument than the same change in the control plane.
+      options:
+        - Go gateway — in the request path
+        - Python control plane — off the request path
+        - Dashboard / desktop app
+        - Detection logic (a new or changed signal)
+        - Documentation or tooling
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What else you considered
+      description: Including doing nothing, and why that is not enough.
+
+  - type: checkboxes
+    id: config
+    attributes:
+      label: Configuration
+      description: >
+        The project deliberately keeps a small settings surface. A value is
+        configurable policy if it answers "what should we do about it?"; it
+        stays fixed if it answers "what is happening?" or if it bounds the
+        worst case.
+      options:
+        - label: This would add one or more new configuration fields
