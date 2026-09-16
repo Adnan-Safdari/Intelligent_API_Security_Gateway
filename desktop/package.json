@@ -55,5 +55,6 @@
   "devDependencies": {
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3"
-  }
+  },
+  "iasgRepo": "Adnan_Safdari/Intelligent_API_Security_Gateway"
 }
