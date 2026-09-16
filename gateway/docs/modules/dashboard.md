@@ -17,7 +17,7 @@ use every control on it:
 
 | Route | File | Shows |
 | --- | --- | --- |
-| `/` | `app/(console)/page.jsx` | Overview: live traffic, stats, attack map |
+| `/` | `app/(console)/page.jsx` | Overview: live traffic, stats, attack map, and setup warnings (below) |
 | `/campaigns` | `app/(console)/campaigns/page.jsx` | Campaigns the control plane has formed |
 | `/events` | `app/(console)/events/page.jsx` | The raw `iasg:events` stream |
 | `/policy` | `app/(console)/policy/page.jsx` | Active `policy:<ip>` keys, and overrides |
@@ -31,7 +31,7 @@ use every control on it:
 
 | Route | Purpose |
 | --- | --- |
-| `app/api/overview/route.js` | Live stats and events for the overview |
+| `app/api/overview/route.js` | Live stats and events for the overview, and the setup checks over the last 500 events |
 | `app/api/campaigns/route.js` | Active campaigns |
 | `app/api/events/route.js` | The full event stream for investigation, deeper than the live poll's slice |
 | `app/api/history/route.js` | Campaign history from Postgres |
@@ -62,6 +62,8 @@ use every control on it:
 | `lib/telemetry.js` | Reads the event stream and stats |
 | `lib/plane.js` | Readers for what the control plane concluded — campaigns, policies, feedback — shared by the campaigns feed and the per-address investigation view |
 | `lib/adaptive.js` | Validates a proposed adaptive configuration and a recommendation edit against the live guardrails |
+| `lib/setup-checks.mjs` | The Overview's setup warnings, computed from recent events |
+| `app/ui/setup-warnings.jsx` | Renders them; dismissal is per browser |
 | `lib/adaptive-mode.mjs` | The three adaptive modes' labels and behaviour copy, shared by the settings form and its confirmation dialog |
 | `lib/geo.js` | Address to coordinates |
 | `lib/auth.js` | A stub — see below |
@@ -69,6 +71,32 @@ use every control on it:
 Every route still calls `requireRole(...)` with the role it would need if
 login were restored, but the stub grants every role unconditionally, so the
 argument is currently a statement of intent rather than an enforced check.
+
+## Setup warnings
+
+Two deployment mistakes leave the gateway running and recording while it
+protects nothing, and neither raises an error. Overview checks the last 500
+events (Docker healthcheck probes excluded) for both and shows a warning
+naming what it saw:
+
+| Warning | Shown when | Usually means |
+| --- | --- | --- |
+| Most traffic comes from private addresses | At least 30 requests, 90% or more from private addresses | `server.trusted_proxies` does not list the proxy in front of the gateway, so every request is attributed to it. The gateway and the control plane never block private addresses. |
+| Endpoints missing from the route table | An unmatched endpoint called by at least 2 clients, at least 5 times, and at least twice per client | `routes.templates` does not describe the API, so its own clients count toward unknown-route scanning. |
+
+Both are heuristics, so each warning says when it is expected: an API whose
+clients really are on a private network, or testing from the same machine.
+
+The route check is built to ignore attacks. A scanner requests many paths once
+each, and a botnet requests one path once per address; neither repeats a path
+the way a real client does. Requests flagged by the SQL injection or
+path-traversal detectors are left out. Requests flagged by unknown-route
+scanning are kept, because a missing route makes its own clients trip that
+detector. Segments that look like identifiers are grouped, so `/users/1` and
+`/users/2` count as `/users/{id}`, the template the warning suggests.
+
+Dismissing a warning hides it in that browser until what it reports changes: a
+different address, or another missing route, shows again.
 
 ## Settings
 

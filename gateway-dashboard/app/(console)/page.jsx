@@ -7,6 +7,7 @@ import { PageHead } from "@/app/ui/chrome";
 import { EVENT_COLUMNS, exportCsv } from "@/app/ui/export";
 import { clampRiskScore, requestHistogram, riskTone, signalMeta } from "@/app/ui/format";
 import { Loading, Metric, SegmentedControl } from "@/app/ui/parts";
+import { SetupWarnings } from "@/app/ui/setup-warnings";
 import { useLive } from "@/app/ui/store";
 
 const TrafficMap = dynamic(() => import("@/app/traffic-map"), {
@@ -26,7 +27,7 @@ const RANGE_COPY = {
 const RANGES = Object.keys(RANGE_COPY).map((value) => ({ value, label: value }));
 
 export default function OverviewPage() {
-  const { overview, stats, events, sources, attackers, policies, campaigns, busy, instruct } =
+  const { overview, stats, events, sources, attackers, policies, campaigns, busy, instruct, setup } =
     useLive();
   const [range, setRange] = useState("24h");
 
@@ -114,6 +115,8 @@ export default function OverviewPage() {
       >
         Traffic, detection and enforcement across all upstreams for {RANGE_COPY[range]}.
       </PageHead>
+
+      <SetupWarnings checks={setup} />
 
       <section className="metrics">
         <Metric

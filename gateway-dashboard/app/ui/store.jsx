@@ -19,6 +19,7 @@ const EMPTY_OVERVIEW = {
   attackers: [],
   events: [],
   sources: [],
+  setup: [],
   site: null,
 };
 
@@ -281,6 +282,7 @@ export function LiveProvider({ children, me }) {
       events: overview.events || [],
       sources: overview.sources || [],
       attackers: overview.attackers || [],
+      setup: overview.setup || [],
       campaigns: plane.campaigns || [],
       policies: plane.policies || [],
       escalations: plane.alerts || [],

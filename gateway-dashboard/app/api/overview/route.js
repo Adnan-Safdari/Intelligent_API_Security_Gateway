@@ -7,8 +7,14 @@ import {
   parseStats,
   withDerivedStats,
 } from "@/lib/telemetry";
+import { setupChecks } from "@/lib/setup-checks.mjs";
 
 export const dynamic = "force-dynamic";
+
+// The page shows the most recent events; the setup checks read further back,
+// because a share taken over 80 requests swings with one busy client.
+const VISIBLE_EVENTS = 80;
+const SETUP_WINDOW = 500;
 
 export async function GET() {
   // Reading is still reading a security system: campaigns, policy in force and
@@ -20,17 +26,18 @@ export async function GET() {
     const redis = await getRedis();
     const [hash, stream, attackers] = await Promise.all([
       redis.hGetAll("iasg:stats"),
-      redis.xRevRange("iasg:events", "+", "-", { COUNT: 80 }),
+      redis.xRevRange("iasg:events", "+", "-", { COUNT: SETUP_WINDOW }),
       redis.zRangeWithScores("iasg:attackers", 0, 9, { REV: true }),
     ]);
 
-    const events = (stream || [])
+    const recent = (stream || [])
       .map((entry) => {
         const event = parseEventMessage(entry.message);
         if (!event) return null;
         return { id: entry.id, ...event };
       })
       .filter((event) => event && !isRoutineDockerHealthcheck(event));
+    const events = recent.slice(0, VISIBLE_EVENTS);
 
     const summarized = summarizeSources(events);
     const [geo, lab] = await Promise.all([
@@ -88,6 +95,7 @@ export async function GET() {
       events,
       sources,
       site,
+      setup: setupChecks(recent),
     });
   } catch (err) {
     return Response.json(
@@ -99,6 +107,7 @@ export async function GET() {
         events: [],
         sources: [],
         site: null,
+        setup: [],
       },
       { status: 200 },
     );
