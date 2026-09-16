@@ -31,12 +31,12 @@ from iasg.models import (
 MIN_SOLO_EVENTS = 3
 
 # The consumer hands correlation only the evidence newly received in one
-# control-plane cycle. A signature-confirmed injection probe must not vanish
-# merely because an operator sent it once per cycle rather than three times in
-# thirty seconds. Other single-IP detectors still need volume before they are
-# called campaigns; SQLi earns this exception only when the gateway already
-# rated its evidence high.
-IMMEDIATE_SOLO_CAMPAIGN_DETECTORS = frozenset({DETECTOR_SQLI})
+# control-plane cycle. A signature-confirmed injection or traversal probe must
+# not vanish merely because a gateway reflex stops the next request before it
+# can add a third event. Other single-IP detectors still need volume before
+# they are called campaigns; these exceptions apply only when the gateway
+# already rated their evidence high.
+IMMEDIATE_SOLO_CAMPAIGN_DETECTORS = frozenset({DETECTOR_SQLI, DETECTOR_TRAVERSAL})
 
 # Events a phase needs before it counts as a phase. One stray detection from
 # another detector should not turn a single-purpose attack into a staged
@@ -261,7 +261,7 @@ class CorrelationAgent:
 
 
 def _is_immediate_solo_campaign(member: IPProfile) -> bool:
-    """Allow a confirmed injection probe through the singleton noise gate."""
+    """Allow a confirmed injection or traversal probe through the noise gate."""
     return (
         member.worst_severity == SEVERITY_HIGH
         and any(

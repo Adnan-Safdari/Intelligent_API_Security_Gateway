@@ -78,6 +78,24 @@ def test_one_high_severity_sqli_probe_becomes_a_campaign():
     assert result.confidence == 0.582
 
 
+def test_traversal_with_enumeration_becomes_a_campaign_before_reflex_blocks_more():
+    """The gateway may stop the third probe, so these first two must suffice."""
+    rows = [
+        evidence("203.0.113.81", endpoint="/.env-demo", detector="enumeration",
+                 severity="medium"),
+        evidence("203.0.113.81", endpoint="/api/demo-files", detector="traversal",
+                 severity="high", offset=1),
+    ]
+
+    (campaign,) = CorrelationAgent().analyse(rows)
+
+    assert campaign.type == "Reconnaissance"
+    assert campaign.ips == ["203.0.113.81"]
+    result = calculate_risk(AdaptiveConfig(), campaign, rows)
+    assert result.action == ACTION_THROTTLE
+    assert result.explanation["deterministic_evidence_count"] == 2
+
+
 def test_same_time_same_detector_alone_does_not_group():
     """Different networks, endpoints and agents must not become one campaign."""
     events = [
