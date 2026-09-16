@@ -44,6 +44,22 @@
     }
     button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
     details summary { cursor: pointer; color: var(--muted); }
+    .setup {
+      margin: 18px 0 4px; padding: 16px 18px; border: 1px solid var(--border);
+      border-radius: 10px; background: var(--bg);
+    }
+    .setup h2 { margin: 0 0 6px; font-size: 15px; }
+    .setup .note { margin: 0 0 10px; color: var(--muted); }
+    .setup ol { margin: 0; padding-left: 22px; display: grid; gap: 6px; }
+    .setup ol button { margin-left: 6px; padding: 3px 10px; font-size: 13px; }
+    .setup .waiting { margin: 12px 0 0; color: var(--muted); }
+    .setup details { margin-top: 12px; }
+    .setup details ul { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 6px; }
+    .setup .links { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    code {
+      font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px;
+      border-radius: 4px; background: var(--panel); border: 1px solid var(--border);
+    }
     pre {
       margin: 10px 0 0; max-height: 320px; overflow: auto; padding: 12px;
       background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
@@ -58,9 +74,10 @@
 
     <div class="status" id="status"><span class="dot"></span><span id="message">Starting…</span></div>
 
+    <section class="setup" id="setup" hidden></section>
+
     <div class="actions">
       <button class="primary" id="retry" hidden>Retry</button>
-      <button id="docker" hidden>Get Docker Desktop</button>
       <button class="primary" id="dashboard" hidden>Open Dashboard</button>
     </div>
 

@@ -6,7 +6,15 @@ from prebuilt images, so a new release reaches users without a new installer.
 
 ## What it does on launch
 
-1. Checks that Docker Desktop is installed and running (and says so if not).
+1. Checks that Docker Desktop is installed and running. If it is not, the app
+   waits and carries on by itself once Docker is up, with no Retry needed:
+   - **Not installed:** step-by-step setup, with a direct download of the
+     installer for this machine (Apple Silicon or Intel Mac, Windows x64 or
+     ARM, detected even when the app itself runs under Rosetta or emulation).
+     On Windows the WSL 2 requirement is explained before the steps, with fixes
+     for the two usual failures: WSL out of date and virtualization disabled in
+     the firmware.
+   - **Installed but stopped:** the app opens Docker Desktop once and waits.
 2. Asks GitHub for the latest release. If it is newer than the version it ran
    last, it downloads that release's `docker-compose.release.yml` and pulls the
    images. The new version is only switched to once the pull succeeds;
@@ -61,6 +69,7 @@ Testing without publishing a release:
 | `IASG_RELEASE_API` | URL (or `file://` path) of a release JSON to use instead of GitHub's `releases/latest` |
 | `IASG_REGISTRY` | Image registry prefix, e.g. `local` for images built with `docker build -t local/iasg-gateway:0.1.0 gateway` |
 | `IASG_SKIP_PULL` | Skip `docker compose pull`, for images that only exist locally |
+| `IASG_DOCKER` | Docker binary to run instead of `docker`. A path that does not exist shows the not-installed screen on a machine that has Docker. |
 
 Build an installer locally with `npm run dist:mac` (or `dist:win` on Windows);
 output goes to `desktop/dist/`.

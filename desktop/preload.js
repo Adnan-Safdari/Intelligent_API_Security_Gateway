@@ -6,5 +6,7 @@ contextBridge.exposeInMainWorld("iasg", {
   onLog: (callback) => ipcRenderer.on("log", (_event, lines) => callback(lines)),
   retry: () => ipcRenderer.send("retry"),
   openDocker: () => ipcRenderer.send("open-docker"),
+  startDocker: () => ipcRenderer.send("start-docker"),
+  openHelp: (url) => ipcRenderer.send("open-help", url),
   openDashboard: () => ipcRenderer.send("open-dashboard"),
 });

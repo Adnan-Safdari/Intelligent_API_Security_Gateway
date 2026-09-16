@@ -12,7 +12,18 @@ const RELEASE_API =
 const COMPOSE_ASSET = "docker-compose.release.yml";
 const PROJECT = "iasg";
 const DASHBOARD = "http://127.0.0.1:5177";
-const DOCKER_DOWNLOAD = "https://www.docker.com/products/docker-desktop/";
+// Polled while waiting for someone to install or start Docker Desktop, so the
+// app carries on by itself instead of waiting for a Retry click.
+const DOCKER_POLL_MS = 3000;
+// A daemon that is still starting can hang `docker info` instead of failing.
+const DOCKER_PROBE_TIMEOUT_MS = 10000;
+const DOCKER_DESKTOP_WIN = "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe";
+// The only pages the status screen may open. The renderer names one; anything
+// else is ignored, so the page cannot be used to open arbitrary URLs.
+const HELP_LINKS = new Set([
+  "https://docs.docker.com/desktop/setup/install/windows-install/",
+  "https://learn.microsoft.com/windows/wsl/install",
+]);
 const HEALTH_TIMEOUT_MS = 5 * 60 * 1000;
 const LOG_LINES = 200;
 
@@ -40,6 +51,8 @@ let busy = false;
 let stackStarted = false;
 let quitting = false;
 let launcherUpdate = null;
+let dockerWatch = null;
+let dockerLaunched = false;
 
 // `win?.` is not enough: closing the window destroys the BrowserWindow but
 // leaves the variable pointing at it, and every property access on a destroyed
@@ -51,7 +64,7 @@ function liveWindow() {
 }
 
 function setStatus(phase, message) {
-  status = { phase, message };
+  status = { phase, message, platform: process.platform, installer: dockerInstaller() };
   liveWindow()?.webContents.send("status", status);
 }
 
@@ -62,13 +75,34 @@ function log(text) {
   liveWindow()?.webContents.send("log", lines);
 }
 
-function docker(args, { version, quiet = false } = {}) {
+// The installer for this machine rather than a product page to hunt through.
+// The architecture is the machine's, not this process's: the Intel build of
+// the app running under Rosetta, or the x64 build on Windows on ARM, still
+// needs the ARM Docker Desktop.
+function dockerInstaller() {
+  const arm = process.arch === "arm64" || app.runningUnderARM64Translation;
+  if (process.platform === "darwin") {
+    return arm
+      ? { url: "https://desktop.docker.com/mac/main/arm64/Docker.dmg", label: "for Apple Silicon" }
+      : { url: "https://desktop.docker.com/mac/main/amd64/Docker.dmg", label: "for Intel Macs" };
+  }
+  if (process.platform === "win32") {
+    return arm
+      ? { url: "https://desktop.docker.com/win/main/arm64/Docker%20Desktop%20Installer.exe", label: "for Windows on ARM" }
+      : { url: "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe", label: "for Windows" };
+  }
+  return { url: "https://docs.docker.com/desktop/setup/install/linux/", label: "for Linux" };
+}
+
+// IASG_DOCKER lets the no-Docker and Docker-stopped screens be exercised on a
+// machine that has Docker, by pointing at a missing or stand-in binary.
+function docker(args, { version, quiet = false, timeoutMs } = {}) {
   return new Promise((resolve) => {
     const env = { ...process.env };
     if (version) env.IASG_VERSION = version;
     let child;
     try {
-      child = spawn("docker", args, { env });
+      child = spawn(process.env.IASG_DOCKER || "docker", args, { env });
     } catch (err) {
       resolve({ code: -1, output: err.message });
       return;
@@ -80,9 +114,87 @@ function docker(args, { version, quiet = false } = {}) {
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
-    child.on("error", (err) => resolve({ code: -1, output: err.message }));
-    child.on("close", (code) => resolve({ code, output }));
+    const timer = timeoutMs
+      ? setTimeout(() => {
+          child.kill();
+          resolve({ code: -1, output: `docker ${args.join(" ")} timed out` });
+        }, timeoutMs)
+      : null;
+    const done = (result) => {
+      clearTimeout(timer);
+      resolve(result);
+    };
+    child.on("error", (err) => done({ code: -1, output: err.message }));
+    child.on("close", (code) => done({ code, output }));
   });
+}
+
+async function dockerState() {
+  const probe = { quiet: true, timeoutMs: DOCKER_PROBE_TIMEOUT_MS };
+  if ((await docker(["--version"], probe)).code !== 0) return "missing";
+  if ((await docker(["info"], probe)).code !== 0) return "stopped";
+  return "running";
+}
+
+// Opens Docker Desktop once per wait. Someone who has installed it but not
+// started it wants it started; quitting it again is their call, so this does
+// not keep relaunching it.
+function launchDockerDesktop() {
+  try {
+    if (process.platform === "darwin") {
+      spawn("open", ["-a", "Docker"], { detached: true, stdio: "ignore" }).unref();
+    } else if (process.platform === "win32" && fs.existsSync(DOCKER_DESKTOP_WIN)) {
+      spawn(DOCKER_DESKTOP_WIN, [], { detached: true, stdio: "ignore" }).unref();
+    } else {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showDockerState(state) {
+  if (state === "missing") {
+    setStatus(
+      "no-docker",
+      "IASG runs in Docker Desktop, which is not installed on this computer.",
+    );
+    return;
+  }
+  if (!dockerLaunched) dockerLaunched = launchDockerDesktop();
+  setStatus(
+    "docker-stopped",
+    dockerLaunched ? "Starting Docker Desktop…" : "Docker Desktop is installed but not running. Start it to continue.",
+  );
+}
+
+// One sequential loop, never overlapping probes: a slow `docker info` must not
+// stack up a queue of them.
+function watchDocker() {
+  if (dockerWatch) return;
+  dockerWatch = setTimeout(async function poll() {
+    if (quitting) {
+      dockerWatch = null;
+      return;
+    }
+    const state = await dockerState();
+    if (state === "running") {
+      dockerWatch = null;
+      dockerLaunched = false;
+      log("Docker is running; continuing.");
+      boot();
+      return;
+    }
+    // Installing it moves "missing" to "stopped"; say so as it happens.
+    if (state !== (status.phase === "no-docker" ? "missing" : "stopped")) showDockerState(state);
+    dockerWatch = setTimeout(poll, DOCKER_POLL_MS);
+  }, DOCKER_POLL_MS);
+}
+
+function stopWatchingDocker() {
+  clearTimeout(dockerWatch);
+  dockerWatch = null;
 }
 
 function compose(file, args, version) {
@@ -190,13 +302,12 @@ async function boot() {
   busy = true;
   try {
     showStatusPage();
+    stopWatchingDocker();
     setStatus("checking", "Checking Docker…");
-    if ((await docker(["--version"], { quiet: true })).code !== 0) {
-      setStatus("no-docker", "Docker Desktop is not installed. Install it, start it, then press Retry.");
-      return;
-    }
-    if ((await docker(["info"], { quiet: true })).code !== 0) {
-      setStatus("docker-stopped", "Docker Desktop is not running. Start it, wait until it says it is running, then press Retry.");
+    const state = await dockerState();
+    if (state !== "running") {
+      showDockerState(state);
+      watchDocker();
       return;
     }
     if ((await docker(["compose", "version"], { quiet: true })).code !== 0) {
@@ -303,7 +414,12 @@ function createWindow() {
 
 ipcMain.handle("get-state", () => ({ status, log: logBuffer }));
 ipcMain.on("retry", () => boot());
-ipcMain.on("open-docker", () => shell.openExternal(DOCKER_DOWNLOAD));
+ipcMain.on("open-docker", () => shell.openExternal(dockerInstaller().url));
+// Brings Docker Desktop forward, e.g. to accept its terms on first launch.
+ipcMain.on("start-docker", () => launchDockerDesktop());
+ipcMain.on("open-help", (_event, url) => {
+  if (HELP_LINKS.has(url)) shell.openExternal(url);
+});
 ipcMain.on("open-dashboard", () => status.phase === "ready" && liveWindow()?.loadURL(DASHBOARD));
 
 app.whenReady().then(() => {
