@@ -150,6 +150,8 @@ def test_explanation_falls_back_to_template():
     assert "Credential Stuffing".lower() in text.lower()
     assert "temp block" in text
     assert "30 minutes" in text
+    assert "22:18 IST" in text
+    assert "UTC" not in text
 
 
 def test_explanation_prefers_the_model_when_it_answers():
@@ -183,6 +185,8 @@ def test_prompt_supplies_the_action_and_duration():
 
     assert "action taken: escalate" in fake.prompt
     assert "action lasts: 30 minutes" in fake.prompt
+    assert "first seen: 22:18 IST" in fake.prompt
+    assert "last seen: 22:18 IST" in fake.prompt
 
 
 def test_explanation_system_prompt_demands_the_action():

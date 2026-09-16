@@ -215,10 +215,8 @@ export function CampaignCard({
         <span>{c.severity}</span>
         <span>{c.events} events</span>
         <span className={c.status === "contained" ? "tag good" : "tag"}>{c.status}</span>
-        {/* In the reader's own zone. The narration below carries UTC because
-            it is stored and travels to places with no browser to localise it;
-            without this line the only time on the card was that one, and an
-            operator reads a bare clock as their own. */}
+        {/* The stored narration and the card clock both carry explicit IST,
+            so alerts and the browser describe the same operational timeline. */}
         {c.lastSeen ? (
           <span title={`First seen ${formatTime(c.firstSeen)} ${DISPLAY_TIME_ZONE_LABEL}, last seen ${formatTime(c.lastSeen)} ${DISPLAY_TIME_ZONE_LABEL}`}>
             {c.firstSeen && formatTime(c.firstSeen) !== formatTime(c.lastSeen)
