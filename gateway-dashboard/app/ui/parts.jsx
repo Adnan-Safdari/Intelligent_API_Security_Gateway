@@ -5,6 +5,7 @@ import { exportCsv, exportJson } from "./export";
 import { EmptyIcon, SpinnerIcon } from "./icons";
 import {
   ACTION_TONE,
+  DISPLAY_TIME_ZONE_LABEL,
   LADDER,
   actionLabel,
   canonicalSignals,
@@ -219,7 +220,7 @@ export function CampaignCard({
             without this line the only time on the card was that one, and an
             operator reads a bare clock as their own. */}
         {c.lastSeen ? (
-          <span title={`First seen ${formatTime(c.firstSeen)}, last seen ${formatTime(c.lastSeen)} local time`}>
+          <span title={`First seen ${formatTime(c.firstSeen)} ${DISPLAY_TIME_ZONE_LABEL}, last seen ${formatTime(c.lastSeen)} ${DISPLAY_TIME_ZONE_LABEL}`}>
             {c.firstSeen && formatTime(c.firstSeen) !== formatTime(c.lastSeen)
               ? `${formatTime(c.firstSeen)}–${formatTime(c.lastSeen)}`
               : formatTime(c.lastSeen)}
@@ -525,7 +526,7 @@ export function EventTable({ events, empty, showSerialNumber = false, showGeo = 
         <thead>
           <tr>
             {showSerialNumber ? <th>S. No.</th> : null}
-            <th>Time</th>
+            <th>Time ({DISPLAY_TIME_ZONE_LABEL})</th>
             <th>Source</th>
             {showGeo ? <th>Geo</th> : null}
             <th>Endpoint</th>

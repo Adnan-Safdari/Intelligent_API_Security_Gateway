@@ -12,6 +12,7 @@ import {
   RedisIcon,
   RefreshIcon,
 } from "./icons";
+import { DISPLAY_TIME_ZONE_LABEL, formatTime } from "./format";
 
 // Text-only, no per-item icon -- the mockup's nav is plain buttons with a
 // bottom-border active state, not an icon rail.
@@ -111,7 +112,7 @@ export function Shell({ children }) {
           </div>
 
           <div className="refreshed-label">
-            {paused ? "Paused" : updatedAt ? `Updated ${updatedAt.toLocaleTimeString([], { hour12: false })}` : "Connecting"}
+            {paused ? "Paused" : updatedAt ? `Updated ${formatTime(updatedAt)} ${DISPLAY_TIME_ZONE_LABEL}` : "Connecting"}
           </div>
 
           {overview.site?.city ? (
@@ -179,7 +180,7 @@ export function Shell({ children }) {
           ) : null}
           <span className="grow" />
           <span className="mono">
-            {paused ? "Paused" : updatedAt ? `Refreshed ${updatedAt.toLocaleTimeString([], { hour12: false })}` : "Connecting"}
+            {paused ? "Paused" : updatedAt ? `Refreshed ${formatTime(updatedAt)} ${DISPLAY_TIME_ZONE_LABEL}` : "Connecting"}
           </span>
         </div>
       </div>

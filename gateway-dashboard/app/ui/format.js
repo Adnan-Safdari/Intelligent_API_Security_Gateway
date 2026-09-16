@@ -145,11 +145,25 @@ export function formatTtl(seconds) {
   return `${Math.round(seconds / 60)}m left`;
 }
 
+// Operational timestamps must describe one shared clock. Relying on each
+// browser's local zone makes two operators looking at the same campaign read
+// different incident times, so the console uses IST everywhere it renders one.
+export const DISPLAY_TIME_ZONE = "Asia/Kolkata";
+export const DISPLAY_TIME_ZONE_LABEL = "IST";
+
+const IST_TIME_FORMATTER = new Intl.DateTimeFormat("en-IN", {
+  timeZone: DISPLAY_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+
 export function formatTime(value) {
   if (!value) return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleTimeString([], { hour12: false });
+  return IST_TIME_FORMATTER.format(date);
 }
 
 // A shape check only, for the IP filter shared across Events/Campaigns/

@@ -363,7 +363,7 @@ export default function AdaptivePage() {
                 <th>Median</th>
                 <th>MAD</th>
                 <th>Threshold</th>
-                <th>Updated</th>
+                <th>Updated (IST)</th>
               </tr>
             </thead>
             <tbody>
@@ -401,7 +401,7 @@ export default function AdaptivePage() {
       <section className="card">
         <div className="card-head">
           <div>
-            <h2>Audit history</h2>
+            <h2>Audit history (IST)</h2>
             <p className="section-note">Durable record of recommendations, approvals, overrides, and settings.</p>
           </div>
           <span>{data.audit?.length || 0}</span>

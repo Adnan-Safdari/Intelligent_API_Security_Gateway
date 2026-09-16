@@ -16,7 +16,7 @@ const COLUMNS = [
   { key: "confidence", label: "Confidence", numeric: true },
   { key: "lastAction", label: "Ended as" },
   { key: "status", label: "Status" },
-  { key: "lastSeen", label: "Last seen" },
+  { key: "lastSeen", label: "Last seen (IST)" },
 ];
 
 export default function HistoryPage() {
