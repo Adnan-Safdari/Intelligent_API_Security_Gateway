@@ -5,7 +5,9 @@ package proxy
 
 import (
 	"log"
+	"net"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
@@ -13,43 +15,36 @@ import (
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/reputation"
-	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/signals"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/telemetry"
 )
 
 // Config holds the configuration settings for the proxy server.
-// It defines network parameters and timeout values for the gateway.
 type Config struct {
-	// ListenAddr is the address and port on which the gateway listens for incoming requests.
-	// Format: "host:port" or ":port" (e.g., ":8082" or "0.0.0.0:8082")
+	// ListenAddr is the address the gateway listens on, as "host:port".
 	ListenAddr string
 
-	// BackendURL is the full URL of the backend service to which requests are proxied.
-	// Format: "scheme://host:port" (e.g., "http://localhost:4000")
+	// BackendURL is the backend requests are proxied to, e.g. "http://localhost:4000".
 	BackendURL string
 
 	// PreserveHost forwards the client's Host header rather than the backend's.
 	PreserveHost bool
 
-	// ReadTimeout is the maximum duration for reading the entire request, including the body.
-	// This prevents slow-client attacks and ensures timely request processing.
+	// ReadTimeout bounds reading the whole request, body included, against slow clients.
 	ReadTimeout time.Duration
 
-	// WriteTimeout is the maximum duration before timing out writes of the response.
-	// This helps prevent long-running handlers from blocking server resources.
+	// WriteTimeout bounds writing the response.
 	WriteTimeout time.Duration
 
-	// IdleTimeout is the maximum amount of time to wait for the next request
-	// when keep-alives are enabled.
+	// IdleTimeout is how long a keep-alive connection waits for its next request.
 	IdleTimeout time.Duration
 
-	// ProxyTimeout defines the timeout for communicating with upstream backends.
+	// ProxyTimeout bounds communication with the backend.
 	ProxyTimeout time.Duration
 
-	// MaxIdleConns controls the maximum number of idle connections in the proxy transport.
+	// MaxIdleConns caps idle connections in the proxy transport.
 	MaxIdleConns int
 
-	// MaxConnsPerHost limits total connections per upstream host.
+	// MaxConnsPerHost caps total connections to the backend.
 	MaxConnsPerHost int
 
 	// MaxBodyBytes is the largest request body the gateway will read. Zero
@@ -63,34 +58,10 @@ type Config struct {
 	// it is not part of the block the settings watcher carries.
 	Routes config.RoutesConfig
 
-	// RateLimit holds the configuration for API flooding detection.
-	RateLimit         config.RateLimitConfig
-	AdaptiveRateLimit config.AdaptiveRateLimitConfig
-
-	// AttackDetection holds SQL injection detection settings.
-	AttackDetection config.AttackDetectionConfig
-
-	// BruteForce holds brute force login detection settings.
-	BruteForce config.BruteForceConfig
-
-	// UnknownRouteScan holds bounded route-scanning detector settings.
-	UnknownRouteScan config.UnknownRouteScanConfig
-
-	// Enumeration holds path-traversal and forced-browsing detection settings.
-	Enumeration config.EnumerationConfig
-
-	// IPReputation holds the known-bad address list and how loudly it answers.
-	IPReputation config.IPReputationConfig
-
-	// Policy controls enforcement of control-plane decisions.
-	Policy config.PolicyConfig
-
-	// Block holds the gateway's own blocking -- its reflex, as distinct from
-	// the decisions the control plane writes as policy keys.
-	Block config.BlockConfig
-
-	// Throttle carries legacy console settings; quota enforcement never sleeps.
-	Throttle config.ThrottleConfig
+	// Enforcement is every detector and enforcement section, carried whole.
+	// It is the block the settings watcher retunes at runtime, so keeping it
+	// as one value means a section added to it cannot be dropped on the way in.
+	Enforcement config.EnforcementConfig
 
 	// Redis holds hot telemetry and the policy snapshot the control plane writes.
 	Redis config.RedisConfig
@@ -99,34 +70,37 @@ type Config struct {
 	TrustedProxies []string
 }
 
-// Server represents the API gateway proxy server instance.
-// It encapsulates the server configuration and manages the HTTP server lifecycle.
-type Server struct {
-	// config stores the server configuration settings
-	config Config
-
-	// collector gathers Metrics() from every detector for a future decision engine.
-	collector   *signals.Collector
-	closePolicy func()
-}
-
-// NewServer creates and initializes a new proxy server instance with the provided configuration.
-// It returns a pointer to the Server, ready to be started.
-//
-// Parameters:
-//   - cfg: Configuration settings for the proxy server
-//
-// Returns:
-//   - *Server: A new server instance configured with the provided settings
-func NewServer(cfg Config) *Server {
-	return &Server{
-		config: cfg,
+// ConfigFrom maps the loaded file config onto the server's.
+func ConfigFrom(cfg *config.Config) Config {
+	return Config{
+		ListenAddr:      net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port)),
+		BackendURL:      cfg.Proxy.BackendURL,
+		PreserveHost:    cfg.Proxy.PreserveHost,
+		ReadTimeout:     cfg.Server.ReadTimeout,
+		WriteTimeout:    cfg.Server.WriteTimeout,
+		IdleTimeout:     cfg.Server.IdleTimeout,
+		ProxyTimeout:    cfg.Proxy.Timeout,
+		MaxIdleConns:    cfg.Proxy.MaxIdleConns,
+		MaxConnsPerHost: cfg.Proxy.MaxConnsPerHost,
+		MaxBodyBytes:    cfg.Server.MaxBodyBytes,
+		Routes:          cfg.Routes,
+		Enforcement:     cfg.Enforcement,
+		Redis:           cfg.Storage.Redis,
+		TrustedProxies:  cfg.Server.TrustedProxies,
 	}
 }
 
-// Start initializes and starts the proxy server, listening for incoming HTTP requests.
-// It sets up the reverse proxy, applies the middleware chain (logging and request inspection),
-// and starts the HTTP server with configured timeouts.
+// Server represents the API gateway proxy server instance.
+type Server struct {
+	config Config
+}
+
+// NewServer creates a server ready to be started.
+func NewServer(cfg Config) *Server {
+	return &Server{config: cfg}
+}
+
+// Start builds the middleware chain and serves until the listener fails.
 //
 // The middleware chain is applied in the following order (outermost first):
 //  1. Client-IP resolver — trusted-proxy X-Forwarded-For, then context IP
@@ -138,161 +112,15 @@ func NewServer(cfg Config) *Server {
 //     detectors unwind, applying from the caller's next request. Advisory
 //     low-and-slow detectors remain evidence-only.
 //  7. Reverse proxy
-//
-// Returns:
-//   - error: An error if the server fails to start or encounters a fatal error during operation.
-//     Returns nil only if the server is gracefully shut down.
 func (s *Server) Start() error {
+	var cleanup cleanups
+	defer cleanup.run()
 
-	// Create a reverse proxy that forwards requests to the configured backend URL
-	proxy := NewReverseProxy(s.config)
-
-	// Create detectors that do not depend on the compiled route table.
-	floodDetector := signals.NewFloodDetector(s.config.RateLimit)
-	sqliDetector := signals.NewSQLiDetector(signals.SQLiDetectorConfigFrom(s.config.AttackDetection))
-	traversalEnumDetector := signals.NewTraversalEnumDetector(s.config.Enumeration)
-
-	// The reputation feed is loaded before the chain is built. A list that will
-	// not parse is a configuration error and stops the gateway, exactly as a
-	// bad exempt CIDR does -- a security control that silently loaded nothing
-	// looks identical to one where no attacker is listed.
-	reputationFeed, reputationSource := reputation.New(), reputationSourceFrom(s.config.IPReputation)
-	reputationLoader := reputation.NewLoader(reputationFeed)
-	if s.config.IPReputation.Enabled {
-		if err := reputationLoader.Load(reputationSource); err != nil {
-			return err
-		}
-		log.Printf("[reputation] %s", reputationFeed.Describe())
-
-		stopFeed := make(chan struct{})
-		defer close(stopFeed)
-		reputationLoader.Start(reputationSource, stopFeed)
-	}
-	reputationDetector := signals.NewReputationDetector(reputationFeed, s.config.IPReputation)
-
-	sinks := newTelemetrySinks(s.config.Redis)
-	defer sinks.Close()
-
-	resolver, err := netutil.NewResolver(s.config.TrustedProxies)
+	handler, err := s.handler(&cleanup)
 	if err != nil {
 		return err
 	}
 
-	// A route table that would not compile stops the gateway, for the same
-	// reason a bad reputation list does: one that silently loaded nothing
-	// records <unmatched> for every real endpoint, and nothing downstream can
-	// tell that from a client walking paths the application does not serve.
-	routes, err := telemetry.NewTable(s.config.Routes.Templates)
-	if err != nil {
-		return err
-	}
-	auth := telemetry.NewAuthOutcomes(authRulesFrom(s.config.Routes.AuthOutcomes))
-	var routeMatch func(string, string) string
-	if len(s.config.Routes.Templates) > 0 {
-		routeMatch = routes.Match
-	}
-	bruteForceDetector := signals.NewBruteForceDetector(
-		s.config.BruteForce, s.config.Routes.AuthOutcomes, routeMatch,
-	)
-	unknownRouteScanDetector := signals.NewUnknownRouteScanDetector(s.config.UnknownRouteScan, routeMatch)
-
-	s.collector = signals.NewCollector(
-		floodDetector, sqliDetector, traversalEnumDetector, bruteForceDetector, unknownRouteScanDetector, reputationDetector,
-	)
-
-	// The gateway's own reflex, and the enforcer that acts on both it and the
-	// control plane's decisions.
-	reflex, err := s.newReflex()
-	if err != nil {
-		return err
-	}
-	reflex.Start()
-	defer reflex.Close()
-	log.Printf("[enforcement] %s", reflex.Describe())
-
-	enforcer, gate, err := s.newEnforcer(reflex)
-	if err != nil {
-		return err
-	}
-	enforcer.WithRouteResolver(routes.Match)
-	defer s.closePolicy()
-
-	// Live settings. The file is what the gateway boots with; the console can
-	// put an override on top of it, and deleting that override comes straight
-	// back here. Only the enforcement block travels this way -- see the
-	// settings package for why the structural settings do not.
-	watcher := s.startSettingsWatcher(live{
-		flood:      floodDetector,
-		sqli:       sqliDetector,
-		brute:      bruteForceDetector,
-		routeScan:  unknownRouteScanDetector,
-		traversal:  traversalEnumDetector,
-		reputation: reputationDetector,
-		reflex:     reflex,
-		enforcer:   enforcer,
-		gate:       gate,
-	})
-	if watcher != nil {
-		defer watcher.Close()
-	}
-
-	// The resolver runs first so the trusted-proxy X-Forwarded-For IP is on the
-	// request context before anything else reads it. Telemetry sits just inside
-	// it -- still outside every detector, so it records after they run and after
-	// policy (a 403 is written to iasg:events too), but now it reads the same
-	// resolved client IP the detectors keyed their state under. When telemetry
-	// wrapped the resolver instead, it held the pre-resolution request and
-	// logged the peer address, then looked up detector state under that wrong
-	// IP -- so every event behind a proxy recorded fired:[] and the control
-	// plane never saw an attack.
-	// Zero means unset rather than unlimited. A gateway that reads whatever it
-	// is sent is the failure this guards, so the config may raise or lower the
-	// cap but may not remove it.
-	maxBody := s.config.MaxBodyBytes
-	if maxBody <= 0 {
-		maxBody = DefaultMaxBodyBytes
-	}
-
-	recorder := &telemetry.Recorder{
-		Events:    sinks.Events,
-		Arrivals:  sinks.Arrivals,
-		Collector: s.collector,
-		Routes:    routes,
-		Auth:      auth,
-	}
-	if heartbeat := sinks.Heartbeat; heartbeat != nil {
-		// Started here rather than beside the writers so it can report the
-		// in-flight count, which only exists once the recorder does.
-		heartbeat.Requests = recorder
-		stopHeartbeat := make(chan struct{})
-		defer close(stopHeartbeat)
-		heartbeat.Start(stopHeartbeat)
-	}
-
-	// Refusals are recorded without reading a body. Accepted traffic is capped
-	// before the telemetry snippet or any detector buffers client input.
-	handler := ChainMiddleware(
-		resolver.Middleware,
-		recorder.Middleware,
-		LoggingMiddleware,
-		enforcer.Middleware,
-		BodyLimitMiddleware(maxBody),
-		telemetry.CaptureBody,
-		observedDetectors(reflex, s.collector,
-			// First among the detectors because it is the cheapest -- one set
-			// lookup, no body, no window. Its position does not affect when a
-			// block lands: the reflex observes after the handler by design, so
-			// every gateway-side block takes effect on the next request.
-			reputationDetector.Middleware,
-			floodDetector.Middleware,
-			unknownRouteScanDetector.Middleware,
-			sqliDetector.Middleware,
-			traversalEnumDetector.Middleware,
-			bruteForceDetector.Middleware,
-		),
-	)(proxy)
-
-	// Configure the HTTP server with timeouts and the middleware-wrapped handler
 	server := &http.Server{
 		Addr: s.config.ListenAddr,
 		// Outside the chain, so the liveness probe reaches neither the
@@ -302,10 +130,150 @@ func (s *Server) Start() error {
 		WriteTimeout: s.config.WriteTimeout,
 		IdleTimeout:  s.config.IdleTimeout,
 	}
-
-	// Start the HTTP server and listen for incoming connections
-	// This is a blocking call that returns only on error or shutdown
 	return server.ListenAndServe()
+}
+
+// handler builds everything behind the listener. Background work it starts is
+// registered on cleanup, so a failure part-way through still releases it.
+func (s *Server) handler(cleanup *cleanups) (http.Handler, error) {
+	enf := s.config.Enforcement
+	backend := NewReverseProxy(s.config)
+
+	reputationFeed, err := startReputationFeed(enf.IPReputation, cleanup)
+	if err != nil {
+		return nil, err
+	}
+
+	sinks := newTelemetrySinks(s.config.Redis)
+	cleanup.add(sinks.Close)
+
+	resolver, err := netutil.NewResolver(s.config.TrustedProxies)
+	if err != nil {
+		return nil, err
+	}
+
+	// A route table that would not compile stops the gateway, for the same
+	// reason a bad reputation list does: one that silently loaded nothing
+	// records <unmatched> for every real endpoint, and nothing downstream can
+	// tell that from a client walking paths the application does not serve.
+	routes, err := telemetry.NewTable(s.config.Routes.Templates)
+	if err != nil {
+		return nil, err
+	}
+	var routeMatch func(string, string) string
+	if len(s.config.Routes.Templates) > 0 {
+		routeMatch = routes.Match
+	}
+
+	detectors := newDetectors(enf, s.config.Routes.AuthOutcomes, reputationFeed, routeMatch)
+	collector := detectors.collector()
+
+	// The gateway's own reflex, and the enforcer that acts on both it and the
+	// control plane's decisions.
+	reflex, err := enforcement.New(reflexConfig(enf.Block))
+	if err != nil {
+		return nil, err
+	}
+	reflex.Start()
+	cleanup.add(reflex.Close)
+	log.Printf("[enforcement] %s", reflex.Describe())
+
+	enforcer, gate, closePolicy, err := s.newEnforcer(reflex)
+	if err != nil {
+		return nil, err
+	}
+	enforcer.WithRouteResolver(routes.Match)
+	cleanup.add(closePolicy)
+
+	// Live settings. The file is what the gateway boots with; the console can
+	// put an override on top of it, and deleting that override comes straight
+	// back here. Only the enforcement block travels this way -- see the
+	// settings package for why the structural settings do not.
+	if watcher := s.startSettingsWatcher(live{detectors, reflex, enforcer, gate}); watcher != nil {
+		cleanup.add(func() { _ = watcher.Close() })
+	}
+
+	recorder := &telemetry.Recorder{
+		Events:    sinks.Events,
+		Arrivals:  sinks.Arrivals,
+		Collector: collector,
+		Routes:    routes,
+		Auth:      telemetry.NewAuthOutcomes(authRulesFrom(s.config.Routes.AuthOutcomes)),
+	}
+	if heartbeat := sinks.Heartbeat; heartbeat != nil {
+		// Started here rather than beside the writers so it can report the
+		// in-flight count, which only exists once the recorder does.
+		heartbeat.Requests = recorder
+		stop := make(chan struct{})
+		cleanup.add(func() { close(stop) })
+		heartbeat.Start(stop)
+	}
+
+	// The resolver runs first so the trusted-proxy X-Forwarded-For IP is on the
+	// request context before anything else reads it. Telemetry sits just inside
+	// it -- still outside every detector, so it records after they run and after
+	// policy (a 403 is written to iasg:events too), but it reads the same
+	// resolved client IP the detectors keyed their state under. When telemetry
+	// wrapped the resolver instead, it held the pre-resolution request and
+	// logged the peer address, then looked up detector state under that wrong
+	// IP -- so every event behind a proxy recorded fired:[] and the control
+	// plane never saw an attack.
+	//
+	// Refusals are recorded without reading a body. Accepted traffic is capped
+	// before the telemetry snippet or any detector buffers client input.
+	return ChainMiddleware(
+		resolver.Middleware,
+		recorder.Middleware,
+		LoggingMiddleware,
+		enforcer.Middleware,
+		BodyLimitMiddleware(maxBodyBytes(s.config.MaxBodyBytes)),
+		telemetry.CaptureBody,
+		observedDetectors(reflex, collector, detectors.middlewares()...),
+	)(backend), nil
+}
+
+// cleanups runs registered shutdown work in reverse, like a stack of defers.
+type cleanups []func()
+
+func (c *cleanups) add(f func()) { *c = append(*c, f) }
+
+func (c cleanups) run() {
+	for i := len(c) - 1; i >= 0; i-- {
+		c[i]()
+	}
+}
+
+// startReputationFeed loads the known-bad address list before the chain is
+// built. A list that will not parse is a configuration error and stops the
+// gateway, exactly as a bad exempt CIDR does -- a security control that
+// silently loaded nothing looks identical to one where no attacker is listed.
+func startReputationFeed(cfg config.IPReputationConfig, cleanup *cleanups) (*reputation.Feed, error) {
+	feed := reputation.New()
+	if !cfg.Enabled {
+		return feed, nil
+	}
+
+	source := reputationSourceFrom(cfg)
+	loader := reputation.NewLoader(feed)
+	if err := loader.Load(source); err != nil {
+		return nil, err
+	}
+	log.Printf("[reputation] %s", feed.Describe())
+
+	stop := make(chan struct{})
+	cleanup.add(func() { close(stop) })
+	loader.Start(source, stop)
+	return feed, nil
+}
+
+// maxBodyBytes treats zero as unset rather than unlimited. A gateway that reads
+// whatever it is sent is the failure this guards, so the config may raise or
+// lower the cap but may not remove it.
+func maxBodyBytes(configured int64) int64 {
+	if configured <= 0 {
+		return DefaultMaxBodyBytes
+	}
+	return configured
 }
 
 // observedDetectors keeps the observer outside response-aware detectors. On
@@ -319,22 +287,25 @@ func observedDetectors(reflex *enforcement.Reflex, collector enforcement.Observe
 	return ChainMiddleware(middlewares...)
 }
 
-// newEnforcer builds the enforcement middleware and the gate that switches the
-// control plane's decisions on and off.
+// newEnforcer builds the enforcement middleware, the gate that switches the
+// control plane's decisions on and off, and the function that releases the
+// policy store and limiter.
 //
 // Both sources are wired in whether or not they are active at boot, because
 // the console can turn either on later and the chain cannot be rebuilt once
 // requests are flowing. Each source answers "no opinion" while it is off:
 // the gate short-circuits, and the reflex checks its own enabled flag. The
 // returned gate is nil when there is no Redis to read policy from.
-func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *policy.Gate, error) {
+func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *policy.Gate, func(), error) {
+	enf := s.config.Enforcement
+	a := enf.AdaptiveRateLimit.WithDefaults()
+
 	// The control plane first, then the gateway's own reflex. policy.Chain
 	// documents why that order and not the other one.
 	var sources policy.Chain
 	var gate *policy.Gate
-	a := s.config.AdaptiveRateLimit.WithDefaults()
 	var quota policy.QuotaLimiter
-	s.closePolicy = func() {}
+	closePolicy := func() {}
 
 	if s.config.Redis.Enabled {
 		cfg := policy.Config{
@@ -342,8 +313,8 @@ func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *pol
 			Password:        s.config.Redis.Password,
 			DB:              s.config.Redis.DB,
 			PoolSize:        s.config.Redis.PoolSize,
-			KeyPrefix:       s.config.Policy.KeyPrefix,
-			RefreshInterval: s.config.Policy.RefreshInterval,
+			KeyPrefix:       enf.Policy.KeyPrefix,
+			RefreshInterval: enf.Policy.RefreshInterval,
 			RedisTimeout:    a.RedisTimeout,
 			RefreshTimeout:  a.PolicyRefreshTimeout,
 			FailureBackoff:  a.FailureBackoff,
@@ -354,29 +325,29 @@ func (s *Server) newEnforcer(reflex *enforcement.Reflex) (*policy.Enforcer, *pol
 		store.Start()
 		limiter := policy.NewRedisLimiter(cfg)
 		quota = limiter
-		s.closePolicy = func() { _ = store.Close(); _ = limiter.Close() }
-		gate = policy.NewGate(store, s.config.Policy.Enabled)
+		closePolicy = func() { _ = store.Close(); _ = limiter.Close() }
+		gate = policy.NewGate(store, enf.Policy.Enabled)
 		sources = append(sources, gate)
 	}
 
 	sources = append(sources, reflex)
 
 	enforcer := policy.NewEnforcer(
-		sources, s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle),
+		sources, anySourceOn(reflex, gate), throttleDelay(enf.Throttle),
 	).WithQuotaLimiter(quota, a.FallbackRequestsPerMinute, a.Burst)
 
-	baseline, err := baselineFrom(s.config.RateLimit, s.config.Block)
+	baseline, err := baselineFrom(enf.RateLimit, enf.Block)
 	if err != nil {
-		s.closePolicy()
-		return nil, nil, err
+		closePolicy()
+		return nil, nil, nil, err
 	}
-	enforcer.ApplyAll(s.enforcementOn(reflex, gate), throttleDelay(s.config.Throttle), baseline)
+	enforcer.ApplyAll(anySourceOn(reflex, gate), throttleDelay(enf.Throttle), baseline)
 	if baseline.RequestsPerMinute > 0 {
 		log.Printf("[enforcement] baseline rate limit %d/min for every address not under a policy",
 			baseline.RequestsPerMinute)
 	}
 
-	return enforcer, gate, nil
+	return enforcer, gate, closePolicy, nil
 }
 
 // baselineFrom builds the rate every address is held to when no policy names
@@ -411,22 +382,23 @@ func throttleDelay(cfg config.ThrottleConfig) time.Duration {
 	return time.Duration(cfg.DelayMS) * time.Millisecond
 }
 
-// enforcementOn reports whether any source could currently have an opinion.
+// anySourceOn reports whether any source could currently have an opinion.
 // When none can, the middleware short-circuits and no lookup happens per
-// request, which is what it did before either source could be toggled.
-func (s *Server) enforcementOn(reflex *enforcement.Reflex, gate *policy.Gate) bool {
+// request. Recomputed rather than read from config: the reflex has its own
+// idea of whether it is armed (enabled, with at least one signal named).
+func anySourceOn(reflex *enforcement.Reflex, gate *policy.Gate) bool {
 	return gate.On() || reflex.Active()
 }
 
-// newReflex builds the gateway's own blocking, from enforcement.block.
-func (s *Server) newReflex() (*enforcement.Reflex, error) {
-	return enforcement.New(enforcement.Config{
-		Enabled:     s.config.Block.Enabled,
-		Duration:    s.config.Block.Duration,
-		Signals:     s.config.Block.Signals,
-		MinScore:    s.config.Block.MinScore,
-		ExemptCIDRs: s.config.Block.ExemptCIDRs,
-	})
+// reflexConfig is the gateway's own blocking, from enforcement.block.
+func reflexConfig(block config.BlockConfig) enforcement.Config {
+	return enforcement.Config{
+		Enabled:     block.Enabled,
+		Duration:    block.Duration,
+		Signals:     block.Signals,
+		MinScore:    block.MinScore,
+		ExemptCIDRs: block.ExemptCIDRs,
+	}
 }
 
 // reputationSourceFrom turns config into a feed source, applying the defaults
@@ -441,28 +413,6 @@ func reputationSourceFrom(cfg config.IPReputationConfig) reputation.Source {
 		URL:             cfg.FeedURL,
 		RefreshInterval: cfg.RefreshInterval,
 		Timeout:         timeout,
-	}
-}
-
-// Enforcement reassembles the enforcement block from the flat fields the
-// server was built with.
-//
-// It exists so there is exactly one place that knows which sections make up
-// that block. Adding a section used to mean remembering three separate
-// literals -- main.go, this, and the settings wire -- and forgetting one left
-// the feature silently switched off with nothing to say so.
-func (c Config) Enforcement() config.EnforcementConfig {
-	return config.EnforcementConfig{
-		AdaptiveRateLimit: c.AdaptiveRateLimit,
-		RateLimit:         c.RateLimit,
-		AttackDetection:   c.AttackDetection,
-		BruteForce:        c.BruteForce,
-		UnknownRouteScan:  c.UnknownRouteScan,
-		Enumeration:       c.Enumeration,
-		IPReputation:      c.IPReputation,
-		Throttle:          c.Throttle,
-		Block:             c.Block,
-		Policy:            c.Policy,
 	}
 }
 

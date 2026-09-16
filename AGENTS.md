@@ -157,7 +157,5 @@ Then check the consumer groups survived.
   that always authorises). Deliberate, but it now fronts settings and reset.
 - No graceful shutdown, no health endpoint, no metrics. `go run` does not
   forward SIGTERM either.
-- `signals.geo_location`, `payload_analysis` and `behavioral` are parsed into
-  structs that nothing reads — promises the code does not keep.
 - Detection is substring matching; `UNION/**/SELECT` walks past the SQLi
   detector.
