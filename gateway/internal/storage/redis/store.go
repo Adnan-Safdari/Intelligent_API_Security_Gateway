@@ -79,6 +79,20 @@ func (s *Store) WriteEvent(ctx context.Context, ev telemetry.Event) error {
 		return nil
 	}
 
+	// Taken first, and used on the event itself: it is what "Req no." in the
+	// console counts from, a stable position in this gateway's request
+	// history rather than a row's position in whatever page happens to be
+	// loaded. Unlike the stream's own IDs it survives the stream's MAXLEN
+	// trimming (a different key), and it restarts only when Reset console
+	// clears iasg:stats. A failure here still writes the event, just without
+	// a number -- dropping the event over a missing display number would be
+	// the worse trade.
+	if seq, err := s.client.HIncrBy(ctx, KeyStats, "requests", 1).Result(); err == nil {
+		ev.Seq = seq
+	} else {
+		log.Printf("[telemetry] could not assign a request sequence number: %v", err)
+	}
+
 	payload, err := json.Marshal(ev)
 	if err != nil {
 		return err
@@ -99,7 +113,6 @@ func (s *Store) WriteEvent(ctx context.Context, ev telemetry.Event) error {
 			"requestId": ev.RequestID,
 		},
 	})
-	pipe.HIncrBy(ctx, KeyStats, "requests", 1)
 	pipe.HIncrBy(ctx, KeyStats, "decision:"+ev.Decision, 1)
 	if len(ev.Fired) > 0 {
 		pipe.HIncrBy(ctx, KeyStats, "alerts", 1)

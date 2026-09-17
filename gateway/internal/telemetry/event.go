@@ -13,6 +13,15 @@ import (
 type Event struct {
 	RequestID string `json:"requestId"`
 
+	// Seq is this gateway's running count of events recorded, assigned when
+	// the event is written to Redis (see redisstore.Store.WriteEvent) -- zero
+	// here and left off recorded JSON until then. It is what the console
+	// numbers "Req no." from: a stable position in request history rather
+	// than a row's position in whatever page happens to be loaded, so it
+	// survives polling, filtering and the stream's own MAXLEN trimming, and
+	// restarts only when Reset console clears iasg:stats.
+	Seq int64 `json:"seq,omitempty"`
+
 	// ArrivalTS is when the request arrived; Timestamp is when it finished.
 	// Windowing keys on arrival, so a slow request lands in the window it
 	// started in. Timestamp keeps both its name and its completion meaning
