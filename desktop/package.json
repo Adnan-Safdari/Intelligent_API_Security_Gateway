@@ -70,6 +70,12 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "pacman",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets/icon.png",
@@ -90,6 +96,21 @@
         "libsecret-1-0",
         "libasound2t64 | libasound2",
         "libgbm1"
+      ]
+    },
+    "pacman": {
+      "depends": [
+        "gtk3",
+        "libnotify",
+        "nss",
+        "libxss",
+        "libxtst",
+        "xdg-utils",
+        "at-spi2-core",
+        "util-linux-libs",
+        "libsecret",
+        "alsa-lib",
+        "mesa"
       ]
     }
   },
