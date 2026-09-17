@@ -1,0 +1,802 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="IASG BOLA: ownership check and object enumeration">
+      <stringProp name="TestPlan.comments">Broken Object Level Authorization against the demo shop.
+The backend's GET /api/orders/{id} returns ANY customer's order to any logged-in user (the bug).
+1. A normal shopper logs in and reopens only her own orders: every request must be 200.
+2. An attacker logs in with the same kind of account and walks order ids 1..ORDER_IDS.
+   Through the gateway, no other customer's order may come back (404 instead); a forged token must be 401.
+   After POLICY_WAIT_MS the control plane's campaign policy must throttle the attacker (429s).
+3. The same walk straight to the backend shows the bug is still in the app (other customers' orders return 200).
+Thread groups run one after another. Use a fresh ATTACKER_IP for each run.</stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">true</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="HOST" elementType="Argument">
+            <stringProp name="Argument.name">HOST</stringProp>
+            <stringProp name="Argument.value">${__P(HOST,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PORT" elementType="Argument">
+            <stringProp name="Argument.name">PORT</stringProp>
+            <stringProp name="Argument.value">${__P(PORT,8082)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="BACKEND_HOST" elementType="Argument">
+            <stringProp name="Argument.name">BACKEND_HOST</stringProp>
+            <stringProp name="Argument.value">${__P(BACKEND_HOST,localhost)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="BACKEND_PORT" elementType="Argument">
+            <stringProp name="Argument.name">BACKEND_PORT</stringProp>
+            <stringProp name="Argument.value">${__P(BACKEND_PORT,5002)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="RUN_BACKEND_COMPARISON" elementType="Argument">
+            <stringProp name="Argument.name">RUN_BACKEND_COMPARISON</stringProp>
+            <stringProp name="Argument.value">${__P(RUN_BACKEND_COMPARISON,true)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="EMAIL" elementType="Argument">
+            <stringProp name="Argument.name">EMAIL</stringProp>
+            <stringProp name="Argument.value">${__P(EMAIL,jane@example.com)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="PASSWORD" elementType="Argument">
+            <stringProp name="Argument.name">PASSWORD</stringProp>
+            <stringProp name="Argument.value">${__P(PASSWORD,user123)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="ATTACKER_IP" elementType="Argument">
+            <stringProp name="Argument.name">ATTACKER_IP</stringProp>
+            <stringProp name="Argument.value">${__P(ATTACKER_IP,203.0.113.230)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="NORMAL_IP" elementType="Argument">
+            <stringProp name="Argument.name">NORMAL_IP</stringProp>
+            <stringProp name="Argument.value">${__P(NORMAL_IP,198.51.100.230)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="ORDER_IDS" elementType="Argument">
+            <stringProp name="Argument.name">ORDER_IDS</stringProp>
+            <stringProp name="Argument.value">${__P(ORDER_IDS,30)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="POLICY_WAIT_MS" elementType="Argument">
+            <stringProp name="Argument.name">POLICY_WAIT_MS</stringProp>
+            <stringProp name="Argument.value">${__P(POLICY_WAIT_MS,45000)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+          <elementProp name="THROTTLE_REQUESTS" elementType="Argument">
+            <stringProp name="Argument.name">THROTTLE_REQUESTS</stringProp>
+            <stringProp name="Argument.value">${__P(THROTTLE_REQUESTS,40)}</stringProp>
+            <stringProp name="Argument.metadata">=</stringProp>
+          </elementProp>
+        </collectionProp>
+      </elementProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="1. Normal shopper: reads only her own orders">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Run once">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Normal shopper identity">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">X-Forwarded-For</stringProp>
+              <stringProp name="Header.value">${NORMAL_IP}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">User-Agent</stringProp>
+              <stringProp name="Header.value">Mozilla/5.0 (storefront)</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Shopper: log in (signed token)">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/login</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"email":"${EMAIL}","password":"${PASSWORD}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree><HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON body">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Keep token and user id">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+def body = prev.getResponseDataAsString()
+try {
+    def json = new groovy.json.JsonSlurper().parseText(body)
+    vars.put('token', json.token ?: '')
+    vars.put('user_id', String.valueOf(json.user?.id ?: ''))
+} catch (ignored) {
+    vars.put('token', '')
+    vars.put('user_id', '')
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Login returned a token">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+if (prev.getResponseCode() != '200' || !vars.get('token')) {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("login failed (HTTP ${prev.getResponseCode()}): does the backend issue signed tokens? " + prev.getResponseDataAsString().take(200))
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer token">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Own order list">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/orders</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Remember own order ids">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+try {
+    def orders = new groovy.json.JsonSlurper().parseText(prev.getResponseDataAsString()).orders ?: []
+    vars.put('own_ids', orders.collect { it.id }.join(','))
+    vars.put('first_own_id', orders ? String.valueOf(orders[0].id) : '1')
+} catch (ignored) {
+    vars.put('own_ids', '')
+    vars.put('first_own_id', '1')
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="List holds only the caller's orders">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+if (prev.getResponseCode() != '200') {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("own order list: HTTP ${prev.getResponseCode()}")
+    return
+}
+def me = vars.get('user_id')
+def orders = new groovy.json.JsonSlurper().parseText(prev.getResponseDataAsString()).orders ?: []
+def foreign = orders.findAll { String.valueOf(it.userId) != me }
+if (foreign) {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("order list contains ${foreign.size()} orders that are not user ${me}'s")
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        
+            <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Split own ids for re-reading">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+def ids = (vars.get('own_ids') ?: '').split(',').findAll { it }
+ids.eachWithIndex { id, i -&gt; vars.put("own_id_${i + 1}", id) }
+SampleResult.setIgnore()
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Sampler>
+            <hashTree/>
+        <LoopController guiclass="LoopControlPanel" testclass="LoopController" testname="Open each own order twice">
+          <stringProp name="LoopController.loops">2</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </LoopController>
+        <hashTree>
+          <ForeachController guiclass="ForeachControlPanel" testclass="ForeachController" testname="Each own order">
+            <stringProp name="ForeachController.inputVal">own_id</stringProp>
+            <stringProp name="ForeachController.returnVal">current_own_id</stringProp>
+            <boolProp name="ForeachController.useSeparator">true</boolProp>
+          </ForeachController>
+          <hashTree>
+            <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Shopper: GET own order ${current_own_id}">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/orders/${current_own_id}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Own orders always 200">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+if (prev.getResponseCode() != '200') {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("the normal shopper got HTTP ${prev.getResponseCode()} for her own order")
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+          </hashTree>
+        </hashTree>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="2. Attacker: same account, walks every order id">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Run once">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Attacker identity">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">X-Forwarded-For</stringProp>
+              <stringProp name="Header.value">${ATTACKER_IP}</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">User-Agent</stringProp>
+              <stringProp name="Header.value">python-requests/2.32 (iasg-bola-jmeter)</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Attacker: log in (signed token)">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/login</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"email":"${EMAIL}","password":"${PASSWORD}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree><HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON body">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Keep token and user id">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+def body = prev.getResponseDataAsString()
+try {
+    def json = new groovy.json.JsonSlurper().parseText(body)
+    vars.put('token', json.token ?: '')
+    vars.put('user_id', String.valueOf(json.user?.id ?: ''))
+} catch (ignored) {
+    vars.put('token', '')
+    vars.put('user_id', '')
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Login returned a token">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+if (prev.getResponseCode() != '200' || !vars.get('token')) {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("login failed (HTTP ${prev.getResponseCode()}): does the backend issue signed tokens? " + prev.getResponseDataAsString().take(200))
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer token">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Own order list">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/orders</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Remember own order ids">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+try {
+    def orders = new groovy.json.JsonSlurper().parseText(prev.getResponseDataAsString()).orders ?: []
+    vars.put('own_ids', orders.collect { it.id }.join(','))
+    vars.put('first_own_id', orders ? String.valueOf(orders[0].id) : '1')
+} catch (ignored) {
+    vars.put('own_ids', '')
+    vars.put('first_own_id', '1')
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="List holds only the caller's orders">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+if (prev.getResponseCode() != '200') {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("own order list: HTTP ${prev.getResponseCode()}")
+    return
+}
+def me = vars.get('user_id')
+def orders = new groovy.json.JsonSlurper().parseText(prev.getResponseDataAsString()).orders ?: []
+def foreign = orders.findAll { String.valueOf(it.userId) != me }
+if (foreign) {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("order list contains ${foreign.size()} orders that are not user ${me}'s")
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        <LoopController guiclass="LoopControlPanel" testclass="LoopController" testname="Gateway: walk /api/orders/1..ORDER_IDS">
+          <stringProp name="LoopController.loops">${ORDER_IDS}</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </LoopController>
+        <hashTree>
+          <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig" testname="Order id 1..ORDER_IDS">
+            <stringProp name="CounterConfig.start">1</stringProp>
+            <stringProp name="CounterConfig.end">${ORDER_IDS}</stringProp>
+            <stringProp name="CounterConfig.incr">1</stringProp>
+            <stringProp name="CounterConfig.name">order_id</stringProp>
+            <stringProp name="CounterConfig.format"></stringProp>
+            <boolProp name="CounterConfig.per_user">true</boolProp>
+            <boolProp name="CounterConfig.reset_on_tg_iteration">false</boolProp>
+          </CounterConfig>
+          <hashTree/>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Gateway: GET order ${order_id}">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/orders/${order_id}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="No other customer's order may come back">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+def me = vars.get('user_id')
+def code = prev.getResponseCode()
+def body = prev.getResponseDataAsString()
+String key
+if (code == '200') {
+    def owner = ''
+    try { owner = String.valueOf(new groovy.json.JsonSlurper().parseText(body).order?.userId) } catch (ignored) {}
+    if (owner == me) {
+        key = 'gw_own'
+    } else {
+        key = 'gw_leaked'
+        AssertionResult.setFailure(true)
+        AssertionResult.setFailureMessage("LEAK: order ${vars.get('order_id')} belongs to user ${owner} and reached user ${me} through the gateway")
+    }
+} else if (code == '404') {
+    // A refusal is the correct answer here, not an HTTP error.
+    prev.setSuccessful(true)
+    key = 'gw_refused'
+    if (body.contains('"userId"')) {
+        AssertionResult.setFailure(true)
+        AssertionResult.setFailureMessage("a 404 still carried order data")
+    }
+} else {
+    key = 'gw_other'
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("order ${vars.get('order_id')}: unexpected HTTP ${code}")
+}
+vars.put(key, String.valueOf(((vars.get(key) ?: '0') as int) + 1))
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+        
+            <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Gateway result: own / refused / leaked">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+int own = (vars.get('gw_own') ?: '0') as int
+int refused = (vars.get('gw_refused') ?: '0') as int
+int leaked = (vars.get('gw_leaked') ?: '0') as int
+int other = (vars.get('gw_other') ?: '0') as int
+def line = "through the gateway: ${own} own, ${refused} refused (404), ${leaked} leaked, ${other} unexpected"
+log.info('[bola] ' + line)
+SampleResult.setResponseData(line, 'UTF-8')
+SampleResult.setResponseMessage(line)
+if (leaked &gt; 0 || other &gt; 0 || own == 0) {
+    SampleResult.setSuccessful(false)
+    SampleResult.setResponseCode('500')
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Sampler>
+            <hashTree/>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Forged token (base64 of the user id) is refused">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/orders/${first_own_id}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree><HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Forged bearer token">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${__base64Encode(${user_id})}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Expect 401">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+prev.setSuccessful(prev.getResponseCode() == '401')
+if (prev.getResponseCode() != '401') {
+    AssertionResult.setFailure(true)
+    AssertionResult.setFailureMessage("forged token got HTTP ${prev.getResponseCode()}, want 401")
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        <TestAction guiclass="TestActionGui" testclass="TestAction" testname="Wait for the control-plane cycle and the gateway policy refresh">
+          <intProp name="ActionProcessor.action">1</intProp>
+          <intProp name="ActionProcessor.target">0</intProp>
+          <stringProp name="ActionProcessor.duration">${POLICY_WAIT_MS}</stringProp>
+        </TestAction>
+        <hashTree/>
+        <LoopController guiclass="LoopControlPanel" testclass="LoopController" testname="Throttle check: re-read an own order THROTTLE_REQUESTS times">
+          <stringProp name="LoopController.loops">${THROTTLE_REQUESTS}</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </LoopController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Throttle check: GET own order">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/orders/${first_own_id}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Count 200 and 429">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+def key = prev.getResponseCode() == '429' ? 'th_429' : (prev.getResponseCode() == '200' ? 'th_200' : 'th_other')
+vars.put(key, String.valueOf(((vars.get(key) ?: '0') as int) + 1))
+// 429 is the expected outcome once the policy is active, not an error.
+prev.setSuccessful(prev.getResponseCode() in ['200', '429'])
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+        
+            <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Throttle result: control-plane policy enforced">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+int ok = (vars.get('th_200') ?: '0') as int
+int limited = (vars.get('th_429') ?: '0') as int
+def line = "after the policy wait: ${ok} x 200, ${limited} x 429 on GET /api/orders/{id}"
+log.info('[bola] ' + line)
+SampleResult.setResponseData(line, 'UTF-8')
+SampleResult.setResponseMessage(line)
+if (limited == 0) {
+    SampleResult.setSuccessful(false)
+    SampleResult.setResponseCode('500')
+    SampleResult.setResponseMessage(line + ' -- no throttle. Is ATTACKER_IP trusted (run inside the Compose network), public, and not already used?')
+}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Sampler>
+            <hashTree/>
+      </hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="3. Without the gateway: same walk straight to the backend">
+        <intProp name="ThreadGroup.num_threads">1</intProp>
+        <intProp name="ThreadGroup.ramp_time">1</intProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Run once">
+          <stringProp name="LoopController.loops">1</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </elementProp>
+      </ThreadGroup>
+      <hashTree>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="Only when RUN_BACKEND_COMPARISON is true">
+          <stringProp name="IfController.condition">${__groovy(vars.get("RUN_BACKEND_COMPARISON") == "true")}</stringProp>
+          <boolProp name="IfController.evaluateAll">false</boolProp>
+          <boolProp name="IfController.useExpression">true</boolProp>
+        </IfController>
+        <hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Backend: log in">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${BACKEND_HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${BACKEND_PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/login</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">POST</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+              <collectionProp name="Arguments.arguments">
+                <elementProp name="" elementType="HTTPArgument">
+                  <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                  <stringProp name="Argument.value">{"email":"${EMAIL}","password":"${PASSWORD}"}</stringProp>
+                  <stringProp name="Argument.metadata">=</stringProp>
+                </elementProp>
+              </collectionProp>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree><HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON body">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Keep token and user id">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+try {
+    def json = new groovy.json.JsonSlurper().parseText(prev.getResponseDataAsString())
+    vars.put('token', json.token ?: '')
+    vars.put('user_id', String.valueOf(json.user?.id ?: ''))
+} catch (ignored) {}
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223PostProcessor>
+            <hashTree/>
+          </hashTree>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer token">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Authorization</stringProp>
+              <stringProp name="Header.value">Bearer ${token}</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+          <LoopController guiclass="LoopControlPanel" testclass="LoopController" testname="Backend: walk /api/orders/1..ORDER_IDS">
+          <stringProp name="LoopController.loops">${ORDER_IDS}</stringProp>
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+        </LoopController>
+        <hashTree>
+          <CounterConfig guiclass="CounterConfigGui" testclass="CounterConfig" testname="Order id 1..ORDER_IDS">
+            <stringProp name="CounterConfig.start">1</stringProp>
+            <stringProp name="CounterConfig.end">${ORDER_IDS}</stringProp>
+            <stringProp name="CounterConfig.incr">1</stringProp>
+            <stringProp name="CounterConfig.name">order_id</stringProp>
+            <stringProp name="CounterConfig.format"></stringProp>
+            <boolProp name="CounterConfig.per_user">true</boolProp>
+            <boolProp name="CounterConfig.reset_on_tg_iteration">false</boolProp>
+          </CounterConfig>
+          <hashTree/>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="Backend: GET order ${order_id}">
+            <intProp name="HTTPSampler.connect_timeout">3000</intProp>
+            <intProp name="HTTPSampler.response_timeout">5000</intProp>
+            <stringProp name="HTTPSampler.domain">${BACKEND_HOST}</stringProp>
+            <stringProp name="HTTPSampler.port">${BACKEND_PORT}</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.path">/api/orders/${order_id}</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">false</boolProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.use_keepalive">true</boolProp>
+            <boolProp name="HTTPSampler.postBodyRaw">false</boolProp>
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables">
+              <collectionProp name="Arguments.arguments"/>
+            </elementProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <JSR223Assertion guiclass="TestBeanGUI" testclass="JSR223Assertion" testname="Count what the backend returns (no failure: this shows the bug)">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+def me = vars.get('user_id')
+def code = prev.getResponseCode()
+def key = 'bk_' + (code == '200' ? (prev.getResponseDataAsString().contains("\"userId\":${me},") ? 'own' : 'leaked') : 'refused')
+vars.put(key, String.valueOf(((vars.get(key) ?: '0') as int) + 1))
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Assertion>
+            <hashTree/>
+          </hashTree>
+        </hashTree>
+          
+            <JSR223Sampler guiclass="TestBeanGUI" testclass="JSR223Sampler" testname="Backend result: the bug is still in the app">
+              <stringProp name="scriptLanguage">groovy</stringProp>
+              <stringProp name="script">
+def line = "straight to the backend: ${vars.get('bk_own') ?: 0} own, ${vars.get('bk_leaked') ?: 0} other customers' orders returned, ${vars.get('bk_refused') ?: 0} refused"
+log.info('[bola] ' + line)
+SampleResult.setResponseData(line, 'UTF-8')
+SampleResult.setResponseMessage(line)
+</stringProp>
+              <stringProp name="parameters"></stringProp>
+              <stringProp name="filename"></stringProp>
+              <stringProp name="cacheKey">true</stringProp>
+            </JSR223Sampler>
+            <hashTree/>
+        </hashTree>
+      </hashTree>
+      <ResultCollector guiclass="SummaryReport" testclass="ResultCollector" testname="Summary Report" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time><latency>true</latency><timestamp>true</timestamp><success>true</success>
+            <label>true</label><code>true</code><message>true</message><threadName>true</threadName>
+            <dataType>true</dataType><encoding>false</encoding><assertions>true</assertions><subresults>false</subresults>
+            <responseData>false</responseData><samplerData>false</samplerData><xml>false</xml><fieldNames>true</fieldNames>
+            <responseHeaders>false</responseHeaders><requestHeaders>false</requestHeaders><responseDataOnError>false</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage><assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes><sentBytes>true</sentBytes><threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+      <ResultCollector guiclass="ViewResultsFullVisualizer" testclass="ResultCollector" testname="View Results Tree">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp>
+          <name>saveConfig</name>
+          <value class="SampleSaveConfiguration">
+            <time>true</time><latency>true</latency><timestamp>true</timestamp><success>true</success>
+            <label>true</label><code>true</code><message>true</message><threadName>true</threadName>
+            <dataType>true</dataType><encoding>false</encoding><assertions>true</assertions><subresults>false</subresults>
+            <responseData>true</responseData><samplerData>true</samplerData><xml>false</xml><fieldNames>true</fieldNames>
+            <responseHeaders>true</responseHeaders><requestHeaders>true</requestHeaders><responseDataOnError>true</responseDataOnError>
+            <saveAssertionResultsFailureMessage>true</saveAssertionResultsFailureMessage><assertionsResultsToSave>0</assertionsResultsToSave>
+            <bytes>true</bytes><sentBytes>true</sentBytes><threadCounts>true</threadCounts><idleTime>true</idleTime><connectTime>true</connectTime>
+          </value>
+        </objProp>
+        <stringProp name="filename"></stringProp>
+      </ResultCollector>
+      <hashTree/>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

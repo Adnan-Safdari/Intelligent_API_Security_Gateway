@@ -18,6 +18,7 @@ Built for JMeter 5.6.3.
 | `path_traversal_probe.jmx` | `../` traversal and forced-browsing probes | `enumeration_path_traversal` | No — request-scoped |
 | `distributed_attack.jmx` | Flood + brute force from several addresses at once | both windowed | Only the flood half — see below |
 | `adaptive_rate_limit.jmx` | FR3: campaign-driven high-severity throttle | brute force + policy limiter | **Yes, 20/min after policy arrives** |
+| `bola_demo.jmx` | Logged-in user walking other customers' order ids (BOLA) | `ownership_violation`, `object_enumeration` | **Yes** — every other customer's order is `404` at once; a throttle follows the campaign |
 
 There is currently no plan for `unknown_route_scanning`, the newest detector.
 
@@ -125,3 +126,32 @@ sqli / trav:  401/404 — detected and recorded, not blocked at the gateway
 
 The dashboard's **Events** page shows every one of these with its decision; the
 **Campaigns** page shows what the control plane correlated out of them.
+
+## BOLA / ownership check
+
+`bola_demo.jmx` runs three thread groups in order and asserts each result:
+
+1. **Normal shopper** logs in as jane and reopens only her own orders: all `200`.
+2. **Attacker** logs in with the same account and requests `/api/orders/1..30`
+   through the gateway. It fails if any order that is not jane's comes back.
+   A forged token (base64 of the user id) must get `401`. After
+   `POLICY_WAIT_MS` it re-reads an order 40 times and expects `429`s from the
+   control plane's throttle.
+3. **Without the gateway** repeats the walk against the backend and reports how
+   many other customers' orders leak there. It never fails; it shows the bug is
+   still in the application. Skip it with `-JRUN_BACKEND_COMPARISON=false`.
+
+The log prints a one-line result for each part (`grep '\[bola\]'`). Run it inside
+the Compose network so the attacker address is believed, with a fresh
+`ATTACKER_IP` each time:
+
+```bash
+docker run --rm --network infra_default -v "$PWD:/plans" -w /plans \
+  -v "$(brew --prefix jmeter)/libexec:/jmeter:ro" eclipse-temurin:17-jre \
+  /jmeter/bin/jmeter -n -t bola_demo.jmx -JHOST=gateway -JPORT=8082 \
+  -JBACKEND_HOST=vulnerable_api -JATTACKER_IP=203.0.113.233 -l bola.jtl -j bola.log
+```
+
+On Docker Desktop for Mac, `/opt/homebrew` is not shared with containers by
+default; copy `libexec` somewhere under your home directory (or `/private/tmp`)
+and mount that instead.
