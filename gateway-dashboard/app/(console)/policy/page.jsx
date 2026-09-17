@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { PageHead } from "@/app/ui/chrome";
 import { ACTION_TONE, LADDER, actionLabel, formatTtl, normalizeAction } from "@/app/ui/format";
 import { useLive } from "@/app/ui/store";
-import { DecisionExplanation, ExportMenu, IpFilterField, Metric } from "@/app/ui/parts";
+import { DecisionExplanation, ExportMenu, IpFilterField, Metric, SnapshotButton } from "@/app/ui/parts";
 import { POLICY_COLUMNS } from "@/app/ui/export";
 
 export default function PolicyPage() {
@@ -18,6 +18,7 @@ export default function PolicyPage() {
   const [sort, setSort] = useState("expiry");
   const [filterIp, setFilterIp] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const snapRef = useRef(null);
 
   useEffect(() => {
     if (!advancedOpen) return undefined;
@@ -57,7 +58,7 @@ export default function PolicyPage() {
   }
 
   return (
-    <>
+    <div ref={snapRef} className="page-body">
       <PageHead eyebrow="Enforcement" title="Policy">
         What the gateway is currently enforcing. Human instructions go to the override stream
         and are applied on the next agent cycle, after the same allowlist and collateral checks
@@ -91,6 +92,7 @@ export default function PolicyPage() {
           <div className="card-head">
             <h2>In force</h2>
             <ExportMenu rows={rows} columns={POLICY_COLUMNS} prefix="policy" />
+            <SnapshotButton targetRef={snapRef} prefix="policy" title="Download a PNG of this policy view" />
             <div className="head-controls">
               <IpFilterField value={filterIp} onChange={setFilterIp} placeholder="Only this IP..." />
               <label className="field">
@@ -268,6 +270,6 @@ export default function PolicyPage() {
           </section>
         </div>
       ) : null}
-    </>
+    </div>
   );
 }
