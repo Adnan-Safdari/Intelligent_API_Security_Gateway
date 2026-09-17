@@ -65,8 +65,16 @@ routes:
     - GET /api/products/search-secure
     - GET /api/products/{id}
     - GET /api/orders
+    - POST /api/orders
     - GET /api/orders/{id}
     - GET /api/orders-secure/{id}
+    # The browser's CORS preflight for the Authorization header and the JSON
+    # body above -- not endpoints of their own. Left out, every one of a
+    # shopper's own orders would count as an unmatched path browsed, which is
+    # exactly what a route scanner looks like.
+    - OPTIONS /api/orders
+    - OPTIONS /api/orders/{id}
+    - OPTIONS /api/orders-secure/{id}
     - GET /api/demo-files
     - GET /backup-demo
     - GET /config-demo

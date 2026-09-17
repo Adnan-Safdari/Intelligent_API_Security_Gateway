@@ -1,5 +1,6 @@
-import { createContext, useContext, useState } from 'react'
-import api, { userApi } from '../services/api'
+import { createContext, useContext, useEffect, useState } from 'react'
+import toast from 'react-hot-toast'
+import api, { userApi, SESSION_EXPIRED_EVENT } from '../services/api'
 
 const AuthContext = createContext(null)
 
@@ -15,6 +16,18 @@ export function AuthProvider({ children }) {
     }
   })
   const loading = false
+
+  // A real order call refused with 401 (an expired or otherwise dead token)
+  // clears storage itself; this just brings the signed-in state in the UI
+  // back in line with that, wherever the request happened to be made.
+  useEffect(() => {
+    const onExpired = () => {
+      setUser(null)
+      toast.error('Session expired, sign in again')
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired)
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired)
+  }, [])
 
   // Support both named and default export shapes for API clients.
   const authApi = (userApi && typeof userApi.login === 'function') ? userApi : api?.userApi

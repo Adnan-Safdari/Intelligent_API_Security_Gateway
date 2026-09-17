@@ -383,6 +383,8 @@ docker compose -f .\infra\docker-compose.yml logs --tail=40 gateway | Select-Str
 
 Expect no `200` for an order whose owner is not jane's, `[ownership] refused ... owner_mismatch` lines in the gateway log, and `ownership_violation` in `iasg:events`. From a public identity the control plane forms an "Unauthorized Object Access (BOLA)" campaign and a throttle scoped to `GET /api/orders/{id}`. On macOS or Linux: `BACKEND_URL=http://localhost:5002 bash testing/signals/ownership.sh`.
 
+**Storefront version**, for a panel that would rather watch a browser than curl: open `http://localhost:5175`, sign in as `jane@example.com` / `user123`, and use the Backend/Gateway switch in the navbar. In Gateway mode, My Orders lists only 1, 6, 11, 16, 21, 26, 31, 36; editing the address bar to `/orders/2` answers "Order not found". Flip the switch to Backend and reload the same `/orders/2` -- it now shows Arjun Mehta's name, address and items. Flip back to Gateway to keep browsing without leaking further orders.
+
 ## Test 13 — Control-plane correlation
 
 ### Purpose

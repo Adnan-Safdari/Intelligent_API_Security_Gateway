@@ -61,6 +61,27 @@ async function get(router, path, userId, authorization) {
   }
 }
 
+async function post(router, path, userId, body) {
+  const app = express();
+  app.use(express.json());
+  app.use('/api', router);
+  const server = await new Promise((resolve) => {
+    const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
+  });
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (userId) headers.Authorization = tokenFor(userId);
+    const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, body: await response.json() };
+  } finally {
+    await new Promise((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+}
+
 test('orders require a logged-in caller', async () => {
   for (const path of ['/api/orders', '/api/orders/1', '/api/orders-secure/1']) {
     const response = await get(createOrdersRouter(demoDatabase()), path);
@@ -113,6 +134,101 @@ test('tokens must be signed: the old base64 id token is refused', async () => {
 test('responses name the owner, which the gateway ownership check reads', async () => {
   const response = await get(createOrdersRouter(demoDatabase()), '/api/orders/1', 2);
   assert.equal(response.body.order.userId, 2);
+});
+
+// Models the writes POST /api/orders makes: a sequence pull for the new id, an
+// optional products lookup, and the insert itself.
+function writableDatabase({ products = [] } = {}) {
+  const calls = [];
+  const inserted = [];
+  let nextId = 100;
+  return {
+    calls,
+    inserted,
+    async query(text, values) {
+      calls.push({ text, values });
+      if (/nextval/.test(text)) {
+        return { rows: [{ id: nextId++ }] };
+      }
+      if (/FROM products WHERE id = ANY/.test(text)) {
+        const ids = values[0].map(String);
+        return { rows: products.filter((p) => ids.includes(String(p.id))) };
+      }
+      if (/INSERT INTO orders/.test(text)) {
+        const [id, orderNumber, userId, customerName, shippingAddress, items, total] = values;
+        const row = {
+          id,
+          order_number: orderNumber,
+          user_id: userId,
+          customer_name: customerName,
+          shipping_address: shippingAddress,
+          items: JSON.parse(items),
+          total,
+          status: 'pending',
+          created_at: '2026-09-17T00:00:00Z',
+        };
+        inserted.push(row);
+        return { rows: [row] };
+      }
+      throw new Error(`unexpected query in POST /api/orders test: ${text}`);
+    },
+  };
+}
+
+test('POST /api/orders requires a logged-in caller', async () => {
+  const response = await post(createOrdersRouter(writableDatabase()), '/api/orders', null, { items: [] });
+  assert.equal(response.status, 401);
+});
+
+test('POST /api/orders places an order under the caller\'s own id', async () => {
+  const db = writableDatabase();
+  const response = await post(createOrdersRouter(db), '/api/orders', 2, {
+    items: [{ productId: 'p1', name: 'Wireless Charging Pad', price: 24.5, quantity: 1 }],
+    shippingAddress: { fullName: 'Jane Cooper', street: '12 Harbour Lane', city: 'Portsmouth', state: '', zip: 'PO1 3AB', country: 'UK' },
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.order.userId, 2);
+  assert.equal(response.body.order.total, 32.45);
+  assert.equal(response.body.order.orderNumber, `SF-${db.inserted[0].id}`);
+  assert.equal(response.body.order.items[0].name, 'Wireless Charging Pad');
+});
+
+test('POST /api/orders ignores a client-supplied price for a real product', async () => {
+  const db = writableDatabase({ products: [{ id: 5, name: 'Real Product', price: '20.00' }] });
+  const response = await post(createOrdersRouter(db), '/api/orders', 2, {
+    items: [{ productId: '5', name: 'Fake name', price: 0.01, quantity: 1 }],
+    shippingAddress: { fullName: 'Jane Cooper', street: '12 Harbour Lane', city: 'Portsmouth', zip: 'PO1 3AB', country: 'UK' },
+  });
+
+  assert.equal(response.status, 201);
+  assert.equal(response.body.order.total, 27.59);
+  assert.equal(response.body.order.items[0].name, 'Real Product');
+  assert.equal(response.body.order.items[0].price, 20);
+});
+
+test('POST /api/orders rejects a bad quantity', async () => {
+  const db = writableDatabase();
+  for (const quantity of [0, 100, 1.5]) {
+    const response = await post(createOrdersRouter(db), '/api/orders', 2, {
+      items: [{ productId: 'p1', name: 'Item', price: 10, quantity }],
+      shippingAddress: { fullName: 'Jane Cooper', street: 'x', city: 'y', zip: 'z', country: 'UK' },
+    });
+    assert.equal(response.status, 400, `quantity ${quantity}`);
+  }
+  assert.equal(db.inserted.length, 0);
+});
+
+test('POST /api/orders rejects an empty or oversized item list', async () => {
+  const db = writableDatabase();
+  const empty = await post(createOrdersRouter(db), '/api/orders', 2, { items: [], shippingAddress: {} });
+  assert.equal(empty.status, 400);
+
+  const tooMany = await post(createOrdersRouter(db), '/api/orders', 2, {
+    items: Array.from({ length: 51 }, () => ({ productId: 'p1', quantity: 1 })),
+    shippingAddress: {},
+  });
+  assert.equal(tooMany.status, 400);
 });
 
 test('verifyToken refuses tampered, re-signed and expired tokens', () => {

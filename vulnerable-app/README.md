@@ -15,6 +15,7 @@ A deliberately insecure API and a small front end for it. It exists only so the 
 | `GET` | `/backup-demo`, `/config-demo`, `/.env-demo` | Harmless planted resources for forced-browsing enumeration. |
 | `GET` | `/api/demo-files?file=<relative-path>` | Deliberately permissive, but filesystem-bounded traversal demonstration. |
 | `GET` | `/api/orders` | The caller's own orders. |
+| `POST` | `/api/orders` | Places an order under the caller's own id (checkout). |
 | `GET` | `/api/orders/:id` | Intentionally vulnerable to BOLA / IDOR: returns any customer's order. |
 | `GET` | `/api/orders-secure/:id` | Ownership-checked comparison route: someone else's order is `404`. |
 
@@ -125,6 +126,24 @@ bash testing/signals/brute_force.sh
 is theirs. The SQL is parameterized: this is an authorization bug, not an
 injection one. The 40 seeded orders are fictional, and owners are interleaved,
 so counting through ids reaches other customers.
+
+### In the storefront
+
+The storefront (`http://localhost:5175`) has a Backend / Gateway switch in the
+navbar -- it decides which of the two URLs below every API call goes to, so
+the leak and the block can both be shown from the same page:
+
+1. Sign in as `jane@example.com` / `user123` (see the login page for other
+   seeded accounts). Switch to **Gateway**.
+2. Open **My Orders**. Jane owns 1, 6, 11, 16, 21, 26, 31, 36. Open one --
+   it's hers.
+3. Edit the address bar to `/orders/2`. Through the gateway: "Order not
+   found".
+4. Switch to **Backend** and reload `/orders/2`. The same URL now shows
+   Arjun Mehta's name, address and items -- the vulnerable route, unguarded.
+5. Switch back to **Gateway**, add something to the cart and check out. The
+   new order is created for real (`POST /api/orders`) and immediately shows
+   up in My Orders under its own id.
 
 `POST /api/login` returns a signed HS256 JWT (`auth-token.js`, one hour,
 `sub` = user id, `role`). The secret is `IASG_JWT_SECRET`, shared with the

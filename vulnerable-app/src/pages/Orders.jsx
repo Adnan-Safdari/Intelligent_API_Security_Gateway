@@ -54,7 +54,7 @@ export default function Orders() {
           <Link key={order._id} to={`/orders/${order._id}`} className="order-card">
             <div className="order-top">
               <div>
-                <span className="order-id">#{order._id.slice(-8).toUpperCase()}</span>
+                <span className="order-id">#{order.orderNumber || order._id}</span>
                 <span className="order-date">{formatDate(order.createdAt)}</span>
               </div>
               <div
@@ -113,7 +113,7 @@ export function OrderDetail() {
     <div className="order-detail-page container">
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
-          <h1>Order #{order._id.slice(-8).toUpperCase()}</h1>
+          <h1>Order #{order.orderNumber || order._id}</h1>
           <span className="order-status" style={{ color: STATUS_COLOR[order.status], fontWeight: 600 }}>
             {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
           </span>
@@ -140,10 +140,8 @@ export function OrderDetail() {
           <div className="card">
             <h3 style={{ marginBottom: '12px', fontWeight: 600, fontSize: '0.9rem' }}>Shipping Address</h3>
             <p style={{ lineHeight: 1.8, fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-              {order.shippingAddress.fullName}<br />
-              {order.shippingAddress.street}<br />
-              {order.shippingAddress.city}, {order.shippingAddress.state} {order.shippingAddress.zip}<br />
-              {order.shippingAddress.country}
+              {order.customerName}<br />
+              {order.shippingAddress}
             </p>
           </div>
         </div>
@@ -152,15 +150,8 @@ export function OrderDetail() {
           <h3 style={{ marginBottom: '16px', fontWeight: 600, fontSize: '0.9rem' }}>Order Summary</h3>
           <div className="summary-rows">
             <div className="summary-row"><span>Subtotal</span><span>{formatPrice(order.subtotal)}</span></div>
-            <div className="summary-row"><span>Shipping</span><span>{order.shippingPrice === 0 ? 'Free' : formatPrice(order.shippingPrice)}</span></div>
-            <div className="summary-row"><span>Tax</span><span>{formatPrice(order.taxPrice)}</span></div>
             <div className="divider" />
             <div className="summary-row" style={{ fontWeight: 600 }}><span>Total</span><span>{formatPrice(order.totalPrice)}</span></div>
-          </div>
-          <div className="divider" />
-          <div style={{ fontSize: '0.85rem' }}>
-            <div className="summary-row" style={{ marginBottom: '6px' }}><span style={{ color: 'var(--text-muted)' }}>Payment</span><span>{order.paymentMethod}</span></div>
-            <div className="summary-row"><span style={{ color: 'var(--text-muted)' }}>Paid</span><span style={{ color: order.isPaid ? 'var(--success)' : 'var(--error)' }}>{order.isPaid ? '✓ Yes' : '✗ No'}</span></div>
           </div>
         </div>
       </div>

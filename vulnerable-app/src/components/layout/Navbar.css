@@ -75,6 +75,30 @@
 }
 .nav-link:hover { color: var(--text); background: var(--bg); }
 
+/* Backend/Gateway switch: which URL every API call goes to. */
+.api-mode-switch {
+  display: flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+.api-mode-option {
+  padding: 5px 11px;
+  border-radius: 18px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+  transition: color var(--transition), background var(--transition);
+}
+.api-mode-option:hover { color: var(--text); }
+.api-mode-option.active {
+  background: var(--brand);
+  color: #fff;
+}
+
 .user-menu { position: relative; }
 .user-btn {
   display: flex;

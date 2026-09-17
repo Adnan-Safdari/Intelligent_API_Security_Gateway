@@ -47,7 +47,13 @@ export default function Checkout() {
     if (!validate()) return
     setPlacing(true)
     try {
-      const orderItems = items.map((i) => ({ product: i._id, quantity: i.quantity }))
+      const orderItems = items.map((i) => ({
+        product: i._id,
+        name: i.name,
+        price: i.price,
+        image: i.images?.[0] || i.image,
+        quantity: i.quantity,
+      }))
       const order = await orderApi.create({ items: orderItems, shippingAddress: address, paymentMethod })
       clearCart()
       toast.success('Order placed successfully!')

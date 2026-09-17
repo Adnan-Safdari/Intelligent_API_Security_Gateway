@@ -130,7 +130,9 @@ export default function Auth() {
         {!isRegister && (
           <p className="auth-hint">
             Demo: <code>jane@example.com</code> / <code>user123</code>
+            <br />Also try: <code>john_doe</code> / <code>doePassword</code>, <code>user1</code> / <code>password1</code>
             <br />Admin: <code>admin@shopforge.com</code> / <code>admin123</code>
+            <br />Jane owns orders 1, 6, 11… Try opening <code>/orders/2</code>.
           </p>
         )}
       </div>

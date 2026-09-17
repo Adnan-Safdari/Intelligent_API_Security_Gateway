@@ -46,24 +46,29 @@ const initDb = async () => {
       id SERIAL PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
-      role TEXT NOT NULL
+      role TEXT NOT NULL,
+      name TEXT
     )
   `)
+  // name did not exist before the BOLA demo; older databases created it NULL.
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS name TEXT`)
 
+  // Names match the customers in data/orders.js, so a login shows the same
+  // person whose orders it owns.
   const seedUsers = [
-    { email: 'admin@shopforge.com', password: 'admin123', role: 'administrator' },
-    { email: 'jane@example.com', password: 'user123', role: 'user' },
-    { email: 'admin', password: 'adminPassword123', role: 'administrator' },
-    { email: 'user1', password: 'password1', role: 'user' },
-    { email: 'john_doe', password: 'doePassword', role: 'user' }
+    { email: 'admin@shopforge.com', password: 'admin123', role: 'administrator', name: 'ShopForge Returns Desk' },
+    { email: 'jane@example.com', password: 'user123', role: 'user', name: 'Jane Cooper' },
+    { email: 'admin', password: 'adminPassword123', role: 'administrator', name: 'Priya Nair' },
+    { email: 'user1', password: 'password1', role: 'user', name: 'Arjun Mehta' },
+    { email: 'john_doe', password: 'doePassword', role: 'user', name: 'John Doe' }
   ]
 
   for (const user of seedUsers) {
     await pool.query(
-      `INSERT INTO users (email, password, role)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (email) DO NOTHING`,
-      [user.email, user.password, user.role]
+      `INSERT INTO users (email, password, role, name)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (email) DO UPDATE SET name = $4 WHERE users.name IS NULL`,
+      [user.email, user.password, user.role, user.name]
     )
   }
 
