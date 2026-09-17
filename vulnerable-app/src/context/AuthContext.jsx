@@ -4,11 +4,24 @@ import api, { userApi, SESSION_EXPIRED_EVENT } from '../services/api'
 
 const AuthContext = createContext(null)
 
+// A real login's token is a signed JWT: three dot-separated segments. The
+// storefront's old mock login stored a bare base64 id instead (see
+// services/api.js history) -- one segment, no dots. A leftover one of those
+// is not a live session; treating it as one is what sent a real fetch to
+// /api/orders with no usable Authorization header and surfaced as "Could not
+// reach the API" instead of a login screen.
+const looksLikeAJwt = (token) => typeof token === 'string' && token.split('.').length === 3
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const token = localStorage.getItem('sf_token')
     const stored = localStorage.getItem('sf_user')
     if (!token || !stored) return null
+    if (!looksLikeAJwt(token)) {
+      localStorage.removeItem('sf_token')
+      localStorage.removeItem('sf_user')
+      return null
+    }
     try {
       return JSON.parse(stored)
     } catch {

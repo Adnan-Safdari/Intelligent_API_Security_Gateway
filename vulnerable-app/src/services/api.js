@@ -271,6 +271,21 @@ export const userApi = {
         body: JSON.stringify({ email, password }),
       })
     } catch (e) {
+      // fetch() throwing here doesn't only mean "the API is down" -- a
+      // refusal the gateway wrote itself and didn't (or couldn't) mark with
+      // CORS for this origin looks identical to the browser: an opaque
+      // network error. Falling back to the mock on that would turn a real
+      // block into a working fake session, so check the API is actually
+      // unreachable before doing that.
+      let reachable = true
+      try {
+        reachable = (await fetch(`${BASE_URL}/api/health`)).ok
+      } catch {
+        reachable = false
+      }
+      if (reachable) {
+        throw new Error('The login request was blocked in a way the browser could not read the reason for.')
+      }
       console.warn('Login endpoint unreachable, using the offline mock:', e)
       return localLogin()
     }
