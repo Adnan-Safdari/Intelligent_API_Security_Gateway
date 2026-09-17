@@ -229,6 +229,16 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
     return () => document.removeEventListener("keydown", escape);
   }, [open, busy]);
 
+  function openDialog() {
+    // Clears whatever a previous run left behind, so a dialog that somehow
+    // got here still busy (see run(), below) starts clean rather than
+    // reopening pre-disabled -- the "doesn't take input" report was this
+    // exact state, left by the request-scoped guard against it added there.
+    setBusy(false);
+    setConfirm("");
+    setOpen(true);
+  }
+
   function close() {
     setOpen(false);
     setConfirm("");
@@ -237,11 +247,22 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
   async function run() {
     setBusy(true);
     try {
-      const res = await fetch("/api/admin/reset", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: "reset" }),
-      });
+      // A reset that outlives the dialog is fine; a reset the dialog can
+      // never come back from is the bug. Bounded so a slow or wedged
+      // Postgres/Redis cannot pin this request open indefinitely.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      let res;
+      try {
+        res = await fetch("/api/admin/reset", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: "reset" }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       const data = await res.json();
       if (!res.ok || !data.ok) {
         setToast({ tone: "bad", text: `reset failed: ${data.error || res.status}` });
@@ -259,10 +280,19 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
       close();
       // The live panels read Redis, but History reads Postgres on its own
       // slower cadence. Refresh both lanes now so a successful reset does not
-      // leave deleted campaigns visible until the next 30-second history poll.
-      await Promise.all([refresh(), refreshHistory()]);
+      // leave deleted campaigns visible until the next 30-second history poll
+      // -- fire-and-forget, not awaited: reopening this dialog right after a
+      // reset must not find it still "busy" from a refresh that is slow or
+      // never returns. Either read reports its own failure already.
+      refresh();
+      refreshHistory();
     } catch (err) {
-      setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
+      setToast({
+        tone: "bad",
+        text: err.name === "AbortError"
+          ? "reset timed out waiting for the server"
+          : `could not reach the server: ${err.message}`,
+      });
     } finally {
       setBusy(false);
     }
@@ -273,7 +303,7 @@ export function ResetControl({ className = "icon-btn", label = "Reset console" }
       <button
         type="button"
         className={className}
-        onClick={() => setOpen(true)}
+        onClick={openDialog}
         title="Reset the console to a clean slate"
       >
         {label}
@@ -360,6 +390,14 @@ export function ClearCampaignsControl({ className = "icon-btn", label = "Clear c
     return () => document.removeEventListener("keydown", escape);
   }, [open, busy]);
 
+  function openDialog() {
+    // See ResetControl's openDialog: clears a stuck busy flag left by a
+    // previous run() rather than reopening the dialog pre-disabled.
+    setBusy(false);
+    setConfirm("");
+    setOpen(true);
+  }
+
   function close() {
     setOpen(false);
     setConfirm("");
@@ -368,11 +406,21 @@ export function ClearCampaignsControl({ className = "icon-btn", label = "Clear c
   async function run() {
     setBusy(true);
     try {
-      const res = await fetch("/api/admin/clear-campaigns", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ confirm: "clear" }),
-      });
+      // Bounded so a slow or wedged Postgres cannot pin this request open
+      // indefinitely -- see ResetControl's run() for the same guard.
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15_000);
+      let res;
+      try {
+        res = await fetch("/api/admin/clear-campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ confirm: "clear" }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
       const data = await res.json();
       if (!res.ok || !data.ok) {
         setToast({ tone: "bad", text: `clear failed: ${data.error || res.status}` });
@@ -388,10 +436,18 @@ export function ClearCampaignsControl({ className = "icon-btn", label = "Clear c
       close();
       // History reads Postgres on its own slower cadence -- refresh both
       // lanes now so this doesn't leave cleared campaigns visible until the
-      // next 30-second history poll.
-      await Promise.all([refresh(), refreshHistory()]);
+      // next 30-second history poll. Fire-and-forget: reopening this dialog
+      // right after clearing must not find it still "busy" from a refresh
+      // that is slow or never returns. Either read reports its own failure.
+      refresh();
+      refreshHistory();
     } catch (err) {
-      setToast({ tone: "bad", text: `could not reach the server: ${err.message}` });
+      setToast({
+        tone: "bad",
+        text: err.name === "AbortError"
+          ? "clear timed out waiting for the server"
+          : `could not reach the server: ${err.message}`,
+      });
     } finally {
       setBusy(false);
     }
@@ -402,7 +458,7 @@ export function ClearCampaignsControl({ className = "icon-btn", label = "Clear c
       <button
         type="button"
         className={className}
-        onClick={() => setOpen(true)}
+        onClick={openDialog}
         disabled={busy}
         title="Clear campaigns -- keeps raw events and active policy"
       >
