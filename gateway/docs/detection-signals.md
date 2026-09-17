@@ -21,6 +21,7 @@ false positive costs a log line, not a refused customer.
 | `unknown_route_scanning` | `UnknownRouteScanDetector` | Distinct raw paths classified as `<unmatched>` by the route table | Yes |
 | `object_enumeration` | `ObjectEnumerationDetector` | One client requesting many distinct ids on an object endpoint (BOLA / IDOR) | Yes |
 | `ip_reputation` | `ReputationDetector` | Addresses on a known-bad list | No — see below |
+| `ownership_violation` | `ownership.Guard` | A read of someone else's object, refused -- the one signal that comes from enforcement, see below | No |
 
 All are configured under `enforcement:` in `configs/config.yaml`, and each
 can be disabled individually.
@@ -52,12 +53,48 @@ consecutive numbers -- a script counting, rather than a person reopening their
 own orders. It sits beside `brute_force`, next to the proxy, because it reads
 the backend's status after the request.
 
-Its limit is stated rather than hidden: the gateway cannot see who owns an
-object. It detects the harvesting *pattern*; the fix for BOLA itself is an
-ownership check in the application, which `GET /api/orders-secure/{id}` in the
-demo backend shows.
+Its limit is stated rather than hidden: this detector cannot see who owns an
+object. It detects the harvesting *pattern*, and the first ~20 objects have
+already been returned by the time it fires. Stopping the reads is the ownership
+check's job, below -- and the real fix for BOLA is still an ownership check in
+the application, which `GET /api/orders-secure/{id}` in the demo backend shows.
 
-All three are advisory-only: the gateway reflex rejects them even if they
+### The ownership check (`ownership_violation`)
+
+This is the exception to "detectors never enforce": `internal/ownership` is an
+enforcement middleware that also reports what it refused, so the refusal
+reaches telemetry and correlation like any other evidence.
+
+For each read endpoint in `routes.ownership` it:
+
+1. verifies the caller's `Authorization: Bearer` token (`identity.jwt`, HS256 or
+   RS256, algorithm fixed by config, `exp` required). A missing or expired token
+   is `401`; a forged one is `401` and evidence.
+2. lets the backend answer, holding the response inside the gateway;
+3. reads the owner at `owner_field` (a dotted JSON path) and compares it with the
+   token's user claim. Someone else's object becomes `404 Not found` -- the
+   same answer as an id that does not exist -- and none of it is sent. With
+   `list_field`, other people's items are removed from the array instead.
+
+Callers whose `bypass_claim` holds a `bypass_values` entry (administrators) are
+not checked. Non-2xx answers pass through untouched. A 2xx response whose owner
+cannot be read -- not JSON, compressed, over `max_body_bytes`, or missing the
+field -- is refused by default (`on_unverifiable: deny`), because a response the
+gateway cannot read is one it cannot vouch for.
+
+Evidence: `owner_mismatch` and `forged_token` cross the threshold at score 80,
+100 from the third in five minutes; `items_removed` scores 30 without crossing;
+`unverifiable` and a missing token score 0. It sits innermost, wrapping the
+proxy, so the `404`s it writes are what `object_enumeration` counts as refused
+lookups. It is advisory-only for the reflex -- each read is already refused --
+and the control plane names the campaign "Unauthorized Object Access (BOLA)".
+
+What it cannot do: check a write. `PUT` or `DELETE /orders/17` has happened by
+the time a response exists, so only `GET` rules are accepted, and writes still
+need the application's own check. Endpoints whose responses never name an
+owner cannot be protected this way either.
+
+Brute force, route scanning and object enumeration are advisory-only: the gateway reflex rejects them even if they
 are named in `block.signals`. They become an expiring throttle or block only
 after control-plane correlation and the policy writer's safety checks.
 
@@ -199,5 +236,7 @@ cd gateway && go test ./internal/signals/... ./internal/telemetry/...
 | `internal/signals/unknown_route_scanning.go` | Bounded distinct unmatched-path tracking |
 | `internal/signals/object_enumeration.go` | Bounded distinct object-id tracking per template (BOLA) |
 | `internal/signals/ip_reputation.go` | Known-bad address lookup and its cooldown |
+| `internal/ownership/` | The ownership check: held responses, owner comparison, `ownership_violation` evidence |
+| `internal/identity/` | Bearer-token (JWT) verification for the ownership check |
 | `internal/reputation/` | Loading the list, refreshing it, and the lookup itself |
 | `internal/signals/body.go` | Body reading shared by the request-scoped detectors |

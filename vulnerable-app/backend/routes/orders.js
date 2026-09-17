@@ -1,23 +1,16 @@
 const express = require('express');
 const { pool } = require('../db');
-
-// The caller, from "Authorization: Bearer <base64 user id>" -- the same token
-// the storefront already makes after login (src/services/api.js makeToken).
-// It is a demo token, not a credential: it identifies, it does not prove. That
-// is enough to show what an ownership check is for.
-function callerId(req) {
-  const match = /^Bearer\s+(\S+)$/.exec(req.get('authorization') || '');
-  if (!match) return null;
-  const id = Number(Buffer.from(match[1], 'base64').toString('utf8'));
-  return Number.isInteger(id) && id > 0 ? id : null;
-}
+const { callerFrom } = require('../auth-token');
 
 function orderId(value) {
   return /^\d{1,9}$/.test(value) ? Number(value) : null;
 }
 
+// userId is in the response the way most real APIs include it. It is also what
+// lets the gateway's ownership check (routes.ownership) see whose order this is.
 const toOrder = (row) => ({
   id: row.id,
+  userId: row.user_id,
   orderNumber: row.order_number,
   customerName: row.customer_name,
   shippingAddress: row.shipping_address,
@@ -35,11 +28,11 @@ function createOrdersRouter(db = pool) {
   const router = express.Router();
 
   const requireCaller = (req, res, next) => {
-    const id = callerId(req);
-    if (!id) {
+    const caller = callerFrom(req);
+    if (!caller) {
       return res.status(401).json({ success: false, message: 'Log in to view orders' });
     }
-    req.callerId = id;
+    req.callerId = caller.id;
     return next();
   };
 
@@ -59,8 +52,8 @@ function createOrdersRouter(db = pool) {
 
   // GET /api/orders/:id
   //
-  // Deliberately vulnerable to BOLA / IDOR. It checks that the caller is logged
-  // in, and never that the order is theirs, so counting through ids returns
+  // Deliberately vulnerable to BOLA / IDOR. It verifies the caller's token, and
+  // never checks that the order is theirs, so counting through ids returns
   // other customers' names, addresses and purchases. The SQL is parameterized:
   // this is an authorization bug, not an injection one.
   router.get('/orders/:id', requireCaller, async (req, res) => {

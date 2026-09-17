@@ -31,6 +31,7 @@ func TestConfigFromCarriesEverySection(t *testing.T) {
 	cfg.Enforcement.BruteForce.Enabled = true
 	cfg.Enforcement.Block.Signals = []string{"api_flooding"}
 	cfg.Enforcement.AdaptiveRateLimit.Burst = 7
+	cfg.Identity.JWT.Algorithm = "HS256"
 
 	got := ConfigFrom(cfg)
 	want := Config{
@@ -46,6 +47,7 @@ func TestConfigFromCarriesEverySection(t *testing.T) {
 		MaxBodyBytes:    4096,
 		Routes:          cfg.Routes,
 		Enforcement:     cfg.Enforcement,
+		Identity:        cfg.Identity,
 		Redis:           cfg.Storage.Redis,
 		TrustedProxies:  []string{"10.0.0.0/8"},
 	}

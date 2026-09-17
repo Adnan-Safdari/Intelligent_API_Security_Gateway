@@ -7,11 +7,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"time"
 
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/config"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/enforcement"
+	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/identity"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/netutil"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/policy"
 	"github.com/Adnan-Safdari/Intelligent_API_Security_Gateway/internal/reputation"
@@ -63,6 +65,10 @@ type Config struct {
 	// as one value means a section added to it cannot be dropped on the way in.
 	Enforcement config.EnforcementConfig
 
+	// Identity verifies callers for Routes.Ownership. Boot-only: swapping keys
+	// under running traffic is a deployment, not a settings change.
+	Identity config.IdentityConfig
+
 	// Redis holds hot telemetry and the policy snapshot the control plane writes.
 	Redis config.RedisConfig
 
@@ -85,6 +91,7 @@ func ConfigFrom(cfg *config.Config) Config {
 		MaxBodyBytes:    cfg.Server.MaxBodyBytes,
 		Routes:          cfg.Routes,
 		Enforcement:     cfg.Enforcement,
+		Identity:        cfg.Identity,
 		Redis:           cfg.Storage.Redis,
 		TrustedProxies:  cfg.Server.TrustedProxies,
 	}
@@ -167,7 +174,12 @@ func (s *Server) handler(cleanup *cleanups) (http.Handler, error) {
 		routeParams = routes.MatchParams
 	}
 
-	detectors := newDetectors(enf, s.config.Routes, reputationFeed, routeMatch, routeParams)
+	verifier, err := s.newVerifier()
+	if err != nil {
+		return nil, err
+	}
+
+	detectors := newDetectors(enf, s.config.Routes, reputationFeed, routeMatch, routeParams, verifier)
 	collector := detectors.collector()
 
 	// The gateway's own reflex, and the enforcer that acts on both it and the
@@ -232,6 +244,22 @@ func (s *Server) handler(cleanup *cleanups) (http.Handler, error) {
 		telemetry.CaptureBody,
 		observedDetectors(reflex, collector, detectors.middlewares()...),
 	)(backend), nil
+}
+
+// newVerifier loads token verification when an ownership rule needs it. A
+// secret or key that cannot be loaded stops the gateway: an ownership check
+// that could not verify tokens would have to either trust every token or
+// refuse every request, and neither is what the config asked for.
+func (s *Server) newVerifier() (*identity.Verifier, error) {
+	if len(s.config.Routes.Ownership) == 0 {
+		return nil, nil
+	}
+	verifier, err := identity.NewVerifier(s.config.Identity.JWT, os.Getenv)
+	if err != nil {
+		return nil, err
+	}
+	log.Printf("[ownership] checking %d endpoint(s) with %s tokens", len(s.config.Routes.Ownership), s.config.Identity.JWT.Algorithm)
+	return verifier, nil
 }
 
 // cleanups runs registered shutdown work in reverse, like a stack of defers.

@@ -17,6 +17,59 @@ type Config struct {
 	Routes      RoutesConfig      `yaml:"routes"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Enforcement EnforcementConfig `yaml:"enforcement"`
+	Identity    IdentityConfig    `yaml:"identity"`
+}
+
+// IdentityConfig says how the gateway learns who a caller is. Only needed by
+// routes.ownership: the gateway cannot compare an object's owner with the
+// caller until it can prove who the caller is, and a token it merely decoded
+// proves nothing.
+type IdentityConfig struct {
+	JWT JWTConfig `yaml:"jwt"`
+}
+
+type JWTConfig struct {
+	// Algorithm is HS256 (shared secret) or RS256 (public key). A token signed
+	// any other way -- "none" above all -- is refused.
+	Algorithm string `yaml:"algorithm"`
+
+	// SecretEnv names the environment variable holding the HS256 secret. Secret
+	// is a literal fallback for demo configs only; a real deployment leaves it
+	// empty so a missing variable stops the gateway instead of trusting a
+	// secret committed to a file.
+	SecretEnv string `yaml:"secret_env"`
+	Secret    string `yaml:"secret"`
+
+	// PublicKeyFile is a PEM RSA public key for RS256.
+	PublicKeyFile string `yaml:"public_key_file"`
+
+	// Issuer and Audience, when set, must match the token's iss and aud.
+	Issuer   string `yaml:"issuer"`
+	Audience string `yaml:"audience"`
+
+	// UserClaim holds the caller's id. Defaults to "sub".
+	UserClaim string `yaml:"user_claim"`
+
+	// A token whose BypassClaim holds one of BypassValues may read any object:
+	// support staff and administrators, whose reads are legitimate.
+	BypassClaim  string   `yaml:"bypass_claim"`
+	BypassValues []string `yaml:"bypass_values"`
+}
+
+// OwnershipRule protects one read endpoint by comparing the owner named in the
+// backend's response with the caller named in a verified token.
+type OwnershipRule struct {
+	// Template is a "GET /path" entry from routes.templates.
+	Template string `yaml:"template"`
+
+	// OwnerField is a dotted path to the owner's id: "order.userId". For a
+	// list rule it is read from each item.
+	OwnerField string `yaml:"owner_field"`
+
+	// ListField, when set, is a dotted path to an array of objects; items the
+	// caller does not own are removed instead of the whole response refused.
+	// "." means the response body itself is the array.
+	ListField string `yaml:"list_field"`
 }
 
 // RoutesConfig describes the backend, not enforcement, which is why it is a
@@ -45,6 +98,12 @@ type RoutesConfig struct {
 	// private record, and a shopper browsing many products is not an attack.
 	// Each must also appear in Templates and carry at least one {param}.
 	ObjectTemplates []string `yaml:"object_templates"`
+
+	// Ownership lists read endpoints whose responses the gateway checks
+	// against the caller's verified identity (identity.jwt). Someone else's
+	// object is answered 404 and never leaves the gateway. Only GET: a write
+	// has already happened by the time a response could be checked.
+	Ownership []OwnershipRule `yaml:"ownership"`
 }
 
 type AuthOutcomeConfig struct {
@@ -141,6 +200,7 @@ type EnforcementConfig struct {
 	BruteForce        BruteForceConfig        `yaml:"brute_force"`
 	UnknownRouteScan  UnknownRouteScanConfig  `yaml:"unknown_route_scanning"`
 	ObjectEnumeration ObjectEnumerationConfig `yaml:"object_enumeration"`
+	ObjectOwnership   ObjectOwnershipConfig   `yaml:"object_ownership"`
 	Enumeration       EnumerationConfig       `yaml:"enumeration_path_traversal"`
 	IPReputation      IPReputationConfig      `yaml:"ip_reputation"`
 	Throttle          ThrottleConfig          `yaml:"throttle"`
@@ -223,6 +283,21 @@ type ObjectEnumerationConfig struct {
 	Window          time.Duration `yaml:"window"`
 	MaxClients      int           `yaml:"max_clients"`
 	MaxIDsPerClient int           `yaml:"max_ids_per_client"`
+}
+
+// ObjectOwnershipConfig holds what may move at runtime for routes.ownership.
+// Which endpoints are protected, and how tokens are verified, are structural.
+type ObjectOwnershipConfig struct {
+	Enabled bool `yaml:"enabled"`
+
+	// OnUnverifiable is what happens to a response whose owner cannot be read:
+	// not JSON, compressed, too large, or missing the owner field. "deny"
+	// (default) answers 404; "allow" passes it through. Deny is the safe
+	// failure -- a response the gateway cannot read is one it cannot vouch for.
+	OnUnverifiable string `yaml:"on_unverifiable"`
+
+	// MaxBodyBytes caps how much of a response is held for checking.
+	MaxBodyBytes int64 `yaml:"max_body_bytes"`
 }
 
 type AttackDetectionConfig struct {
@@ -396,6 +471,14 @@ func Load(path string) (*Config, error) {
 	if err := validateObjectTemplates(cfg.Routes); err != nil {
 		return nil, err
 	}
+	ownership, err := ValidatedObjectOwnership(cfg.Enforcement.ObjectOwnership)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Enforcement.ObjectOwnership = ownership
+	if err := validateOwnership(cfg); err != nil {
+		return nil, err
+	}
 
 	return cfg, nil
 }
@@ -482,6 +565,77 @@ func validateObjectTemplates(routes RoutesConfig) error {
 		if !known[template] {
 			return fmt.Errorf("routes.object_templates entry %q is not listed in routes.templates", raw)
 		}
+	}
+	return nil
+}
+
+// ValidatedObjectOwnership fills defaults and bounds the response buffer.
+// Settings uses it too, so a hand-written override is held to the same rules.
+func ValidatedObjectOwnership(cfg ObjectOwnershipConfig) (ObjectOwnershipConfig, error) {
+	if cfg.OnUnverifiable == "" {
+		cfg.OnUnverifiable = "deny"
+	}
+	if cfg.MaxBodyBytes == 0 {
+		cfg.MaxBodyBytes = 1 << 20
+	}
+	if cfg.OnUnverifiable != "deny" && cfg.OnUnverifiable != "allow" {
+		return ObjectOwnershipConfig{}, fmt.Errorf("object_ownership.on_unverifiable must be deny or allow, not %q", cfg.OnUnverifiable)
+	}
+	if cfg.MaxBodyBytes < 1024 || cfg.MaxBodyBytes > 16<<20 {
+		return ObjectOwnershipConfig{}, fmt.Errorf("object_ownership.max_body_bytes must be between 1KB and 16MB")
+	}
+	return cfg, nil
+}
+
+// validateOwnership refuses an ownership rule that could never be enforced. A
+// rule that silently matched nothing, or a gateway that could not verify the
+// tokens it depends on, would look exactly like a protected API.
+func validateOwnership(cfg *Config) error {
+	rules := cfg.Routes.Ownership
+	if len(rules) == 0 {
+		return nil
+	}
+	known := make(map[string]bool, len(cfg.Routes.Templates))
+	for _, raw := range cfg.Routes.Templates {
+		known[normalizeTemplate(raw)] = true
+	}
+	seen := make(map[string]bool, len(rules))
+	for i, rule := range rules {
+		template := normalizeTemplate(rule.Template)
+		if !strings.HasPrefix(template, "GET ") {
+			return fmt.Errorf("routes.ownership entry %q: only GET can be checked; a write has already happened when its response arrives", rule.Template)
+		}
+		if !known[template] {
+			return fmt.Errorf("routes.ownership entry %q is not listed in routes.templates", rule.Template)
+		}
+		if seen[template] {
+			return fmt.Errorf("routes.ownership lists %q twice", rule.Template)
+		}
+		seen[template] = true
+		if strings.TrimSpace(rule.OwnerField) == "" {
+			return fmt.Errorf("routes.ownership entry %q needs owner_field", rule.Template)
+		}
+		rules[i].Template = template
+	}
+
+	jwt := &cfg.Identity.JWT
+	if jwt.UserClaim == "" {
+		jwt.UserClaim = "sub"
+	}
+	switch jwt.Algorithm {
+	case "HS256":
+		if jwt.SecretEnv == "" && jwt.Secret == "" {
+			return fmt.Errorf("identity.jwt: HS256 needs secret_env (or a demo secret)")
+		}
+	case "RS256":
+		if jwt.PublicKeyFile == "" {
+			return fmt.Errorf("identity.jwt: RS256 needs public_key_file")
+		}
+	default:
+		return fmt.Errorf("routes.ownership needs identity.jwt.algorithm HS256 or RS256, not %q", jwt.Algorithm)
+	}
+	if (jwt.BypassClaim == "") != (len(jwt.BypassValues) == 0) {
+		return fmt.Errorf("identity.jwt: bypass_claim and bypass_values go together")
 	}
 	return nil
 }

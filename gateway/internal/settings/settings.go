@@ -49,11 +49,13 @@ type Wire struct {
 	// values; the console always sends it, because it edits what the gateway
 	// republishes.
 	ObjectEnumeration *ObjectEnumeration `json:"object_enumeration,omitempty"`
-	Enumeration       Enumeration        `json:"enumeration_path_traversal"`
-	IPReputation      IPReputation       `json:"ip_reputation"`
-	Throttle          Throttle           `json:"throttle"`
-	Block             Block              `json:"block"`
-	Policy            Policy             `json:"policy"`
+	// ObjectOwnership is optional for the same reason ObjectEnumeration is.
+	ObjectOwnership *ObjectOwnership `json:"object_ownership,omitempty"`
+	Enumeration     Enumeration      `json:"enumeration_path_traversal"`
+	IPReputation    IPReputation     `json:"ip_reputation"`
+	Throttle        Throttle         `json:"throttle"`
+	Block           Block            `json:"block"`
+	Policy          Policy           `json:"policy"`
 }
 
 type AdaptiveRateLimit struct {
@@ -100,6 +102,14 @@ type ObjectEnumeration struct {
 	Window          string `json:"window"`
 	MaxClients      int    `json:"max_clients"`
 	MaxIDsPerClient int    `json:"max_ids_per_client"`
+}
+
+// ObjectOwnership carries the runtime switches. Which endpoints are checked and
+// how tokens are verified are structural and stay as the gateway booted.
+type ObjectOwnership struct {
+	Enabled        bool   `json:"enabled"`
+	OnUnverifiable string `json:"on_unverifiable"`
+	MaxBodyBytes   int64  `json:"max_body_bytes"`
 }
 
 // IPReputation carries only what may move at runtime. feed_path, feed_url and
@@ -178,6 +188,11 @@ func FromConfig(c config.EnforcementConfig) Wire {
 			Window:          durationString(c.ObjectEnumeration.Window),
 			MaxClients:      c.ObjectEnumeration.MaxClients,
 			MaxIDsPerClient: c.ObjectEnumeration.MaxIDsPerClient,
+		},
+		ObjectOwnership: &ObjectOwnership{
+			Enabled:        c.ObjectOwnership.Enabled,
+			OnUnverifiable: c.ObjectOwnership.OnUnverifiable,
+			MaxBodyBytes:   c.ObjectOwnership.MaxBodyBytes,
 		},
 		IPReputation: IPReputation{
 			Enabled:  c.IPReputation.Enabled,
@@ -260,6 +275,18 @@ func (w Wire) ToConfig(base config.EnforcementConfig) (config.EnforcementConfig,
 		}
 	}
 	out.ObjectEnumeration, err = config.ValidatedObjectEnumeration(out.ObjectEnumeration)
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
+
+	if o := w.ObjectOwnership; o != nil {
+		out.ObjectOwnership = config.ObjectOwnershipConfig{
+			Enabled:        o.Enabled,
+			OnUnverifiable: o.OnUnverifiable,
+			MaxBodyBytes:   o.MaxBodyBytes,
+		}
+	}
+	out.ObjectOwnership, err = config.ValidatedObjectOwnership(out.ObjectOwnership)
 	if err != nil {
 		return config.EnforcementConfig{}, err
 	}

@@ -21,6 +21,7 @@ function fullSettings(overrides = {}) {
       enabled: true, window: "5m", distinct_ids: 20,
       max_ids_per_client: 256, max_clients: 10000,
     },
+    object_ownership: { enabled: true, on_unverifiable: "deny", max_body_bytes: 1048576 },
     enumeration_path_traversal: { enabled: true },
     ip_reputation: { enabled: true, score: 70, cooldown: "15m" },
     throttle: { enabled: true, delay_ms: 0 },
@@ -112,5 +113,17 @@ test("object_enumeration limits are bounded", () => {
     const settings = fullSettings();
     settings.object_enumeration = { ...settings.object_enumeration, ...change };
     assert.match(validateSettings(settings) || "", /object_enumeration/, JSON.stringify(change));
+  }
+});
+
+test("object_ownership may be absent and is bounded when present", () => {
+  const absent = fullSettings();
+  delete absent.object_ownership;
+  assert.equal(validateSettings(absent), null);
+
+  for (const change of [{ on_unverifiable: "sometimes" }, { max_body_bytes: 10 }, { max_body_bytes: 1.5 }]) {
+    const settings = fullSettings();
+    settings.object_ownership = { ...settings.object_ownership, ...change };
+    assert.match(validateSettings(settings) || "", /object_ownership/, JSON.stringify(change));
   }
 });

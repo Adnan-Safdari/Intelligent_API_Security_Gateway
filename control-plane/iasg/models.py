@@ -12,6 +12,7 @@ DETECTOR_ENUMERATION = "enumeration"
 DETECTOR_REPUTATION = "reputation"
 DETECTOR_UNKNOWN_ROUTE_SCAN = "unknown_route_scanning"
 DETECTOR_OBJECT_ENUMERATION = "object_enumeration"
+DETECTOR_OWNERSHIP = "ownership_violation"
 
 # The phase of an intrusion each detector belongs to. Several detectors can
 # describe the same phase -- guessing filenames and climbing out of a directory
@@ -37,6 +38,9 @@ STAGE_OF = {
     # Harvesting other users' records is using the API against its owners, not
     # looking around: it is what reconnaissance was for.
     DETECTOR_OBJECT_ENUMERATION: STAGE_ABUSE,
+    # A read the gateway refused because the object belonged to someone else:
+    # the same harvesting, caught one object at a time instead of by volume.
+    DETECTOR_OWNERSHIP: STAGE_ABUSE,
 }
 
 # Go iasg:events signal names -> this agent's detector names.
@@ -51,6 +55,7 @@ SIGNAL_TO_DETECTOR = {
     "ip_reputation": DETECTOR_REPUTATION,
     "unknown_route_scanning": DETECTOR_UNKNOWN_ROUTE_SCAN,
     "object_enumeration": DETECTOR_OBJECT_ENUMERATION,
+    "ownership_violation": DETECTOR_OWNERSHIP,
 }
 
 DETECTOR_TO_SIGNAL = {
@@ -62,6 +67,7 @@ DETECTOR_TO_SIGNAL = {
     DETECTOR_REPUTATION: "ip_reputation",
     DETECTOR_UNKNOWN_ROUTE_SCAN: "unknown_route_scanning",
     DETECTOR_OBJECT_ENUMERATION: "object_enumeration",
+    DETECTOR_OWNERSHIP: "ownership_violation",
 }
 
 # What a campaign is called once it spans more than one phase.
@@ -279,7 +285,7 @@ def _evidence_endpoint(detector: str, event: dict, details: dict) -> str:
     addresses were harvesting the same thing.
     """
     template = str(details.get("template") or "")
-    if detector == DETECTOR_OBJECT_ENUMERATION and template:
+    if detector in (DETECTOR_OBJECT_ENUMERATION, DETECTOR_OWNERSHIP) and template:
         return template.split(" ", 1)[-1]
     return str(event.get("path") or "")
 

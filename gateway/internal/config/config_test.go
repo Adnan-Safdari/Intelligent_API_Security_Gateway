@@ -336,3 +336,78 @@ logging:
 		t.Fatalf("a config with retired sections no longer loads: %v", err)
 	}
 }
+
+func TestOwnershipRulesMustBeEnforceable(t *testing.T) {
+	const routes = `
+routes:
+  templates:
+    - GET /api/orders/{id}
+    - PUT /api/orders/{id}
+`
+	const hs256 = `
+identity:
+  jwt:
+    algorithm: HS256
+    secret_env: IASG_JWT_SECRET
+`
+	cases := map[string]string{
+		"a write": routes + `
+  ownership:
+    - template: PUT /api/orders/{id}
+      owner_field: order.userId
+` + hs256,
+		"not in the route table": routes + `
+  ownership:
+    - template: GET /api/users/{id}
+      owner_field: id
+` + hs256,
+		"no owner field": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+` + hs256,
+		"no token verification": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+      owner_field: order.userId
+`,
+		"RS256 without a key": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+      owner_field: order.userId
+identity:
+  jwt:
+    algorithm: RS256
+`,
+		"bad unverifiable mode": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+      owner_field: order.userId
+` + hs256 + `
+enforcement:
+  object_ownership:
+    on_unverifiable: sometimes
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, minimal+body)); err == nil {
+				t.Fatal("an unenforceable ownership rule was accepted")
+			}
+		})
+	}
+
+	cfg, err := Load(write(t, minimal+routes+`
+  ownership:
+    - template: get /api/orders/{id}
+      owner_field: order.userId
+`+hs256))
+	if err != nil {
+		t.Fatalf("a valid ownership rule was refused: %v", err)
+	}
+	if cfg.Routes.Ownership[0].Template != "GET /api/orders/{id}" || cfg.Identity.JWT.UserClaim != "sub" {
+		t.Errorf("ownership not normalised: %+v %+v", cfg.Routes.Ownership, cfg.Identity.JWT)
+	}
+	if o := cfg.Enforcement.ObjectOwnership; o.OnUnverifiable != "deny" || o.MaxBodyBytes != 1<<20 {
+		t.Errorf("object_ownership defaults = %+v", o)
+	}
+}

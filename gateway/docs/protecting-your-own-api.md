@@ -108,6 +108,43 @@ such as a product catalogue, where one client opening many ids is normal. The
 detector sees the pattern, not ownership: the ownership check in your API is
 still what stops the data leaking.
 
+### Ownership checks
+
+The gateway can also refuse the reads themselves, if it can verify your tokens
+and your responses name the owner:
+
+```yaml
+routes:
+  ownership:
+    - template: GET /orders/{id}
+      owner_field: userId          # dotted path into the response JSON
+    - template: GET /orders
+      list_field: .                # the body is an array; drop others' items
+      owner_field: userId
+
+identity:
+  jwt:
+    algorithm: HS256               # or RS256 with public_key_file
+    secret_env: IASG_JWT_SECRET    # set it in infra/.env, never in this file
+    user_claim: sub                # must equal owner_field's value
+    bypass_claim: role
+    bypass_values: [admin]
+```
+
+A response for someone else's object becomes `404` and never leaves the
+gateway; a missing, expired or forged token is `401`. Each template must be in
+`routes.templates` and be a `GET`, and the gateway will not start if the secret
+or key cannot be loaded. Check three things first:
+
+- **The ids must match as text.** `user_claim` in the token and `owner_field` in
+  the response are compared as strings, so `7` and `"7"` match, but a token
+  carrying an email will never match a numeric owner id.
+- **Responses must be JSON and name the owner.** Otherwise they are refused
+  (`enforcement.object_ownership.on_unverifiable: deny`). Set it to `allow` while
+  you roll out, and watch the gateway log for `[ownership] cannot check`.
+- **Writes are not covered.** A `PUT` or `DELETE` has already happened when its
+  response arrives. Your API must still check ownership on writes.
+
 ### Login outcomes
 
 ```yaml

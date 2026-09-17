@@ -2,9 +2,10 @@
 # Object ID enumeration (BOLA): a logged-in user counting through order ids.
 #
 # Logs in as jane, reads her own order list the normal way, then requests
-# /api/orders/1..N -- most of which belong to other customers. The vulnerable
-# route answers 200 with their data; ORDER_ROUTE=orders-secure answers 404 for
-# every order that is not hers, which scores higher (refused lookups).
+# /api/orders/1..N -- most of which belong to other customers. Through the
+# demo gateway, routes.ownership answers 404 for every order that is not hers
+# (see ownership.sh); ORDER_ROUTE=orders-secure gets the same 404s from the
+# application's own check. Refused lookups score higher either way.
 #
 # Expectation: every request is forwarded (no 429); the gateway records
 # object_enumeration once ORDER_IDS reaches distinct_ids (20 by default).
@@ -29,8 +30,8 @@ login="$(curl -sS --connect-timeout 5 ${xff[@]+"${xff[@]}"} -X POST "$GATEWAY_UR
 	-H "Content-Type: application/json" \
 	-d '{"email":"jane@example.com","password":"user123"}')"
 user_id="$(printf '%s' "$login" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')"
-[ -n "$user_id" ] || fail "login as jane failed: $login"
-token="$(printf '%s' "$user_id" | base64)"
+token="$(printf '%s' "$login" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+[ -n "$user_id" ] && [ -n "$token" ] || fail "login as jane failed: $login"
 echo "Logged in as jane (user $user_id)."
 
 code="$(curl_code -H "Authorization: Bearer $token" "$GATEWAY_URL/api/orders")"

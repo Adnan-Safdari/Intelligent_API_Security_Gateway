@@ -10,6 +10,7 @@ const (
 	SignalBruteForce = "consecutive_failed_logins"
 	SignalRouteScan  = "unknown_route_scanning"
 	SignalObjectEnum = "object_enumeration"
+	SignalOwnership  = "ownership_violation"
 	SignalReputation = "ip_reputation"
 )
 
@@ -118,7 +119,10 @@ func clampScore(score int) int {
 // the control plane before it can affect a request. Their behavioural state is
 // useful context, not an authority to install a gateway reflex block.
 func AdvisoryOnly(signal string) bool {
-	return signal == SignalBruteForce || signal == SignalRouteScan || signal == SignalObjectEnum
+	// Ownership is here although every hit is proof: the read it saw was
+	// already refused, so there is nothing for a reflex block to add that the
+	// control plane's policy does not do with the whole campaign in view.
+	return signal == SignalBruteForce || signal == SignalRouteScan || signal == SignalObjectEnum || signal == SignalOwnership
 }
 
 func evidenceSeverity(score int) string {

@@ -76,6 +76,35 @@ func TestOverrideWithoutObjectEnumerationKeepsTheFileValues(t *testing.T) {
 	}
 }
 
+func TestObjectOwnershipOverride(t *testing.T) {
+	in := base()
+	in.ObjectOwnership = config.ObjectOwnershipConfig{Enabled: true, OnUnverifiable: "deny", MaxBodyBytes: 1 << 20}
+	wire := FromConfig(in)
+
+	wire.ObjectOwnership = nil
+	out, err := wire.ToConfig(in)
+	if err != nil {
+		t.Fatalf("ToConfig: %v", err)
+	}
+	if out.ObjectOwnership != in.ObjectOwnership {
+		t.Errorf("an override without object_ownership changed it: %+v", out.ObjectOwnership)
+	}
+
+	wire.ObjectOwnership = &ObjectOwnership{Enabled: false, OnUnverifiable: "allow", MaxBodyBytes: 4096}
+	out, err = wire.ToConfig(in)
+	if err != nil {
+		t.Fatalf("ToConfig: %v", err)
+	}
+	if out.ObjectOwnership.Enabled || out.ObjectOwnership.OnUnverifiable != "allow" {
+		t.Errorf("override not applied: %+v", out.ObjectOwnership)
+	}
+
+	wire.ObjectOwnership = &ObjectOwnership{Enabled: true, OnUnverifiable: "maybe"}
+	if _, err := wire.ToConfig(in); err == nil {
+		t.Error("on_unverifiable \"maybe\" was accepted")
+	}
+}
+
 func TestDashboardCannotResetStructuralQuotaSettings(t *testing.T) {
 	in := base()
 	in.AdaptiveRateLimit = config.AdaptiveRateLimitConfig{

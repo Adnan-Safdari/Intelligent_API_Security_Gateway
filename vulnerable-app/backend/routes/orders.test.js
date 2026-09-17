@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const express = require('express');
 const { createOrdersRouter } = require('./orders');
+const { issueToken, verifyToken } = require('../auth-token');
 
 // Jane is user 2 and owns order 1; order 2 belongs to user 4.
 const orders = [
@@ -42,16 +43,17 @@ function demoDatabase() {
   };
 }
 
-const tokenFor = (userId) => `Bearer ${Buffer.from(String(userId)).toString('base64')}`;
+const tokenFor = (userId) => `Bearer ${issueToken({ id: userId, role: 'user' })}`;
 
-async function get(router, path, userId) {
+async function get(router, path, userId, authorization) {
   const app = express();
   app.use('/api', router);
   const server = await new Promise((resolve) => {
     const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
   });
   try {
-    const headers = userId ? { Authorization: tokenFor(userId) } : {};
+    const auth = authorization || (userId ? tokenFor(userId) : null);
+    const headers = auth ? { Authorization: auth } : {};
     const response = await fetch(`http://127.0.0.1:${server.address().port}${path}`, { headers });
     return { status: response.status, body: await response.json() };
   } finally {
@@ -100,4 +102,26 @@ test('non-numeric ids are not found rather than a database error', async () => {
   const response = await get(createOrdersRouter(db), '/api/orders/abc', 2);
   assert.equal(response.status, 404);
   assert.equal(db.calls.length, 0);
+});
+
+test('tokens must be signed: the old base64 id token is refused', async () => {
+  const forged = `Bearer ${Buffer.from('4').toString('base64')}`;
+  const response = await get(createOrdersRouter(demoDatabase()), '/api/orders', null, forged);
+  assert.equal(response.status, 401);
+});
+
+test('responses name the owner, which the gateway ownership check reads', async () => {
+  const response = await get(createOrdersRouter(demoDatabase()), '/api/orders/1', 2);
+  assert.equal(response.body.order.userId, 2);
+});
+
+test('verifyToken refuses tampered, re-signed and expired tokens', () => {
+  const token = issueToken({ id: 2, role: 'user' });
+  assert.equal(verifyToken(token).sub, '2');
+
+  const [header, , signature] = token.split('.');
+  const claims = Buffer.from(JSON.stringify({ sub: '4', exp: 4102444800 })).toString('base64url');
+  assert.equal(verifyToken(`${header}.${claims}.${signature}`), null);
+  assert.equal(verifyToken(issueToken({ id: 4 }, { key: 'someone-elses-secret' })), null);
+  assert.equal(verifyToken(issueToken({ id: 2 }, { now: Date.now() - 2 * 60 * 60 * 1000 })), null);
 });

@@ -10,6 +10,7 @@ from iasg.models import (
     DETECTOR_ENUMERATION,
     DETECTOR_FLOOD,
     DETECTOR_OBJECT_ENUMERATION,
+    DETECTOR_OWNERSHIP,
     DETECTOR_TRAVERSAL,
     DETECTOR_UNKNOWN_ROUTE_SCAN,
     Evidence,
@@ -174,3 +175,34 @@ def test_object_enumeration_evidence_is_keyed_on_the_template():
     assert first[0].endpoint == second[0].endpoint == "/api/orders/{id}"
     assert first[0].severity == "high"
     assert first[0].details["distinctIds"] == 24
+
+
+def test_ownership_violation_maps_to_the_template_endpoint():
+    event = {
+        "ts": "2026-09-17T10:00:00Z",
+        "ip": "203.0.113.90",
+        "method": "GET",
+        "path": "/api/orders/12",
+        "status": 404,
+        "fired": ["ownership_violation"],
+        "signals": [{
+            "signal": "ownership_violation",
+            "score": 80,
+            "thresholdCross": True,
+            "attackType": "owner_mismatch",
+            "details": {
+                "template": "GET /api/orders/{id}",
+                "reason": "owner_mismatch",
+                "caller": "2",
+                "owner": "4",
+                "recentViolations": 1,
+            },
+        }],
+    }
+
+    got = Evidence.from_stream_entry("6-0", {"event": json.dumps(event)})
+
+    assert [e.detector for e in got] == [DETECTOR_OWNERSHIP]
+    assert got[0].endpoint == "/api/orders/{id}"
+    assert got[0].severity == "high"
+    assert got[0].details["owner"] == "4"

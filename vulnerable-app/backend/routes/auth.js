@@ -1,5 +1,6 @@
 const express = require('express');
 const { pool } = require('../db');
+const { issueToken } = require('../auth-token');
 
 const router = express.Router();
 
@@ -35,6 +36,8 @@ router.post('/login', async (req, res) => {
       success: true,
       message: 'Login successful!',
       user,
+      // A signed JWT: the orders routes and the gateway both verify it.
+      token: issueToken(user),
     });
   } catch (error) {
     console.error('Login query failed:', error);

@@ -56,6 +56,9 @@ services:
       IASG_REDIS_HOST: redis
       # Optional: overrides proxy.backend_url in gateway.yaml.
       IASG_BACKEND_URL: ${IASG_BACKEND_URL:-}
+      # Only for routes.ownership with identity.jwt.secret_env: the secret your
+      # API signs tokens with. Put it in .env beside this file, never in YAML.
+      IASG_JWT_SECRET: ${IASG_JWT_SECRET:-}
     volumes:
       # Fails with a clear error when gateway.yaml is missing, instead of Docker
       # creating an empty directory in its place and the gateway failing to

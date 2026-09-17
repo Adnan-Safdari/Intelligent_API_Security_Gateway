@@ -13,6 +13,7 @@ testing/
     traversal.sh
     brute_force.sh
     object_enumeration.sh
+    ownership.sh
     redis_inspect.sh
     README.md
 ```

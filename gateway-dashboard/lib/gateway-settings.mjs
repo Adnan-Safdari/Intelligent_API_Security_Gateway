@@ -11,6 +11,7 @@ export const SECTIONS = [
   "brute_force",
   "unknown_route_scanning",
   "object_enumeration",
+  "object_ownership",
   "enumeration_path_traversal",
   "ip_reputation",
   "throttle",
@@ -30,7 +31,7 @@ export const SECTIONS = [
 // Sections a gateway older than the console may not publish. The gateway keeps
 // its file's values when one is absent (settings.go ObjectEnumeration), so
 // leaving it out is safe where leaving out any other section is not.
-export const OPTIONAL_SECTIONS = ["object_enumeration"];
+export const OPTIONAL_SECTIONS = ["object_enumeration", "object_ownership"];
 
 export const KNOWN_SIGNALS = [
   "api_flooding",
@@ -121,6 +122,16 @@ export function validateSettings(s) {
       return "object_enumeration limits must keep distinct ids within bounded client and id capacity";
     }
     if (!isDuration(objects.window)) return `object_enumeration.window: ${JSON.stringify(objects.window)} is not a duration like "5m"`;
+  }
+
+  const ownership = s.object_ownership;
+  if (ownership) {
+    if (!["deny", "allow"].includes(ownership.on_unverifiable)) {
+      return "object_ownership.on_unverifiable must be deny or allow";
+    }
+    if (!Number.isInteger(ownership.max_body_bytes) || ownership.max_body_bytes < 1024 || ownership.max_body_bytes > 16 * 1024 * 1024) {
+      return "object_ownership.max_body_bytes must be a whole number between 1KB and 16MB";
+    }
   }
 
   const duration = s.block?.duration;
