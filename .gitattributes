@@ -1,3 +1,0 @@
-# Frozen ML training datasets (see datasets/README.md). Marked generated so
-# GitHub collapses them in diffs and leaves them out of language statistics.
-datasets/** linguist-generated=true

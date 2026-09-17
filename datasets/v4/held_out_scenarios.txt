@@ -1,2 +1,0 @@
-slow_brute_force
-low_and_slow_enumeration

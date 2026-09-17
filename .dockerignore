@@ -1,7 +1,6 @@
 # Only control-plane/Dockerfile builds from the repo root; send just what it needs.
 *
 !control-plane
-!datasets/v4
 **/.venv
 **/__pycache__
 **/*.egg-info

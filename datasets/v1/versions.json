@@ -1,9 +1,0 @@
-{
-  "built_at": "2026-09-07T06:23:32.559040+00:00",
-  "platform": "macOS-27.0-arm64-arm-64bit-Mach-O",
-  "python": "3.14.6",
-  "runs": [
-    "run1"
-  ],
-  "spec_version": "v1"
-}
