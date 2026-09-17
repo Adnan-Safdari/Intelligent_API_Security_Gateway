@@ -1,5 +1,7 @@
 "use client";
 
+import { toBlob } from "html-to-image";
+
 /**
  * Download whatever is on screen.
  *
@@ -48,6 +50,48 @@ export function exportCsv(prefix, rows, columns) {
 
 export function exportJson(prefix, rows) {
   download(stamp(prefix, "json"), JSON.stringify(rows, null, 2), "application/json");
+}
+
+/**
+ * A PNG of a whole view, not just what fits in the viewport.
+ *
+ * `node` gets a `.snapshotting` class for the capture -- globals.css uses it
+ * to lift any capped list's max-height so the full thing renders, and to
+ * hide anything marked `.no-snapshot` (the export controls themselves,
+ * which have no place in an artefact meant to be shared). The class comes
+ * off again whether the capture succeeds or not, so a failure never leaves
+ * the page stuck expanded.
+ */
+export async function snapshotPng(node, prefix) {
+  if (!node) throw new Error("nothing to snapshot");
+
+  node.classList.add("snapshotting");
+  // One frame so the layout change above has actually applied before
+  // html-to-image measures the node.
+  await new Promise((resolve) => requestAnimationFrame(resolve));
+
+  try {
+    const { width, height } = node.getBoundingClientRect();
+    const backgroundColor = getComputedStyle(document.body).backgroundColor || "#0b0d12";
+    // A canvas has a browser-enforced area limit (commonly ~16 million
+    // pixels). A short page is captured at full retina density; a very long
+    // event list backs off instead of failing outright.
+    const pixelRatio = Math.min(2, Math.sqrt(16_000_000 / Math.max(1, width * height)));
+
+    const blob = await toBlob(node, { backgroundColor, pixelRatio, cacheBust: true });
+    if (!blob) throw new Error("the browser produced an empty image");
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = stamp(prefix, "png");
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } finally {
+    node.classList.remove("snapshotting");
+  }
 }
 
 /** The columns each exportable view uses. */

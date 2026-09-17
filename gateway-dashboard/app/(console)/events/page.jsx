@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { PageHead } from "@/app/ui/chrome";
 import { isValidIp, matchesEvent, signalMeta, SIGNAL_OPTIONS } from "@/app/ui/format";
-import { EventTable, ExportMenu, IpFilterField, Loading, SegmentedControl } from "@/app/ui/parts";
+import { EventTable, ExportMenu, IpFilterField, Loading, SegmentedControl, SnapshotButton } from "@/app/ui/parts";
 import { EVENT_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -12,6 +12,14 @@ import { useLive } from "@/app/ui/store";
 // its own, deeper read, so investigating does not mean making the 2.5s poll
 // expensive for every page.
 const WINDOWS = [100, 250, 500, 1000, 2000];
+
+// A snapshot renders the full, uncapped table -- see .snapshotting in
+// globals.css -- but an event list can run into the thousands, and a canvas
+// that tall risks the browser's area limit even at pixelRatio 1. Capping what
+// the table itself renders during capture, rather than relying on pixelRatio
+// alone, keeps a snapshot of a large view reliable instead of occasionally
+// failing on exactly the busiest page someone wanted to capture.
+const SNAPSHOT_ROW_CAP = 500;
 
 const RANGES = [
   { label: "all", ms: 0 },
@@ -46,6 +54,8 @@ function EventsView() {
   const [limit, setLimit] = useState(250);
   const [rangeMs, setRangeMs] = useState(0);
   const [frozen, setFrozen] = useState(false);
+  const [capturingSnapshot, setCapturingSnapshot] = useState(false);
+  const snapRef = useRef(null);
 
   const [rows, setRows] = useState([]);
   const [cursor, setCursor] = useState(null);
@@ -159,8 +169,22 @@ function EventsView() {
 
   const filtered = query || alertsOnly || rangeMs || ip;
 
+  // Awaited by SnapshotButton before/after it captures snapRef -- see the
+  // SNAPSHOT_ROW_CAP comment above. A frame's wait lets the capped table
+  // actually re-render (and the browser paint it) before html-to-image reads
+  // the DOM; without it the capture could still see the full, uncapped table
+  // React had queued but not yet committed.
+  const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
+  const beforeSnapshot = useCallback(async () => {
+    setCapturingSnapshot(true);
+    await nextFrame();
+  }, []);
+  const afterSnapshot = useCallback(() => setCapturingSnapshot(false), []);
+
+  const tableRows = capturingSnapshot ? shown.slice(0, SNAPSHOT_ROW_CAP) : shown;
+
   return (
-    <>
+    <div ref={snapRef} className="page-body">
       <PageHead
         eyebrow="Raw traffic"
         title="Events"
@@ -175,6 +199,13 @@ function EventsView() {
               {paused ? "Resume stream" : "Pause stream"}
             </button>
             <ExportMenu rows={shown} columns={EVENT_COLUMNS} prefix="events" />
+            <SnapshotButton
+              targetRef={snapRef}
+              prefix="events"
+              title="Download a PNG of this events view"
+              beforeCapture={beforeSnapshot}
+              afterCapture={afterSnapshot}
+            />
           </>
         }
       >
@@ -303,8 +334,8 @@ function EventsView() {
 
       <article className="card table-card">
         <EventTable
-          events={shown}
-          showSerialNumber
+          events={tableRows}
+          showRequestNumber
           showGeo
           geoByIp={geoByIp}
           empty={
@@ -313,6 +344,11 @@ function EventsView() {
               : "No events. Send traffic through the gateway on port 8082, or seed evidence."
           }
         />
+        {capturingSnapshot && shown.length > SNAPSHOT_ROW_CAP ? (
+          <p className="empty">
+            Snapshot shows the newest {SNAPSHOT_ROW_CAP} of {shown.length.toLocaleString()} rows.
+          </p>
+        ) : null}
       </article>
 
       {cursor ? (
@@ -325,7 +361,7 @@ function EventsView() {
           </small>
         </div>
       ) : rows.length && total > rows.length ? null : null}
-    </>
+    </div>
   );
 }
 

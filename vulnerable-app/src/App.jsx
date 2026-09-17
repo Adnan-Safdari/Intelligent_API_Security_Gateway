@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -8,6 +9,7 @@ import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "./context/AuthContext";
 import { CartProvider } from "./context/CartContext";
 import { WishlistProvider } from "./context/WishlistContext";
+import { getApiMode, API_MODE_EVENT } from "./services/api";
 import Navbar from "./components/layout/Navbar";
 import Footer from "./components/layout/Footer";
 import ProtectedRoute from "./components/common/ProtectedRoute";
@@ -31,6 +33,16 @@ function ScrollToTop() {
 }
 
 export default function App() {
+  // Remounts the routed page when the Backend/Gateway switch flips, so an
+  // open order page re-fetches through the newly chosen URL instead of
+  // showing what it already had.
+  const [apiMode, setApiModeState] = useState(getApiMode);
+  useEffect(() => {
+    const onModeChange = () => setApiModeState(getApiMode());
+    window.addEventListener(API_MODE_EVENT, onModeChange);
+    return () => window.removeEventListener(API_MODE_EVENT, onModeChange);
+  }, []);
+
   return (
     <BrowserRouter>
       <AuthProvider>
@@ -50,7 +62,7 @@ export default function App() {
             />
             <Navbar />
             <main>
-              <Routes>
+              <Routes key={apiMode}>
                 <Route path="/" element={<Home />} />
                 <Route path="/shop" element={<Shop />} />
                 <Route path="/products" element={<AllProducts />} />

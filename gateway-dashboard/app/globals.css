@@ -223,6 +223,14 @@ main > * + * {
   margin-top: var(--space-5);
 }
 
+/* A page wrapped in one element for SnapshotButton (so the whole thing --
+   not just what's on screen -- can be captured as one node) still needs the
+   rhythm above between its own top-level sections, since it is now the only
+   direct child of main and the rule above no longer sees them. */
+.page-body > * + * {
+  margin-top: var(--space-5);
+}
+
 .top {
   position: sticky;
   top: 0;
@@ -1480,6 +1488,18 @@ a { color: var(--accent); }
 .table-wrap {
   max-height: 380px;
   overflow: auto;
+}
+
+/* Applied to a page section by SnapshotButton (app/ui/parts.jsx) for the
+   moment it captures a PNG. The capped list expands so the image holds the
+   whole thing rather than whatever 380px happened to show, and the export
+   controls -- meaningless in a still image -- disappear from it. */
+.snapshotting .table-wrap {
+  max-height: none;
+  overflow: visible;
+}
+.snapshotting .no-snapshot {
+  display: none;
 }
 
 table {

@@ -94,6 +94,87 @@ function createOrdersRouter(db = pool) {
     }
   });
 
+  // POST /api/orders
+  //
+  // Checkout, for real: the order is stored under the caller's id, so it
+  // immediately shows up in their own GET /api/orders and is a genuine target
+  // for the BOLA route above. A client-supplied price is only trusted for
+  // catalogue ids that are not in the products table (the storefront's mock
+  // products, which never reach this backend); a real product's price and
+  // name are always looked up server-side.
+  router.post('/orders', requireCaller, async (req, res) => {
+    const { items, shippingAddress } = req.body || {};
+
+    if (!Array.isArray(items) || items.length === 0 || items.length > 50) {
+      return res.status(400).json({ success: false, message: 'An order needs 1 to 50 items' });
+    }
+
+    const normalizedItems = [];
+    for (const raw of items) {
+      const quantity = Number(raw && raw.quantity);
+      if (!Number.isInteger(quantity) || quantity < 1 || quantity > 99) {
+        return res.status(400).json({ success: false, message: 'Each item needs a quantity between 1 and 99' });
+      }
+      normalizedItems.push({
+        productId: raw && raw.productId != null ? String(raw.productId) : null,
+        name: raw && typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : 'Item',
+        price: Math.max(0, Number(raw && raw.price) || 0),
+        quantity,
+        image: raw && typeof raw.image === 'string' ? raw.image : null,
+      });
+    }
+
+    const numericIds = normalizedItems
+      .map((item) => item.productId)
+      .filter((id) => id && /^\d+$/.test(id))
+      .map(Number);
+
+    try {
+      if (numericIds.length > 0) {
+        const products = await db.query(`SELECT id, name, price FROM products WHERE id = ANY($1)`, [numericIds]);
+        const byId = new Map(products.rows.map((row) => [String(row.id), row]));
+        for (const item of normalizedItems) {
+          const product = item.productId && byId.get(item.productId);
+          if (product) {
+            item.name = product.name;
+            item.price = Number(product.price);
+          }
+        }
+      }
+
+      const address = shippingAddress && typeof shippingAddress === 'object' ? shippingAddress : {};
+      const customerName = typeof address.fullName === 'string' && address.fullName.trim()
+        ? address.fullName.trim()
+        : 'Customer';
+      const addressLine = [address.street, address.city, address.state, address.zip, address.country]
+        .filter((part) => typeof part === 'string' && part.trim())
+        .join(', ') || 'No address provided';
+
+      const subtotal = normalizedItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+      const shippingPrice = subtotal >= 50 ? 0 : 5.99;
+      const taxPrice = Math.round(subtotal * 0.08 * 100) / 100;
+      const total = Math.round((subtotal + shippingPrice + taxPrice) * 100) / 100;
+
+      // id is picked up front from the same sequence the id column defaults
+      // to, so order_number can embed it in the same insert instead of a
+      // second write once the row exists.
+      const sequence = await db.query(`SELECT nextval(pg_get_serial_sequence('orders', 'id')) AS id`);
+      const id = Number(sequence.rows[0].id);
+      const orderNumber = `SF-${id}`;
+
+      const inserted = await db.query(
+        `INSERT INTO orders (id, order_number, user_id, customer_name, shipping_address, items, total, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending')
+         RETURNING id, order_number, user_id, customer_name, shipping_address, items, total, status, created_at`,
+        [id, orderNumber, req.callerId, customerName, addressLine, JSON.stringify(normalizedItems), total],
+      );
+      return res.status(201).json({ order: toOrder(inserted.rows[0]) });
+    } catch (error) {
+      console.error('Order creation failed:', error);
+      return res.status(500).json({ success: false, message: 'Failed to place order' });
+    }
+  });
+
   return router;
 }
 

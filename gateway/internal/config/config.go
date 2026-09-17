@@ -135,6 +135,15 @@ type ServerConfig struct {
 	// which is the safe default: anyone can set the header, so trusting it
 	// unconditionally would let an attacker pin blame on another IP.
 	TrustedProxies []string `yaml:"trusted_proxies"`
+
+	// CORSAllowedOrigins lists origins allowed to read a response the gateway
+	// writes itself -- a refusal from the ownership guard, policy enforcement
+	// or the body-size limit, none of which ever reach the backend's own CORS
+	// middleware. Empty means none: a browser calling cross-origin sees the
+	// refusal only as a network error, same as before this existed. "*"
+	// allows any origin. This never touches a response the backend answered;
+	// its own CORS policy already governs those.
+	CORSAllowedOrigins []string `yaml:"cors_allowed_origins"`
 }
 
 type ProxyConfig struct {

@@ -115,6 +115,7 @@ path to be visible.
 | `path_traversal_probe.jmx` | Events filtered to traversal / enumeration | Traversal and forced-browsing evidence is recorded for correlation. |
 | `ATTACK_IP=203.0.113.81 bash testing/signals/object_enumeration.sh` (script, not a plan) | Events filtered to Object ID enumeration (BOLA), then Campaigns | Once 20 distinct order ids are requested, `object_enumeration` evidence appears, keyed on `/api/orders/{id}`; the campaign is named Object ID Enumeration (BOLA). Through the gateway most of those reads are `404`, refused by the ownership check. |
 | `BACKEND_URL=http://localhost:5002 bash testing/signals/ownership.sh` (script, not a plan) | Gateway log, Events filtered to Ownership check (BOLA), then Campaigns | Jane reads her own orders; every other customer's order is `404` through the gateway and `200` straight from the backend, a forged token is `401`, and repeated refusals become an Unauthorized Object Access (BOLA) campaign. |
+| Storefront (`http://localhost:5175`), not a plan | The browser itself, then Events and Campaigns | Sign in as `jane@example.com` / `user123`. In **Gateway** mode, edit the address bar to `/orders/2`: "Order not found". Switch the navbar to **Backend** and reload the same URL: Arjun Mehta's order. No curl, for a panel that wants to see the leak rather than read it. |
 | `distributed_attack.jmx` | Campaigns and Overview source map | Several identities and attack types demonstrate correlation and a multi-stage view. |
 
 For each plan, keep the explanation consistent:

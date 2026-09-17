@@ -1,8 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { exportCsv, exportJson } from "./export";
+import { useState } from "react";
+import { exportCsv, exportJson, snapshotPng } from "./export";
 import { EmptyIcon, SpinnerIcon } from "./icons";
+import { useLive } from "./store";
 import {
   ACTION_TONE,
   DISPLAY_TIME_ZONE_LABEL,
@@ -516,14 +518,14 @@ const EVENT_ACTION_TONE = {
   monitor: "dim",
 };
 
-export function EventTable({ events, empty, showSerialNumber = false, showGeo = false, geoByIp = {} }) {
-  const cols = 7 + (showSerialNumber ? 1 : 0) + (showGeo ? 1 : 0);
+export function EventTable({ events, empty, showRequestNumber = false, showGeo = false, geoByIp = {} }) {
+  const cols = 7 + (showRequestNumber ? 1 : 0) + (showGeo ? 1 : 0);
   return (
     <div className="table-wrap">
       <table>
         <thead>
           <tr>
-            {showSerialNumber ? <th>S. No.</th> : null}
+            {showRequestNumber ? <th>Req no.</th> : null}
             <th>Time ({DISPLAY_TIME_ZONE_LABEL})</th>
             <th>Source</th>
             {showGeo ? <th>Geo</th> : null}
@@ -542,7 +544,7 @@ export function EventTable({ events, empty, showSerialNumber = false, showGeo = 
               </td>
             </tr>
           ) : (
-            events.map((event, index) => {
+            events.map((event) => {
               const risk = clampRiskScore(event.riskScore);
               const tone = riskTone(risk);
               const actionTone = EVENT_ACTION_TONE[event.decision] || "ok";
@@ -551,7 +553,7 @@ export function EventTable({ events, empty, showSerialNumber = false, showGeo = 
                   key={event.id || event.requestId}
                   className={event.fired?.length ? "alert-row" : ""}
                 >
-                  {showSerialNumber ? <td className="mono">{index + 1}</td> : null}
+                  {showRequestNumber ? <td className="mono">{event.seq ?? "—"}</td> : null}
                   <td className="mono">{formatTime(event.ts)}</td>
                   <td>
                     <IpLink ip={event.ip} />
@@ -623,7 +625,7 @@ export function IpLink({ ip, className = "mono" }) {
 export function ExportMenu({ rows, columns, prefix, label = "export" }) {
   const count = rows?.length || 0;
   return (
-    <span className="export-menu">
+    <span className="export-menu no-snapshot">
       <button
         type="button"
         className="act"
@@ -643,5 +645,46 @@ export function ExportMenu({ rows, columns, prefix, label = "export" }) {
         json
       </button>
     </span>
+  );
+}
+
+/**
+ * A PNG of the whole page section `targetRef` points at -- the page's own
+ * card, filters and list included, not just the row data an export gets.
+ * Meant for a panel: something to paste into a slide or a chat, not to feed
+ * back into anything.
+ */
+// `beforeCapture`/`afterCapture` let a page change its own rendering for the
+// capture -- Events uncaps rows load, capping them a different way instead --
+// and must be awaited before/after so the DOM the capture reads is the one
+// those changes produced, not whatever was on screen when the button was
+// clicked.
+export function SnapshotButton({ targetRef, prefix, title, beforeCapture, afterCapture }) {
+  const { setToast } = useLive();
+  const [busy, setBusy] = useState(false);
+
+  async function run() {
+    setBusy(true);
+    try {
+      await beforeCapture?.();
+      await snapshotPng(targetRef.current, prefix);
+    } catch (err) {
+      setToast({ tone: "bad", text: `snapshot failed: ${err.message}` });
+    } finally {
+      await afterCapture?.();
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="act no-snapshot"
+      disabled={busy}
+      onClick={run}
+      title={title || "Download a PNG of this whole view"}
+    >
+      {busy ? "capturing…" : "snapshot"}
+    </button>
   );
 }

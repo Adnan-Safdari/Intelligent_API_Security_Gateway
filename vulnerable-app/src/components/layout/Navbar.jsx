@@ -3,7 +3,48 @@ import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../context/AuthContext'
 import { useCart } from '../../context/CartContext'
 import { useDebounce } from '../../hooks'
+import { getApiMode, setApiMode } from '../../services/api'
 import './Navbar.css'
+
+const BACKEND_URL = import.meta.env.VITE_BACKEND_API_URL || 'http://localhost:5002'
+const GATEWAY_URL = import.meta.env.VITE_GATEWAY_API_URL || 'http://localhost:8082'
+
+// Switches which URL every API call goes to, so the BOLA leak (Backend) and
+// its block (Gateway) can both be shown from the same page, live.
+function ApiModeSwitch() {
+  const [mode, setMode] = useState(getApiMode)
+
+  const choose = (next) => {
+    if (next === mode) return
+    setApiMode(next)
+    setMode(next)
+  }
+
+  return (
+    <div className="api-mode-switch" role="radiogroup" aria-label="API mode">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === 'backend'}
+        className={`api-mode-option ${mode === 'backend' ? 'active' : ''}`}
+        title={BACKEND_URL}
+        onClick={() => choose('backend')}
+      >
+        Backend
+      </button>
+      <button
+        type="button"
+        role="radio"
+        aria-checked={mode === 'gateway'}
+        className={`api-mode-option ${mode === 'gateway' ? 'active' : ''}`}
+        title={GATEWAY_URL}
+        onClick={() => choose('gateway')}
+      >
+        Gateway
+      </button>
+    </div>
+  )
+}
 
 export default function Navbar() {
   const { user, logout } = useAuth()
@@ -99,6 +140,7 @@ export default function Navbar() {
           <nav className={`navbar-nav ${menuOpen ? 'open' : ''}`}>
             <Link to="/shop" className="nav-link">Shop</Link>
             <Link to="/products" className="nav-link">All Products</Link>
+            <ApiModeSwitch />
 
             {user ? (
               <div className="user-menu" ref={userMenuRef}>

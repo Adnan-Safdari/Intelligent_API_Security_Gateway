@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ClearCampaignsControl, PageHead } from "@/app/ui/chrome";
 import { CampaignsIcon } from "@/app/ui/icons";
-import { CampaignCard, EmptyState, ExportMenu, IpFilterField, SegmentedControl } from "@/app/ui/parts";
+import { CampaignCard, EmptyState, ExportMenu, IpFilterField, SegmentedControl, SnapshotButton } from "@/app/ui/parts";
 import { CAMPAIGN_COLUMNS } from "@/app/ui/export";
 import { useLive } from "@/app/ui/store";
 
@@ -21,6 +21,7 @@ export default function CampaignsPage() {
   const [compact, setCompact] = useState(false);
   const [selected, setSelected] = useState([]);
   const [ip, setIp] = useState("");
+  const snapRef = useRef(null);
 
   const shown = useMemo(() => {
     let filtered =
@@ -52,7 +53,7 @@ export default function CampaignsPage() {
   }
 
   return (
-    <>
+    <div ref={snapRef} className="page-body">
       <PageHead title="Campaigns">
         What the control plane correlated out of the raw events — rebuilt every cycle,
         and the only place an address becomes an attacker rather than a row in a log.
@@ -93,6 +94,7 @@ export default function CampaignsPage() {
         <span className="grow" />
 
         <ExportMenu rows={shown} columns={CAMPAIGN_COLUMNS} prefix="campaigns" />
+        <SnapshotButton targetRef={snapRef} prefix="campaigns" title="Download a PNG of this campaigns view" />
 
         <ClearCampaignsControl className="act" />
 
@@ -147,6 +149,6 @@ export default function CampaignsPage() {
           ))}
         </ul>
       )}
-    </>
+    </div>
   );
 }

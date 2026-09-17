@@ -22,6 +22,16 @@ server:
   # gateway sits behind a proxy you control.
   trusted_proxies: []
 
+  # Origins allowed to read a response the gateway writes itself -- an
+  # ownership-guard refusal, a policy block, a body-size rejection -- none of
+  # which ever reach the backend's own CORS middleware, so without this a
+  # cross-origin browser sees such a refusal only as an opaque network error.
+  # This never touches a response the backend answered: its own CORS policy
+  # already governs those. Empty means none; "*" allows any origin.
+  cors_allowed_origins:
+  - http://localhost:5175
+  - http://127.0.0.1:5175
+
 proxy:
   # Backend API to protect
   backend_url: "http://localhost:5002"
@@ -54,8 +64,16 @@ routes:
     - GET /api/products/search-secure
     - GET /api/products/{id}
     - GET /api/orders
+    - POST /api/orders
     - GET /api/orders/{id}
     - GET /api/orders-secure/{id}
+    # The browser's CORS preflight for the Authorization header and the JSON
+    # body above -- not endpoints of their own. Left out, every one of a
+    # shopper's own orders would count as an unmatched path browsed, which is
+    # exactly what a route scanner looks like.
+    - OPTIONS /api/orders
+    - OPTIONS /api/orders/{id}
+    - OPTIONS /api/orders-secure/{id}
     - GET /api/demo-files
     - GET /backup-demo
     - GET /config-demo
