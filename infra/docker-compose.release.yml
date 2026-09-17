@@ -55,6 +55,9 @@ services:
     restart: unless-stopped
     environment:
       PORT: 5002
+      # Signs login tokens. The gateway verifies them with the same value
+      # (identity.jwt); change both together. The default is a public demo value.
+      IASG_JWT_SECRET: ${IASG_JWT_SECRET:-iasg-demo-jwt-secret-change-me}
       PGHOST: vulnerable_postgres
       PGPORT: 5432
       PGUSER: ${VULN_POSTGRES_USER:-vuln_user}
@@ -86,6 +89,7 @@ services:
       IASG_CONFIG: configs/config.yaml
       IASG_BACKEND_URL: http://vulnerable_api:5002
       IASG_REDIS_HOST: redis
+      IASG_JWT_SECRET: ${IASG_JWT_SECRET:-iasg-demo-jwt-secret-change-me}
     ports:
       - "127.0.0.1:8082:8082"
     depends_on:

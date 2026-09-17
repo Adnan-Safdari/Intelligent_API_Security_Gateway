@@ -234,6 +234,11 @@ func TestLowAndSlowDetectorLimitsAreValidated(t *testing.T) {
 		"scanner threshold exceeds retained paths": `unknown_route_scanning:
     distinct_paths: 9
     max_paths_per_client: 8`,
+		"unbounded object-enumeration clients": `object_enumeration:
+    max_clients: 100001`,
+		"object threshold exceeds retained ids": `object_enumeration:
+    distinct_ids: 300
+    max_ids_per_client: 256`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Load(write(t, minimal+"\nenforcement:\n  "+body+"\n")); err == nil {
@@ -268,6 +273,48 @@ func TestOwnAPITemplateDetectsWhatTheExampleDetects(t *testing.T) {
 	}
 }
 
+// An object template the route table cannot match would leave the detector
+// watching nothing while looking healthy, so it stops the gateway instead.
+func TestObjectTemplatesMustBeMatchableRoutes(t *testing.T) {
+	cases := map[string]string{
+		"not in the route table": `
+routes:
+  templates:
+    - GET /api/orders
+  object_templates:
+    - GET /api/orders/{id}
+`,
+		"no parameter to read": `
+routes:
+  templates:
+    - GET /api/orders
+  object_templates:
+    - GET /api/orders
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, minimal+body)); err == nil {
+				t.Fatal("unmatchable object template was accepted")
+			}
+		})
+	}
+
+	cfg, err := Load(write(t, minimal+`
+routes:
+  templates:
+    - GET /api/orders/{id}
+  object_templates:
+    - get /api/orders/{id}
+`))
+	if err != nil {
+		t.Fatalf("a listed object template was refused: %v", err)
+	}
+	if got := cfg.Enforcement.ObjectEnumeration; got.DistinctIDs != 20 || got.Window != 5*time.Minute || got.MaxIDsPerClient != 256 {
+		t.Errorf("object_enumeration defaults = %+v", got)
+	}
+}
+
 // signals:, logging: and storage.postgres: were parsed into structs nothing
 // read. They are gone from the code; a config file that still carries them
 // must keep loading.
@@ -287,5 +334,80 @@ logging:
 `
 	if _, err := Load(write(t, retired)); err != nil {
 		t.Fatalf("a config with retired sections no longer loads: %v", err)
+	}
+}
+
+func TestOwnershipRulesMustBeEnforceable(t *testing.T) {
+	const routes = `
+routes:
+  templates:
+    - GET /api/orders/{id}
+    - PUT /api/orders/{id}
+`
+	const hs256 = `
+identity:
+  jwt:
+    algorithm: HS256
+    secret_env: IASG_JWT_SECRET
+`
+	cases := map[string]string{
+		"a write": routes + `
+  ownership:
+    - template: PUT /api/orders/{id}
+      owner_field: order.userId
+` + hs256,
+		"not in the route table": routes + `
+  ownership:
+    - template: GET /api/users/{id}
+      owner_field: id
+` + hs256,
+		"no owner field": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+` + hs256,
+		"no token verification": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+      owner_field: order.userId
+`,
+		"RS256 without a key": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+      owner_field: order.userId
+identity:
+  jwt:
+    algorithm: RS256
+`,
+		"bad unverifiable mode": routes + `
+  ownership:
+    - template: GET /api/orders/{id}
+      owner_field: order.userId
+` + hs256 + `
+enforcement:
+  object_ownership:
+    on_unverifiable: sometimes
+`,
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(write(t, minimal+body)); err == nil {
+				t.Fatal("an unenforceable ownership rule was accepted")
+			}
+		})
+	}
+
+	cfg, err := Load(write(t, minimal+routes+`
+  ownership:
+    - template: get /api/orders/{id}
+      owner_field: order.userId
+`+hs256))
+	if err != nil {
+		t.Fatalf("a valid ownership rule was refused: %v", err)
+	}
+	if cfg.Routes.Ownership[0].Template != "GET /api/orders/{id}" || cfg.Identity.JWT.UserClaim != "sub" {
+		t.Errorf("ownership not normalised: %+v %+v", cfg.Routes.Ownership, cfg.Identity.JWT)
+	}
+	if o := cfg.Enforcement.ObjectOwnership; o.OnUnverifiable != "deny" || o.MaxBodyBytes != 1<<20 {
+		t.Errorf("object_ownership defaults = %+v", o)
 	}
 }

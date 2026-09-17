@@ -8,6 +8,7 @@ const { initDb } = require('./db');
 // Import Routes
 const authRoutes = require('./routes/auth');
 const productRoutes = require('./routes/products');
+const orderRoutes = require('./routes/orders');
 const demoResourceRoutes = require('./routes/demo-resources');
 
 const app = express();
@@ -30,6 +31,7 @@ res.status(200).json({ status: "up", message: "Vulnerable backend is running" })
 // Routes
 app.use('/api', authRoutes);
 app.use('/api', productRoutes);
+app.use('/api', orderRoutes);
 app.use('/', demoResourceRoutes);
 
 // 🔥 Start server FIRST

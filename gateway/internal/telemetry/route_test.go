@@ -26,6 +26,36 @@ func TestMatchCollapsesIdentifiersOntoOneTemplate(t *testing.T) {
 	}
 }
 
+// An object-level detector needs the identifier itself, not just the template.
+func TestMatchParamsReturnsTheWildcardValues(t *testing.T) {
+	table := mustTable(t, "GET /api/users/{user}/orders/{order}", "GET /api/orders/search", "GET /api/orders/{id}")
+
+	cases := []struct {
+		path     string
+		template string
+		params   []string
+	}{
+		{"/api/users/5/orders/17", "/api/users/{user}/orders/{order}", []string{"5", "17"}},
+		{"/api/orders/42", "/api/orders/{id}", []string{"42"}},
+		// The literal still wins, and it has no values to report.
+		{"/api/orders/search", "/api/orders/search", nil},
+		{"/api/nothing", UnmatchedRoute, nil},
+	}
+	for _, c := range cases {
+		template, params := table.MatchParams("GET", c.path)
+		if template != c.template || strings.Join(params, ",") != strings.Join(c.params, ",") {
+			t.Errorf("MatchParams(GET, %q) = %q %v, want %q %v", c.path, template, params, c.template, c.params)
+		}
+		if got := table.Match("GET", c.path); got != template {
+			t.Errorf("Match and MatchParams disagree on %q: %q vs %q", c.path, got, template)
+		}
+	}
+
+	if template, params := (*Table)(nil).MatchParams("GET", "/api/orders/1"); template != UnmatchedRoute || params != nil {
+		t.Errorf("nil table MatchParams = %q %v", template, params)
+	}
+}
+
 // Specificity has to decide, not configuration order -- otherwise someone
 // tidying the YAML changes what previously recorded telemetry means.
 func TestLiteralBeatsWildcardWhicheverOrderTheyAreConfigured(t *testing.T) {

@@ -11,6 +11,8 @@ DETECTOR_TRAVERSAL = "traversal"
 DETECTOR_ENUMERATION = "enumeration"
 DETECTOR_REPUTATION = "reputation"
 DETECTOR_UNKNOWN_ROUTE_SCAN = "unknown_route_scanning"
+DETECTOR_OBJECT_ENUMERATION = "object_enumeration"
+DETECTOR_OWNERSHIP = "ownership_violation"
 
 # The phase of an intrusion each detector belongs to. Several detectors can
 # describe the same phase -- guessing filenames and climbing out of a directory
@@ -33,6 +35,12 @@ STAGE_OF = {
     DETECTOR_BRUTE_FORCE: STAGE_CREDENTIAL,
     DETECTOR_SQLI: STAGE_INJECTION,
     DETECTOR_FLOOD: STAGE_ABUSE,
+    # Harvesting other users' records is using the API against its owners, not
+    # looking around: it is what reconnaissance was for.
+    DETECTOR_OBJECT_ENUMERATION: STAGE_ABUSE,
+    # A read the gateway refused because the object belonged to someone else:
+    # the same harvesting, caught one object at a time instead of by volume.
+    DETECTOR_OWNERSHIP: STAGE_ABUSE,
 }
 
 # Go iasg:events signal names -> this agent's detector names.
@@ -46,6 +54,8 @@ SIGNAL_TO_DETECTOR = {
     "enumeration": DETECTOR_ENUMERATION,
     "ip_reputation": DETECTOR_REPUTATION,
     "unknown_route_scanning": DETECTOR_UNKNOWN_ROUTE_SCAN,
+    "object_enumeration": DETECTOR_OBJECT_ENUMERATION,
+    "ownership_violation": DETECTOR_OWNERSHIP,
 }
 
 DETECTOR_TO_SIGNAL = {
@@ -56,6 +66,8 @@ DETECTOR_TO_SIGNAL = {
     DETECTOR_ENUMERATION: "enumeration_path_traversal",
     DETECTOR_REPUTATION: "ip_reputation",
     DETECTOR_UNKNOWN_ROUTE_SCAN: "unknown_route_scanning",
+    DETECTOR_OBJECT_ENUMERATION: "object_enumeration",
+    DETECTOR_OWNERSHIP: "ownership_violation",
 }
 
 # What a campaign is called once it spans more than one phase.
@@ -188,7 +200,7 @@ class Evidence:
                     cls(
                         timestamp=_parse_timestamp(str(event.get("ts", ""))),
                         ip=str(event.get("ip") or ""),
-                        endpoint=str(event.get("path") or ""),
+                        endpoint=_evidence_endpoint(detector, event, details),
                         detector=detector,
                         severity=_severity_from_score(signal.get("score")),
                         method=str(event.get("method") or ""),
@@ -260,6 +272,22 @@ class Evidence:
             "riskScore": str(score),
             "fired": signal,
         }
+
+
+def _evidence_endpoint(detector: str, event: dict, details: dict) -> str:
+    """
+    The endpoint a piece of evidence is about.
+
+    Normally the raw path. Object enumeration is the exception: its whole
+    signature is one template visited with many identifiers, so /api/orders/1
+    through /api/orders/40 are one endpoint. Keyed on the raw path they would
+    never share a top endpoint, and correlation could not see that several
+    addresses were harvesting the same thing.
+    """
+    template = str(details.get("template") or "")
+    if detector in (DETECTOR_OBJECT_ENUMERATION, DETECTOR_OWNERSHIP) and template:
+        return template.split(" ", 1)[-1]
+    return str(event.get("path") or "")
 
 
 def _severity_from_score(score) -> str:

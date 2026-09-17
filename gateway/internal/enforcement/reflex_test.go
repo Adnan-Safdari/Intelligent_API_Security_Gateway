@@ -247,7 +247,7 @@ func TestRecommendedSignalsExcludeAdvisoryDetectors(t *testing.T) {
 }
 
 func TestAdvisorySignalsCannotArmTheReflex(t *testing.T) {
-	for _, signal := range []string{signals.SignalBruteForce, signals.SignalRouteScan} {
+	for _, signal := range []string{signals.SignalBruteForce, signals.SignalRouteScan, signals.SignalObjectEnum} {
 		if _, err := New(Config{Enabled: true, Signals: []string{signal}}); err == nil {
 			t.Errorf("%s was allowed to create direct enforcement", signal)
 		}

@@ -116,8 +116,10 @@ func TestApplyIsSafeUnderConcurrentTraffic(t *testing.T) {
 	bd := NewBruteForceDetector(config.BruteForceConfig{Enabled: true, MaxFailures: 5, Window: time.Minute}, loginOutcomes, loginMatch)
 	sd := NewSQLiDetector(DefaultSQLiDetectorConfig())
 	td := NewTraversalEnumDetector(config.EnumerationConfig{Enabled: true})
+	od := NewObjectEnumerationDetector(config.ObjectEnumerationConfig{Enabled: true, DistinctIDs: 5, Window: time.Minute},
+		[]string{"GET /api/orders/{id}"}, objectRouteMatch)
 
-	chain := fd.Middleware(sd.Middleware(td.Middleware(bd.Middleware(okBackend()))))
+	chain := fd.Middleware(sd.Middleware(td.Middleware(od.Middleware(bd.Middleware(okBackend())))))
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
@@ -133,8 +135,12 @@ func TestApplyIsSafeUnderConcurrentTraffic(t *testing.T) {
 					return
 				default:
 					chain.ServeHTTP(httptest.NewRecorder(), request("4.4.4.4"))
+					orders := request("4.4.4.4")
+					orders.URL.Path = "/api/orders/7"
+					chain.ServeHTTP(httptest.NewRecorder(), orders)
 					fd.Metrics("4.4.4.4")
 					bd.Metrics("4.4.4.4")
+					od.Metrics("4.4.4.4")
 				}
 			}
 		}()
@@ -148,6 +154,7 @@ func TestApplyIsSafeUnderConcurrentTraffic(t *testing.T) {
 		bd.Apply(config.BruteForceConfig{Enabled: on, MaxFailures: 1 + i%9, Window: time.Minute})
 		sd.Apply(config.AttackDetectionConfig{Enabled: on})
 		td.Apply(config.EnumerationConfig{Enabled: on})
+		od.Apply(config.ObjectEnumerationConfig{Enabled: on, DistinctIDs: 2 + i%9, Window: time.Minute})
 	}
 
 	close(stop)

@@ -15,4 +15,10 @@ echo
 echo "=== brute force ==="
 bash "$SCRIPT_DIR/brute_force.sh"
 echo
+echo "=== object enumeration (BOLA) ==="
+bash "$SCRIPT_DIR/object_enumeration.sh"
+echo
+echo "=== ownership check (BOLA) ==="
+bash "$SCRIPT_DIR/ownership.sh"
+echo
 echo "All signal scripts finished. Detectors log alerts on the gateway; they must not return 429."

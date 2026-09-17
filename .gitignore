@@ -59,6 +59,7 @@ testing/jmeter/
 !testing/jmeter/
 testing/jmeter/*
 !testing/jmeter/adaptive_rate_limit.jmx
+!testing/jmeter/bola_demo.jmx
 
 # Database
 *.db

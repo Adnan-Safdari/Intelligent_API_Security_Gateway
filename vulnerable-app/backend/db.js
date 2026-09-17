@@ -2,6 +2,7 @@ const fs = require('fs')
 const path = require('path')
 const { Pool } = require('pg')
 const { PRODUCTS } = require('./data/products')
+const { ORDERS } = require('./data/orders')
 
 const loadLocalEnvFile = () => {
   if (process.env.PGHOST || process.env.DB_HOST) {
@@ -92,6 +93,33 @@ const initDb = async () => {
        ON CONFLICT (name) DO NOTHING`,
       [p.name, p.description, p.price, p.original_price, p.category, p.image,
        p.stock, p.rating, p.num_reviews, p.is_new_arrival]
+    )
+  }
+
+  // Orders for the BOLA demo. order_number is unique so re-seeding is
+  // idempotent, like products. The owner is resolved from the seeded users by
+  // email, so ids stay consistent however the users table was numbered.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id SERIAL PRIMARY KEY,
+      order_number TEXT UNIQUE NOT NULL,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      customer_name TEXT NOT NULL,
+      shipping_address TEXT NOT NULL,
+      items JSONB NOT NULL,
+      total NUMERIC(10,2) NOT NULL,
+      status TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `)
+
+  for (const o of ORDERS) {
+    await pool.query(
+      `INSERT INTO orders (order_number, user_id, customer_name, shipping_address, items, total, status)
+       SELECT $1, id, $2, $3, $4, $5, $6 FROM users WHERE email = $7
+       ON CONFLICT (order_number) DO NOTHING`,
+      [o.order_number, o.customer_name, o.shipping_address, JSON.stringify(o.items),
+       o.total, o.status, o.customer_email]
     )
   }
 }

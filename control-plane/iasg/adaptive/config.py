@@ -45,6 +45,10 @@ class RiskConfig:
         "flood": 70.0,
         "enumeration": 55.0,
         "unknown_route_scanning": 60.0,
+        "object_enumeration": 80.0,
+        # Each hit is a refused read of someone else's object: proof, not a
+        # pattern, so it outweighs the enumeration detector's inference.
+        "ownership_violation": 90.0,
         "reputation": 20.0,
     })
     repeated_evidence_increment: float = 5.0

@@ -89,6 +89,37 @@ routes:
       success: [200]
       invalid_credentials: [401]
 
+  # Endpoints that return one object belonging to a user -- an order, an
+  # account, a document -- watched for a client walking through identifiers
+  # (BOLA). Leave out public lookups such as a product catalogue: many ids from
+  # one client are normal there. Each must also be listed in templates above.
+  object_templates:
+    - GET /users/{id}
+    - GET /orders/{id}
+
+  # Endpoints whose responses the gateway checks against the caller's verified
+  # token, answering 404 for an object that belongs to someone else. Needs
+  # identity below, and an owner id in the response (owner_field is a dotted
+  # path into the JSON; list_field filters an array instead). GET only.
+  # ownership:
+  #   - template: GET /orders/{id}
+  #     owner_field: userId
+  #   - template: GET /orders
+  #     list_field: .
+  #     owner_field: userId
+
+# How the gateway verifies the tokens your API issues, for routes.ownership.
+# identity:
+#   jwt:
+#     algorithm: HS256            # or RS256 with public_key_file
+#     secret_env: IASG_JWT_SECRET # never put the secret itself in this file
+#     # public_key_file: /run/secrets/jwt-public.pem
+#     # issuer: https://auth.example.com
+#     # audience: my-api
+#     user_claim: sub
+#     # bypass_claim: role
+#     # bypass_values: [admin]
+
 storage:
   redis:
     enabled: true
@@ -162,6 +193,27 @@ enforcement:
     window: 5m
     max_clients: 10000
     max_paths_per_client: 64
+
+  # Object-level harvesting (BOLA / IDOR): one client requesting many distinct
+  # identifiers on an endpoint listed in routes.object_templates. This detector
+  # cannot see who owns an object, so it is evidence of the pattern, never an
+  # authority to block on its own. routes.ownership is what refuses the reads.
+  # Refused lookups (401/403/404) and ids counted in sequence raise the score.
+  object_enumeration:
+    enabled: true
+    distinct_ids: 20
+    window: 5m
+    max_clients: 10000
+    max_ids_per_client: 256
+
+  # Live switches for routes.ownership; with no ownership rules this does
+  # nothing. A response whose owner cannot be read -- not JSON, compressed,
+  # larger than max_body_bytes, or missing the owner field -- is answered 404
+  # (deny) or passed through (allow).
+  object_ownership:
+    enabled: true
+    on_unverifiable: deny
+    max_body_bytes: 1048576
 
   # Path traversal + forced-browsing enumeration evidence. A traversal hit can
   # arm the configured reflex below; enumeration still goes to correlation.

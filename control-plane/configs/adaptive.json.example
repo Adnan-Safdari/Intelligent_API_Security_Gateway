@@ -25,6 +25,8 @@
       "flood": 70,
       "enumeration": 55,
       "unknown_route_scanning": 60,
+      "object_enumeration": 80,
+      "ownership_violation": 90,
       "reputation": 20
     },
     "repeated_evidence_increment": 5,

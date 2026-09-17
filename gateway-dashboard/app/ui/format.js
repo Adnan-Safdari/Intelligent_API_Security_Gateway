@@ -23,6 +23,8 @@ const SIGNAL_META = {
   sql_injection: { label: "SQL injection", color: "var(--sig-sqli)" },
   consecutive_failed_logins: { label: "Brute force", color: "var(--sig-brute)" },
   unknown_route_scanning: { label: "Unknown-route scanning", color: "var(--sig-spray)" },
+  object_enumeration: { label: "Object ID enumeration (BOLA)", color: "var(--sig-objenum)" },
+  ownership_violation: { label: "Ownership check (BOLA)", color: "var(--sig-ownership)" },
   enumeration_path_traversal: { label: "Path traversal & enumeration", color: "var(--sig-enum-trav)" },
   ip_reputation: { label: "Known bad addresses", color: "var(--sig-reputation)" },
 };
@@ -62,7 +64,7 @@ export function canonicalSignals(fired) {
   return out;
 }
 
-// The six detector labels, in the gateway's own order -- for a filter
+// The detector labels, in the gateway's own order -- for a filter
 // dropdown that needs the whole vocabulary up front rather than only the
 // signals a given window of events happens to contain.
 export const SIGNAL_OPTIONS = Object.values(SIGNAL_META).map((s) => s.label);

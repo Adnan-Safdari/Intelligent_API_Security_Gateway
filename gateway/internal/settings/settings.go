@@ -43,11 +43,19 @@ type Wire struct {
 	AttackDetection   AttackDetection   `json:"attack_detection"`
 	BruteForce        BruteForce        `json:"brute_force"`
 	UnknownRouteScan  UnknownRouteScan  `json:"unknown_route_scanning"`
-	Enumeration       Enumeration       `json:"enumeration_path_traversal"`
-	IPReputation      IPReputation      `json:"ip_reputation"`
-	Throttle          Throttle          `json:"throttle"`
-	Block             Block             `json:"block"`
-	Policy            Policy            `json:"policy"`
+	// A pointer, unlike the sections around it: overrides saved before this
+	// detector existed have no such section, and reading that absence as
+	// all-zero would switch the detector off on upgrade. Absent keeps the file's
+	// values; the console always sends it, because it edits what the gateway
+	// republishes.
+	ObjectEnumeration *ObjectEnumeration `json:"object_enumeration,omitempty"`
+	// ObjectOwnership is optional for the same reason ObjectEnumeration is.
+	ObjectOwnership *ObjectOwnership `json:"object_ownership,omitempty"`
+	Enumeration     Enumeration      `json:"enumeration_path_traversal"`
+	IPReputation    IPReputation     `json:"ip_reputation"`
+	Throttle        Throttle         `json:"throttle"`
+	Block           Block            `json:"block"`
+	Policy          Policy           `json:"policy"`
 }
 
 type AdaptiveRateLimit struct {
@@ -86,6 +94,22 @@ type UnknownRouteScan struct {
 	Window            string `json:"window"`
 	MaxClients        int    `json:"max_clients"`
 	MaxPathsPerClient int    `json:"max_paths_per_client"`
+}
+
+type ObjectEnumeration struct {
+	Enabled         bool   `json:"enabled"`
+	DistinctIDs     int    `json:"distinct_ids"`
+	Window          string `json:"window"`
+	MaxClients      int    `json:"max_clients"`
+	MaxIDsPerClient int    `json:"max_ids_per_client"`
+}
+
+// ObjectOwnership carries the runtime switches. Which endpoints are checked and
+// how tokens are verified are structural and stay as the gateway booted.
+type ObjectOwnership struct {
+	Enabled        bool   `json:"enabled"`
+	OnUnverifiable string `json:"on_unverifiable"`
+	MaxBodyBytes   int64  `json:"max_body_bytes"`
 }
 
 // IPReputation carries only what may move at runtime. feed_path, feed_url and
@@ -158,6 +182,18 @@ func FromConfig(c config.EnforcementConfig) Wire {
 			MaxClients:        c.UnknownRouteScan.MaxClients,
 			MaxPathsPerClient: c.UnknownRouteScan.MaxPathsPerClient,
 		},
+		ObjectEnumeration: &ObjectEnumeration{
+			Enabled:         c.ObjectEnumeration.Enabled,
+			DistinctIDs:     c.ObjectEnumeration.DistinctIDs,
+			Window:          durationString(c.ObjectEnumeration.Window),
+			MaxClients:      c.ObjectEnumeration.MaxClients,
+			MaxIDsPerClient: c.ObjectEnumeration.MaxIDsPerClient,
+		},
+		ObjectOwnership: &ObjectOwnership{
+			Enabled:        c.ObjectOwnership.Enabled,
+			OnUnverifiable: c.ObjectOwnership.OnUnverifiable,
+			MaxBodyBytes:   c.ObjectOwnership.MaxBodyBytes,
+		},
 		IPReputation: IPReputation{
 			Enabled:  c.IPReputation.Enabled,
 			Score:    c.IPReputation.Score,
@@ -221,6 +257,36 @@ func (w Wire) ToConfig(base config.EnforcementConfig) (config.EnforcementConfig,
 		return config.EnforcementConfig{}, err
 	}
 	out.UnknownRouteScan, err = config.ValidatedUnknownRouteScan(out.UnknownRouteScan)
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
+
+	if o := w.ObjectEnumeration; o != nil {
+		objectWindow, err := parseDuration(o.Window, "object_enumeration.window")
+		if err != nil {
+			return config.EnforcementConfig{}, err
+		}
+		out.ObjectEnumeration = config.ObjectEnumerationConfig{
+			Enabled:         o.Enabled,
+			DistinctIDs:     o.DistinctIDs,
+			Window:          objectWindow,
+			MaxClients:      o.MaxClients,
+			MaxIDsPerClient: o.MaxIDsPerClient,
+		}
+	}
+	out.ObjectEnumeration, err = config.ValidatedObjectEnumeration(out.ObjectEnumeration)
+	if err != nil {
+		return config.EnforcementConfig{}, err
+	}
+
+	if o := w.ObjectOwnership; o != nil {
+		out.ObjectOwnership = config.ObjectOwnershipConfig{
+			Enabled:        o.Enabled,
+			OnUnverifiable: o.OnUnverifiable,
+			MaxBodyBytes:   o.MaxBodyBytes,
+		}
+	}
+	out.ObjectOwnership, err = config.ValidatedObjectOwnership(out.ObjectOwnership)
 	if err != nil {
 		return config.EnforcementConfig{}, err
 	}

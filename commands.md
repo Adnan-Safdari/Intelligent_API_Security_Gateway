@@ -124,7 +124,7 @@ Inspect the gateway event stream and control-plane policy keys.
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XLEN iasg:events
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 10
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 100 |
-  Select-String -Pattern 'sql_injection|api_flooding|consecutive_failed_logins|unknown_route_scanning|enumeration_path_traversal|ip_reputation'
+  Select-String -Pattern 'sql_injection|api_flooding|consecutive_failed_logins|unknown_route_scanning|object_enumeration|enumeration_path_traversal|ip_reputation'
 
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli KEYS 'policy:*'
 docker compose -f .\infra\docker-compose.yml exec redis redis-cli GET policy:198.51.100.91
@@ -321,6 +321,67 @@ docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg
 ```
 
 Traversal/enumeration are request-scoped evidence signals and are intentionally not listed as reflex-blocking signals in the current configuration.
+
+## Test 12B — Object ID enumeration / BOLA (`object_enumeration`)
+
+### Purpose
+
+Show that one logged-in client counting through order ids is recorded as object-level harvesting. `/api/orders/{id}` is deliberately missing its ownership check; `/api/orders-secure/{id}` has one. The detector is advisory-only and cannot see who owns an order, so it detects the pattern. Through the demo gateway the reads themselves are also refused by the ownership check (Test 12C), so most answers are `404`.
+
+### Commands
+
+```powershell
+# Log in as jane; the backend returns a signed token.
+$login = Invoke-RestMethod -Method Post http://localhost:8082/api/login `
+  -ContentType "application/json" -Body '{"email":"jane@example.com","password":"user123"}'
+$token = $login.token
+
+# Normal use: her own order list.
+curl.exe -s http://localhost:8082/api/orders `
+  -H "Authorization: Bearer $token" -H "X-Forwarded-For: 198.51.100.95"
+
+# Harvesting: 30 ids, most belonging to other customers (404 through the gateway).
+1..30 | ForEach-Object {
+  curl.exe -s -o NUL -w "%{http_code} " "http://localhost:8082/api/orders/$_" `
+    -H "Authorization: Bearer $token" -H "X-Forwarded-For: 198.51.100.95"
+}
+
+docker compose -f .\infra\docker-compose.yml exec redis redis-cli XREVRANGE iasg:events + - COUNT 50 |
+  Select-String -Pattern 'object_enumeration|198\.51\.100\.95'
+```
+
+Expect `object_enumeration` in `fired` from the 20th distinct id, with `template` `GET /api/orders/{id}`, `sequentialRun` 20 or more, and a high `deniedShare` because the ownership check refused most of them.
+
+## Test 12C — Ownership check (`ownership_violation`)
+
+### Purpose
+
+Show the gateway stopping BOLA rather than only noticing it. The backend's `/api/orders/{id}` returns any customer's order; `routes.ownership` verifies jane's token, reads the order's `userId`, and answers `404` for anyone else's order before a byte of it is sent. The backend on port 5002 still leaks, to show the fix is in the gateway.
+
+### Commands
+
+```powershell
+$login = Invoke-RestMethod -Method Post http://localhost:8082/api/login `
+  -ContentType "application/json" -Body '{"email":"jane@example.com","password":"user123"}'
+$auth = @{ Authorization = "Bearer $($login.token)" }
+
+# Through the gateway: her own orders 200, everyone else's 404.
+foreach ($id in 1..30) {
+  try { $o = Invoke-RestMethod "http://localhost:8082/api/orders/$id" -Headers $auth; "$id 200 owner $($o.order.userId)" }
+  catch { "$id $($_.Exception.Response.StatusCode.value__)" }
+}
+
+# Straight to the backend: other customers' orders come back.
+Invoke-RestMethod http://localhost:5002/api/orders/2 -Headers $auth
+
+# A forged token (base64 of the user id, the demo's old token): 401.
+curl.exe -s -o NUL -w "%{http_code}`n" http://localhost:8082/api/orders/1 `
+  -H "Authorization: Bearer $([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes('2')))"
+
+docker compose -f .\infra\docker-compose.yml logs --tail=40 gateway | Select-String '\[ownership\]'
+```
+
+Expect no `200` for an order whose owner is not jane's, `[ownership] refused ... owner_mismatch` lines in the gateway log, and `ownership_violation` in `iasg:events`. From a public identity the control plane forms an "Unauthorized Object Access (BOLA)" campaign and a throttle scoped to `GET /api/orders/{id}`. On macOS or Linux: `BACKEND_URL=http://localhost:5002 bash testing/signals/ownership.sh`.
 
 ## Test 13 — Control-plane correlation
 

@@ -16,6 +16,9 @@ func base() config.EnforcementConfig {
 		UnknownRouteScan: config.UnknownRouteScanConfig{
 			Enabled: true, DistinctPaths: 8, Window: 5 * time.Minute, MaxClients: 10_000, MaxPathsPerClient: 64,
 		},
+		ObjectEnumeration: config.ObjectEnumerationConfig{
+			Enabled: true, DistinctIDs: 20, Window: 5 * time.Minute, MaxClients: 10_000, MaxIDsPerClient: 256,
+		},
 		Block: config.BlockConfig{
 			Enabled: true, Duration: 60 * time.Second, MinScore: 50,
 			Signals: []string{"api_flooding"},
@@ -43,8 +46,62 @@ func TestRoundTripKeepsValues(t *testing.T) {
 	if out.UnknownRouteScan.DistinctPaths != 8 || out.UnknownRouteScan.Window != 5*time.Minute {
 		t.Errorf("unknown route scanning settings = %+v", out.UnknownRouteScan)
 	}
+	if out.ObjectEnumeration != in.ObjectEnumeration {
+		t.Errorf("object enumeration settings = %+v, want %+v", out.ObjectEnumeration, in.ObjectEnumeration)
+	}
 	if out.Block.Duration != 60*time.Second {
 		t.Errorf("duration = %s, want 60s", out.Block.Duration)
+	}
+}
+
+// An override saved before object_enumeration existed has no such section. It
+// must keep the file's values rather than read as all-zero, which would switch
+// the detector off on upgrade.
+func TestOverrideWithoutObjectEnumerationKeepsTheFileValues(t *testing.T) {
+	in := base()
+	wire := FromConfig(in)
+	wire.ObjectEnumeration = nil
+
+	out, err := wire.ToConfig(in)
+	if err != nil {
+		t.Fatalf("ToConfig: %v", err)
+	}
+	if !out.ObjectEnumeration.Enabled || out.ObjectEnumeration.DistinctIDs != 20 {
+		t.Errorf("object enumeration after an older override = %+v, want the file's", out.ObjectEnumeration)
+	}
+
+	wire.ObjectEnumeration = &ObjectEnumeration{Enabled: true, DistinctIDs: 1, Window: "5m"}
+	if _, err := wire.ToConfig(in); err == nil {
+		t.Error("an override with distinct_ids 1 was accepted")
+	}
+}
+
+func TestObjectOwnershipOverride(t *testing.T) {
+	in := base()
+	in.ObjectOwnership = config.ObjectOwnershipConfig{Enabled: true, OnUnverifiable: "deny", MaxBodyBytes: 1 << 20}
+	wire := FromConfig(in)
+
+	wire.ObjectOwnership = nil
+	out, err := wire.ToConfig(in)
+	if err != nil {
+		t.Fatalf("ToConfig: %v", err)
+	}
+	if out.ObjectOwnership != in.ObjectOwnership {
+		t.Errorf("an override without object_ownership changed it: %+v", out.ObjectOwnership)
+	}
+
+	wire.ObjectOwnership = &ObjectOwnership{Enabled: false, OnUnverifiable: "allow", MaxBodyBytes: 4096}
+	out, err = wire.ToConfig(in)
+	if err != nil {
+		t.Fatalf("ToConfig: %v", err)
+	}
+	if out.ObjectOwnership.Enabled || out.ObjectOwnership.OnUnverifiable != "allow" {
+		t.Errorf("override not applied: %+v", out.ObjectOwnership)
+	}
+
+	wire.ObjectOwnership = &ObjectOwnership{Enabled: true, OnUnverifiable: "maybe"}
+	if _, err := wire.ToConfig(in); err == nil {
+		t.Error("on_unverifiable \"maybe\" was accepted")
 	}
 }
 

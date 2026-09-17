@@ -64,6 +64,9 @@ routes:
     - GET /api/products/search
     - GET /api/products/search-secure
     - GET /api/products/{id}
+    - GET /api/orders
+    - GET /api/orders/{id}
+    - GET /api/orders-secure/{id}
     - GET /api/demo-files
     - GET /backup-demo
     - GET /config-demo
@@ -84,6 +87,13 @@ routes:
       template: /api/login
       success: [200]
       invalid_credentials: [401]
+
+  # Endpoints that return one object belonging to a user, watched for a client
+  # walking through identifiers. Public lookups such as /api/products/{id} are
+  # deliberately absent: a shopper browsing many products is not an attack.
+  object_templates:
+    - GET /api/orders/{id}
+    - GET /api/orders-secure/{id}
 
 storage:
   redis:
@@ -173,6 +183,27 @@ enforcement:
     window: 5m
     max_clients: 10000
     max_paths_per_client: 64
+
+  # Object-level harvesting (BOLA / IDOR): one client requesting many distinct
+  # identifiers on an endpoint listed in routes.object_templates. This detector
+  # cannot see who owns an object, so it is evidence of the pattern, never an
+  # authority to block on its own. routes.ownership is what refuses the reads.
+  # Refused lookups (401/403/404) and ids counted in sequence raise the score.
+  object_enumeration:
+    enabled: true
+    distinct_ids: 20
+    window: 5m
+    max_clients: 10000
+    max_ids_per_client: 256
+
+  # Live switches for routes.ownership; with no ownership rules this does
+  # nothing. A response whose owner cannot be read -- not JSON, compressed,
+  # larger than max_body_bytes, or missing the owner field -- is answered 404
+  # (deny) or passed through (allow).
+  object_ownership:
+    enabled: true
+    on_unverifiable: deny
+    max_body_bytes: 1048576
 
   # Path traversal + forced-browsing enumeration (detect + emit metrics only)
   enumeration_path_traversal:
