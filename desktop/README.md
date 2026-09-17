@@ -42,8 +42,8 @@ needs reinstalling when this folder changes.
    ```
 
 3. Watch the **Actions** tab. [`release.yml`](../.github/workflows/release.yml)
-   builds the five images (amd64 + arm64) into GHCR, builds the `.dmg` and
-   `.exe`, attaches them and the compose file to a release, and only then
+   builds the five images (amd64 + arm64) into GHCR, builds the `.dmg`,
+   `.exe`, `.AppImage` and `.deb`, attaches them and the compose file to a release, and only then
    publishes it. Expect 15–30 minutes.
 4. **First release only:** GHCR packages start out private, and the app cannot
    pull them until they are public. The repository owner opens each of the

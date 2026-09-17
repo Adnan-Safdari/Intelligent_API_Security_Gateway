@@ -73,7 +73,7 @@ decision boundaries and their safeguards.
 | [`gateway-dashboard/`](gateway-dashboard/README.md) | Next.js operations console |
 | [`infra/`](infra/README.md) | Docker Compose for everything |
 | [`testing/`](testing/README.md) | Load and attack scripts |
-| [`desktop/`](desktop/README.md) | Electron app that runs the packaged stack (.dmg / .exe) |
+| [`desktop/`](desktop/README.md) | Electron app that runs the packaged stack (.dmg / .exe / .AppImage / .deb) |
 
 Each has its own README covering how to run it, what it talks to, and what it does not do.
 
@@ -90,7 +90,10 @@ Each has its own README covering how to run it, what it talks to, and what it do
 1. Download from the
    [latest release](https://github.com/Pranav-Hirawat/Intelligent_API_Security_Gateway/releases/latest):
    `IASG-<version>-arm64.dmg` for Apple Silicon Macs, `IASG-<version>.dmg` for
-   Intel Macs, or `IASG.Setup.<version>.exe` for Windows.
+   Intel Macs, `IASG.Setup.<version>.exe` for Windows, or on Linux
+   `IASG-<version>.AppImage` (x64), `IASG-<version>-arm64.AppImage`, or
+   `iasg-desktop_<version>_amd64.deb` for Debian and Ubuntu. Make the AppImage
+   executable first (`chmod +x IASG-*.AppImage`).
 2. Open **IASG**. If Docker Desktop is missing or stopped, the app walks you
    through installing or starting it and carries on by itself once it runs.
 3. The first launch downloads the images (a few GB), then the dashboard opens
