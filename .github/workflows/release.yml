@@ -1,6 +1,6 @@
 # Pushing a tag like v0.1.0 builds and publishes a release:
 #   - five Docker images to ghcr.io/<owner>/iasg-*:<version> (amd64 + arm64)
-#   - the desktop app (.dmg for macOS, .exe for Windows)
+#   - the desktop app (.dmg for macOS, .exe for Windows, .AppImage and .deb for Linux)
 #   - infra/docker-compose.release.yml, which the desktop app downloads
 #   - infra/docker-compose.own-api.yml, for running in front of your own API
 # The release stays a draft until every job succeeds, so the desktop app
@@ -94,6 +94,9 @@ jobs:
           - os: windows-latest
             target: --win
             files: desktop/dist/*.exe
+          - os: ubuntu-latest
+            target: --linux
+            files: desktop/dist/*.AppImage desktop/dist/*.deb
     runs-on: ${{ matrix.os }}
     defaults:
       run:

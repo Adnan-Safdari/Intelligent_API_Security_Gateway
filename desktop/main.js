@@ -42,7 +42,15 @@ if (process.platform === "darwin") {
   ].join(":");
 } else if (process.platform === "win32") {
   process.env.PATH = `${process.env.PATH};C:\\Program Files\\Docker\\Docker\\resources\\bin`;
+} else {
+  // A desktop-menu launch on Linux can also miss these, snap's above all.
+  process.env.PATH = [process.env.PATH, "/usr/local/bin", "/usr/bin", "/snap/bin"].join(":");
 }
+
+// Docker Desktop for Linux installs here and runs as a user service. Most Linux
+// machines run Docker Engine instead, a system service this app cannot start
+// without root.
+const DOCKER_DESKTOP_LINUX = "/opt/docker-desktop";
 
 let win = null;
 let status = { phase: "checking", message: "Starting…" };
@@ -145,6 +153,8 @@ function launchDockerDesktop() {
       spawn("open", ["-a", "Docker"], { detached: true, stdio: "ignore" }).unref();
     } else if (process.platform === "win32" && fs.existsSync(DOCKER_DESKTOP_WIN)) {
       spawn(DOCKER_DESKTOP_WIN, [], { detached: true, stdio: "ignore" }).unref();
+    } else if (process.platform === "linux" && fs.existsSync(DOCKER_DESKTOP_LINUX)) {
+      spawn("systemctl", ["--user", "start", "docker-desktop"], { detached: true, stdio: "ignore" }).unref();
     } else {
       return false;
     }
@@ -155,18 +165,23 @@ function launchDockerDesktop() {
 }
 
 function showDockerState(state) {
+  const linux = process.platform === "linux";
   if (state === "missing") {
     setStatus(
       "no-docker",
-      "IASG runs in Docker Desktop, which is not installed on this computer.",
+      linux
+        ? "IASG runs in Docker, which is not installed on this computer."
+        : "IASG runs in Docker Desktop, which is not installed on this computer.",
     );
     return;
   }
   if (!dockerLaunched) dockerLaunched = launchDockerDesktop();
-  setStatus(
-    "docker-stopped",
-    dockerLaunched ? "Starting Docker Desktop…" : "Docker Desktop is installed but not running. Start it to continue.",
-  );
+  let message = dockerLaunched ? "Starting Docker Desktop…" : "Docker Desktop is installed but not running. Start it to continue.";
+  if (linux && !dockerLaunched) {
+    // On Linux "stopped" also covers a running daemon this user may not use.
+    message = "Docker is installed but not answering. Start it, and make sure your user can run docker without sudo.";
+  }
+  setStatus("docker-stopped", message);
 }
 
 // One sequential loop, never overlapping probes: a slow `docker info` must not

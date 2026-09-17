@@ -104,7 +104,23 @@ function installSteps({ platform, installer }) {
   ];
 }
 
+function linuxStartSteps() {
+  const command = (text) => el("code", {}, text);
+  return [
+    el("h2", {}, "Start Docker"),
+    el(
+      "ol",
+      {},
+      el("li", {}, "Start the Docker service: ", command("sudo systemctl start docker"), ". With Docker Desktop, open it from your applications instead."),
+      el("li", {}, "Let your user run Docker without sudo: ", command("sudo usermod -aG docker $USER"), ", then log out and back in."),
+      el("li", {}, "Check that ", command("docker info"), " works in a terminal without sudo."),
+    ),
+    waiting(),
+  ];
+}
+
 function startSteps({ platform }) {
+  if (platform === "linux") return linuxStartSteps();
   return [
     el("h2", {}, "Waiting for Docker Desktop"),
     el("p", { className: "note" },
