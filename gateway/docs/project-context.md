@@ -214,7 +214,6 @@ Intelligent_API_Security_Gateway/
 │   ├── jmeter/                         # JMeter demo plans
 │   ├── signals/                        # HTTP test scripts for detectors (not in the gateway module)
 │   └── traffic/                        # generates the labelled traffic behind datasets/
-├── datasets/                           # frozen, versioned traffic captures used to train/evaluate the anomaly model
 ├── models/                             # trained model artifacts read by the control plane's ModelScorer
 ├── gateway-dashboard/                  # Next.js command center (UI + /api/overview)
 │   ├── app/

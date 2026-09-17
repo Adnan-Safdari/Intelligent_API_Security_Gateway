@@ -13,7 +13,7 @@ Go gateway is one of them, not the whole system.
 | `control-plane/` | The Python agent. See [Control Plane](control-plane.md) |
 | `gateway-dashboard/` | Next.js operations console |
 | `vulnerable-app/` | Deliberately weak API and front end, used as the protected backend |
-| `datasets/` | Captured traffic, frozen and versioned, used to train and evaluate the anomaly model — not a runnable component |
+| `datasets/` | Not in the repository. Captured traffic used to train and evaluate the anomaly model is kept outside git; capture and build still write here locally (gitignored) |
 | `models/` | Trained model artifacts read by the control plane's `ModelScorer` — not a runnable component |
 | `testing/signals/` | Shell scripts that drive a running gateway |
 | `testing/traffic/` | Python harness that generates the labelled traffic behind `datasets/` |
@@ -107,8 +107,6 @@ cd control-plane && .venv/bin/python -m pytest
 │   └── lib/                      # redis, postgres, geo, telemetry, plane, adaptive (login removed; auth.js is a stub)
 ├── vulnerable-app/
 │   └── backend/
-├── datasets/
-│   └── v1/  v2/  v3/  v4/  part5-fresh/    # each frozen and versioned; see datasets/README.md
 ├── models/
 │   └── v2-iforest/  v3-iforest/  v4-iforest/  ...   # trained artifacts, one directory per model
 ├── testing/

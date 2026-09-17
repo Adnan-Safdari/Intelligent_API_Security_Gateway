@@ -1,3 +1,8 @@
+> **Datasets are no longer in the repository.** The `datasets/v1`–`v4` and
+> `part5-fresh` captures referenced below were removed from git and are kept
+> outside it; the commands still work once a dataset is placed back under
+> `datasets/`. Release images no longer ship a trained model.
+
 # Anomaly Model — Training Runs
 
 **This page has three iterations. The first two, against `datasets/v2`, are

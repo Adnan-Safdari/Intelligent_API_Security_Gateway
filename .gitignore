@@ -84,14 +84,11 @@ __pycache__/
 build/
 .claude/settings.json
 
-# Raw capture from an anomaly dataset run: hundreds of megabytes of JSONL,
-# reproducible from a rerun, and containing every request path a run drove.
-# datasets/v1/ is deliberately not ignored -- the frozen dataset is the
-# artefact, and its manifest is what makes it checkable.
-datasets/raw/
+# Anomaly datasets -- raw captures and frozen versions alike -- are kept outside
+# the repository. Capture and build still write here locally.
+datasets/
 
 # Trained model binaries: exactly reproducible from a frozen dataset and a
 # fixed seed, so the artefact worth keeping is the metadata beside them.
-# datasets/raw/ is ignored for the same reason.
 models/**/*.joblib
 IASG Operations dashboard.zip

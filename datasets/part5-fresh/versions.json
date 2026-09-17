@@ -1,9 +1,0 @@
-{
-  "built_at": "2026-09-10T13:24:22.691363+00:00",
-  "platform": "Windows-10-10.0.19045-SP0",
-  "python": "3.13.7",
-  "runs": [
-    "part5-fresh"
-  ],
-  "spec_version": "v3"
-}
