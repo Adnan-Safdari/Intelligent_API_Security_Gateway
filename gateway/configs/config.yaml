@@ -22,6 +22,16 @@ server:
   - 10.0.0.0/8
   - 172.16.0.0/12
 
+  # Origins allowed to read a response the gateway writes itself -- an
+  # ownership-guard refusal, a policy block, a body-size rejection -- none of
+  # which ever reach the backend's own CORS middleware, so without this a
+  # cross-origin browser sees such a refusal only as an opaque network error.
+  # This never touches a response the backend answered: its own CORS policy
+  # (vulnerable-app/backend's cors()) already governs those.
+  cors_allowed_origins:
+  - http://localhost:5175
+  - http://127.0.0.1:5175
+
 proxy:
   # Backend API to protect
   backend_url: "http://localhost:5002"

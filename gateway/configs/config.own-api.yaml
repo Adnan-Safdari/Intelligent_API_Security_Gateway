@@ -38,6 +38,14 @@ server:
   trusted_proxies: []
   #   - 172.16.0.0/12   # e.g. a reverse proxy in the same Docker network
 
+  # If a browser calls this gateway directly (not through your own backend),
+  # uncomment this so it can read a refusal the gateway writes itself -- an
+  # ownership-guard 404, a policy block, a body-size rejection -- none of
+  # which reach your API's own CORS headers. Leave it unset if nothing calls
+  # the gateway cross-origin, or if your backend's own CORS policy is enough.
+  # cors_allowed_origins:
+  #   - https://your-frontend.example
+
 proxy:
   # CHANGE ME (2 of 4): the API being protected. IASG_BACKEND_URL overrides it.
   #

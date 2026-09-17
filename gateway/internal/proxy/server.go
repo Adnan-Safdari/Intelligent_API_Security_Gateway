@@ -74,26 +74,31 @@ type Config struct {
 
 	// TrustedProxies lists CIDRs whose X-Forwarded-For header is believed.
 	TrustedProxies []string
+
+	// CORSAllowedOrigins lists origins allowed to read a response the gateway
+	// writes itself. See config.ServerConfig.CORSAllowedOrigins.
+	CORSAllowedOrigins []string
 }
 
 // ConfigFrom maps the loaded file config onto the server's.
 func ConfigFrom(cfg *config.Config) Config {
 	return Config{
-		ListenAddr:      net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port)),
-		BackendURL:      cfg.Proxy.BackendURL,
-		PreserveHost:    cfg.Proxy.PreserveHost,
-		ReadTimeout:     cfg.Server.ReadTimeout,
-		WriteTimeout:    cfg.Server.WriteTimeout,
-		IdleTimeout:     cfg.Server.IdleTimeout,
-		ProxyTimeout:    cfg.Proxy.Timeout,
-		MaxIdleConns:    cfg.Proxy.MaxIdleConns,
-		MaxConnsPerHost: cfg.Proxy.MaxConnsPerHost,
-		MaxBodyBytes:    cfg.Server.MaxBodyBytes,
-		Routes:          cfg.Routes,
-		Enforcement:     cfg.Enforcement,
-		Identity:        cfg.Identity,
-		Redis:           cfg.Storage.Redis,
-		TrustedProxies:  cfg.Server.TrustedProxies,
+		ListenAddr:         net.JoinHostPort(cfg.Server.Host, strconv.Itoa(cfg.Server.Port)),
+		BackendURL:         cfg.Proxy.BackendURL,
+		PreserveHost:       cfg.Proxy.PreserveHost,
+		ReadTimeout:        cfg.Server.ReadTimeout,
+		WriteTimeout:       cfg.Server.WriteTimeout,
+		IdleTimeout:        cfg.Server.IdleTimeout,
+		ProxyTimeout:       cfg.Proxy.Timeout,
+		MaxIdleConns:       cfg.Proxy.MaxIdleConns,
+		MaxConnsPerHost:    cfg.Proxy.MaxConnsPerHost,
+		MaxBodyBytes:       cfg.Server.MaxBodyBytes,
+		Routes:             cfg.Routes,
+		Enforcement:        cfg.Enforcement,
+		Identity:           cfg.Identity,
+		Redis:              cfg.Storage.Redis,
+		TrustedProxies:     cfg.Server.TrustedProxies,
+		CORSAllowedOrigins: cfg.Server.CORSAllowedOrigins,
 	}
 }
 
@@ -111,14 +116,16 @@ func NewServer(cfg Config) *Server {
 //
 // The middleware chain is applied in the following order (outermost first):
 //  1. Client-IP resolver — trusted-proxy X-Forwarded-For, then context IP
-//  2. Telemetry — records one Redis event after the rest of the chain returns
-//  3. Logging
-//  4. Policy enforcer — optional; blocked IPs never reach detectors
-//  5. Body-size cap, then redacted telemetry body capture
-//  6. Reflex observer — optional; records gateway-side blocks after the
+//  2. Gateway-answer CORS — lets a browser read a refusal the gateway itself
+//     wrote (ownership, policy, body-size); never touches a backend answer
+//  3. Telemetry — records one Redis event after the rest of the chain returns
+//  4. Logging
+//  5. Policy enforcer — optional; blocked IPs never reach detectors
+//  6. Body-size cap, then redacted telemetry body capture
+//  7. Reflex observer — optional; records gateway-side blocks after the
 //     detectors unwind, applying from the caller's next request. Advisory
 //     low-and-slow detectors remain evidence-only.
-//  7. Reverse proxy
+//  8. Reverse proxy
 func (s *Server) Start() error {
 	var cleanup cleanups
 	defer cleanup.run()
@@ -237,6 +244,7 @@ func (s *Server) handler(cleanup *cleanups) (http.Handler, error) {
 	// before the telemetry snippet or any detector buffers client input.
 	return ChainMiddleware(
 		resolver.Middleware,
+		GatewayAnswerCORS(s.config.CORSAllowedOrigins),
 		recorder.Middleware,
 		LoggingMiddleware,
 		enforcer.Middleware,
