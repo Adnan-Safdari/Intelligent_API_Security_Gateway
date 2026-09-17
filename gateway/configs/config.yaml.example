@@ -98,16 +98,6 @@ storage:
     # A full telemetry queue drops events instead of delaying API traffic.
     telemetry_queue_size: 1024
     telemetry_write_timeout: 100ms
-  
-  postgres:
-    host: localhost
-    port: 5434
-    database: iasg
-    username: iasg_user
-    password: changeme
-    ssl_mode: disable
-    max_open_conns: 25
-    max_idle_conns: 5
 
 enforcement:
   # Shared token buckets for policy throttles and the opt-in baseline.
@@ -181,7 +171,8 @@ enforcement:
     max_clients: 10000
     max_ids_per_client: 256
 
-  # Path traversal + forced-browsing enumeration (detect + emit metrics only)
+  # Path traversal + forced-browsing enumeration evidence. A traversal hit can
+  # arm the configured reflex below; enumeration still goes to correlation.
   enumeration_path_traversal:
     enabled: true
     traversal_patterns:
@@ -258,14 +249,13 @@ enforcement:
     enabled: true
     duration: 300s # how long a gateway-side block lasts; nothing renews it
 
-    # Only these may block on their own. Both are windowed -- they fire on
-    # repetition rather than on one request that happened to look odd. The
-    # request-scoped detectors (sql_injection, enumeration_path_traversal) are
-    # left out on purpose: a single request carrying "UNION" may be an attack
-    # or may be someone searching a catalogue, and that judgement is the
-    # control plane's job.
+    # Only these may block on their own. Flood is windowed; traversal is
+    # deliberately included because its score reaches the floor only for a
+    # concrete traversal signature. Enumeration alone remains below the floor
+    # and is correlated by the control plane instead.
     signals:
       - api_flooding
+      - enumeration_path_traversal
 
     # A score floor on top of each detector's own threshold, so a marginal hit
     # is not enough. Raise it to make this less trigger-happy without turning
@@ -289,20 +279,3 @@ enforcement:
     enabled: false
     key_prefix: "policy:"
     refresh_interval: 5s
-
-signals:
-  geo_location:
-    enabled: true
-  
-  payload_analysis:
-    enabled: true
-    max_body_size: 1MB
-  
-  behavioral:
-    enabled: true
-    learning_period: 24h
-
-logging:
-  level: info
-  format: json
-  output: stdout

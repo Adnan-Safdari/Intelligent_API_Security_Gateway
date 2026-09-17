@@ -17,8 +17,6 @@ type Config struct {
 	Routes      RoutesConfig      `yaml:"routes"`
 	Storage     StorageConfig     `yaml:"storage"`
 	Enforcement EnforcementConfig `yaml:"enforcement"`
-	Signals     SignalsConfig     `yaml:"signals"`
-	Logging     LoggingConfig     `yaml:"logging"`
 }
 
 // RoutesConfig describes the backend, not enforcement, which is why it is a
@@ -97,8 +95,7 @@ type ProxyConfig struct {
 }
 
 type StorageConfig struct {
-	Redis    RedisConfig    `yaml:"redis"`
-	Postgres PostgresConfig `yaml:"postgres"`
+	Redis RedisConfig `yaml:"redis"`
 }
 
 type RedisConfig struct {
@@ -135,17 +132,6 @@ func (c RedisConfig) Addr() string {
 		port = 6379
 	}
 	return net.JoinHostPort(host, fmt.Sprintf("%d", port))
-}
-
-type PostgresConfig struct {
-	Host         string `yaml:"host"`
-	Port         int    `yaml:"port"`
-	Database     string `yaml:"database"`
-	Username     string `yaml:"username"`
-	Password     string `yaml:"password"`
-	SSLMode      string `yaml:"ssl_mode"`
-	MaxOpenConns int    `yaml:"max_open_conns"`
-	MaxIdleConns int    `yaml:"max_idle_conns"`
 }
 
 type EnforcementConfig struct {
@@ -315,34 +301,6 @@ type BlockConfig struct {
 	MinScore int `yaml:"min_score"`
 	// Never blocked. Omit to take loopback and the private ranges.
 	ExemptCIDRs []string `yaml:"exempt_cidrs"`
-}
-
-type SignalsConfig struct {
-	// ip_reputation used to be declared here and read by nothing. It now lives
-	// in EnforcementConfig, where it is implemented and live-tunable.
-	GeoLocation     GeoLocationSignalConfig     `yaml:"geo_location"`
-	PayloadAnalysis PayloadAnalysisSignalConfig `yaml:"payload_analysis"`
-	Behavioral      BehavioralSignalConfig      `yaml:"behavioral"`
-}
-
-type GeoLocationSignalConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
-type PayloadAnalysisSignalConfig struct {
-	Enabled     bool   `yaml:"enabled"`
-	MaxBodySize string `yaml:"max_body_size"`
-}
-
-type BehavioralSignalConfig struct {
-	Enabled        bool          `yaml:"enabled"`
-	LearningPeriod time.Duration `yaml:"learning_period"`
-}
-
-type LoggingConfig struct {
-	Level  string `yaml:"level"`
-	Format string `yaml:"format"`
-	Output string `yaml:"output"`
 }
 
 func Load(path string) (*Config, error) {
@@ -534,4 +492,21 @@ func normalizeTemplate(raw string) string {
 		return strings.TrimSpace(raw)
 	}
 	return strings.ToUpper(fields[0]) + " " + fields[1]
+}
+
+// ApplyEnvOverrides lets a container point the file's config at its
+// neighbours: IASG_BACKEND_URL replaces proxy.backend_url and IASG_REDIS_HOST
+// replaces storage.redis.host. It returns one line per override applied, for
+// the caller to log.
+func ApplyEnvOverrides(cfg *Config, getenv func(string) string) []string {
+	var applied []string
+	if v := getenv("IASG_BACKEND_URL"); v != "" {
+		cfg.Proxy.BackendURL = v
+		applied = append(applied, "Overriding backend URL from IASG_BACKEND_URL: "+v)
+	}
+	if v := getenv("IASG_REDIS_HOST"); v != "" {
+		cfg.Storage.Redis.Host = v
+		applied = append(applied, "Overriding Redis host from IASG_REDIS_HOST: "+v)
+	}
+	return applied
 }

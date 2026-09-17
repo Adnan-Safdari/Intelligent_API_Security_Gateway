@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -65,6 +66,26 @@ func TestSQLiMatchingIsCaseInsensitive(t *testing.T) {
 
 	if !strings.Contains(out, sqliMarker) {
 		t.Fatal("lowercase 'union select' should still match")
+	}
+}
+
+func TestSQLiDetectsCommentObfuscatedKeywords(t *testing.T) {
+	const ip = "203.0.113.57"
+	detector := NewSQLiDetector(DefaultSQLiDetectorConfig())
+	handler := detector.Middleware(okBackend())
+
+	for _, payload := range []string{
+		`{"q":"UNION/**/SELECT password FROM users"}`,
+		`{"q":"uNiOn/* harmless padding */sElEcT password FROM users"}`,
+	} {
+		captureAlerts(t, func() {
+			probe(handler, http.MethodPost, "/api/products/search", ip, payload)
+		})
+
+		ev := detector.Metrics(ip)
+		if !ev.ThresholdCross || !slices.Contains(ev.Strings("matchedPatterns"), "UNION SELECT") {
+			t.Fatalf("comment-obfuscated payload %q bypassed SQLi detection: %+v", payload, ev)
+		}
 	}
 }
 

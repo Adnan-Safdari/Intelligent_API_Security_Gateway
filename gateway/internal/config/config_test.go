@@ -265,9 +265,6 @@ func TestOwnAPITemplateDetectsWhatTheExampleDetects(t *testing.T) {
 	if !reflect.DeepEqual(template.Enforcement, example.Enforcement) {
 		t.Error("enforcement block differs from config.yaml.example; copy it across")
 	}
-	if !reflect.DeepEqual(template.Signals, example.Signals) {
-		t.Error("signals block differs from config.yaml.example; copy it across")
-	}
 	if template.Proxy.PreserveHost {
 		t.Error("preserve_host must default to false: most backends need their own Host")
 	}
@@ -315,5 +312,27 @@ routes:
 	}
 	if got := cfg.Enforcement.ObjectEnumeration; got.DistinctIDs != 20 || got.Window != 5*time.Minute || got.MaxIDsPerClient != 256 {
 		t.Errorf("object_enumeration defaults = %+v", got)
+	}
+}
+
+// signals:, logging: and storage.postgres: were parsed into structs nothing
+// read. They are gone from the code; a config file that still carries them
+// must keep loading.
+func TestRetiredSectionsStillLoad(t *testing.T) {
+	retired := minimal + `
+storage:
+  postgres:
+    host: localhost
+    port: 5434
+signals:
+  geo_location:
+    enabled: true
+  behavioral:
+    learning_period: 24h
+logging:
+  level: info
+`
+	if _, err := Load(write(t, retired)); err != nil {
+		t.Fatalf("a config with retired sections no longer loads: %v", err)
 	}
 }

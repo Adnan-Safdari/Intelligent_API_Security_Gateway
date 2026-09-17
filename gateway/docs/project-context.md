@@ -149,14 +149,20 @@ Used when building/starting the server:
 - `enforcement.attack_detection` → SQLi patterns / enabled flag
 - `enforcement.brute_force` → enabled / max_failures / window / login_paths
 - `enforcement.enumeration_path_traversal` → traversal/enum detector
+- `enforcement.unknown_route_scanning` → route-scan detector
+- `enforcement.ip_reputation` → reputation feed and detector
+- `enforcement.block` → the gateway's own reflex blocking
+- `enforcement.policy` / `enforcement.adaptive_rate_limit` → control-plane policy and quotas
+- `routes.*` → route templates and login outcomes for telemetry and brute force
 - `storage.redis` → hot telemetry (stream, stats, per-IP latest)
 
-Loaded into structs but **not consumed by request handling yet**:
+Accepted for compatibility but with **no effect**:
 
-- `storage.postgres`
-- `enforcement.throttle` / `enforcement.block`
-- `signals.*` (ip reputation, geo, payload, behavioral placeholders)
-- `logging.*`
+- `enforcement.throttle` — quota admission never sleeps
+
+Retired — no longer parsed, and ignored if a config file still carries them:
+
+- `storage.postgres`, `signals.*`, `logging.*`
 
 ### 5.4 Removed / unused pieces
 

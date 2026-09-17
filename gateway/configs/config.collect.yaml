@@ -128,16 +128,6 @@ storage:
     # a silent hole in the dataset.
     telemetry_queue_size: 16384
     telemetry_write_timeout: 100ms
-  
-  postgres:
-    host: localhost
-    port: 5434
-    database: iasg
-    username: iasg_user
-    password: changeme
-    ssl_mode: disable
-    max_open_conns: 25
-    max_idle_conns: 5
 
 enforcement:
   # Shared token buckets for policy throttles and the opt-in baseline.
@@ -290,20 +280,3 @@ enforcement:
     enabled: true
     key_prefix: "policy:"
     refresh_interval: 5s # how stale an enforcement decision may be
-
-signals:
-  geo_location:
-    enabled: true
-  
-  payload_analysis:
-    enabled: true
-    max_body_size: 1MB
-  
-  behavioral:
-    enabled: true
-    learning_period: 24h
-
-logging:
-  level: info
-  format: json
-  output: stdout

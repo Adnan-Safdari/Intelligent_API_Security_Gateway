@@ -30,6 +30,8 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -214,9 +216,9 @@ func (r *Reflex) Describe() string {
 		names = append(names, name)
 	}
 	// Sorted so the log line is stable between restarts.
-	sortStrings(names)
+	sort.Strings(names)
 	return "gateway-side blocking on for " + strings.Join(names, ", ") +
-		" at score >= " + itoa(t.minScore) + " for " + t.duration.String()
+		" at score >= " + strconv.Itoa(t.minScore) + " for " + t.duration.String()
 }
 
 // Observe records a block when this request's evidence justifies one.
@@ -358,31 +360,4 @@ func (r *Reflex) isExempt(t *reflexTunables, ip string) bool {
 		return true
 	}
 	return netutil.NetworksContain(t.exempt, ip)
-}
-
-func sortStrings(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && s[j] < s[j-1]; j-- {
-			s[j], s[j-1] = s[j-1], s[j]
-		}
-	}
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	neg := n < 0
-	if neg {
-		n = -n
-	}
-	var digits []byte
-	for n > 0 {
-		digits = append([]byte{byte('0' + n%10)}, digits...)
-		n /= 10
-	}
-	if neg {
-		return "-" + string(digits)
-	}
-	return string(digits)
 }
