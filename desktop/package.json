@@ -19,10 +19,12 @@
       "main.js",
       "preload.js",
       "status.html",
-      "status.js"
+      "status.js",
+      "assets/icon.png"
     ],
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "assets"
     },
     "mac": {
       "target": [
@@ -36,7 +38,8 @@
       ],
       "category": "public.app-category.developer-tools",
       "identity": "-",
-      "hardenedRuntime": false
+      "hardenedRuntime": false,
+      "icon": "assets/icon.icns"
     },
     "win": {
       "target": [
@@ -46,7 +49,8 @@
             "x64"
           ]
         }
-      ]
+      ],
+      "icon": "assets/icon.png"
     },
     "nsis": {
       "oneClick": false,

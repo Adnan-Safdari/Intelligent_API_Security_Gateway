@@ -389,6 +389,8 @@ function createWindow() {
     width: 1400,
     height: 900,
     title: "IASG",
+    // The window and taskbar icon on Windows; macOS takes the app bundle's.
+    icon: path.join(__dirname, "assets", "icon.png"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,

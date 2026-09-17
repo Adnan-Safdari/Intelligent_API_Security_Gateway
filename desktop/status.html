@@ -27,7 +27,11 @@
       width: min(760px, 100%); background: var(--panel);
       border: 1px solid var(--border); border-radius: 12px; padding: 28px;
     }
-    h1 { margin: 0 0 4px; font-size: 20px; }
+    h1 { margin: 0; font-size: 20px; }
+    /* The dashboard's mark (gateway-dashboard/app/icon.svg). */
+    .brand { display: flex; align-items: center; gap: 10px; margin: 0 0 4px; }
+    .logo { display: grid; place-items: center; width: 24px; height: 24px; flex: none; background: #8b6cf2; }
+    .logo-dot { width: 9px; height: 9px; background: #0e0e11; }
     .sub { margin: 0 0 20px; color: var(--muted); }
     .status { display: flex; gap: 12px; align-items: center; font-size: 15px; }
     .dot {
@@ -69,7 +73,10 @@
 </head>
 <body>
   <main>
-    <h1>Intelligent API Security Gateway</h1>
+    <div class="brand">
+      <span class="logo" aria-hidden="true"><span class="logo-dot"></span></span>
+      <h1>Intelligent API Security Gateway</h1>
+    </div>
     <p class="sub">Runs the gateway, control plane, dashboard and demo app in Docker.</p>
 
     <div class="status" id="status"><span class="dot"></span><span id="message">Starting…</span></div>
