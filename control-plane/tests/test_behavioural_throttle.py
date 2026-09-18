@@ -13,7 +13,6 @@ from iasg.adaptive.risk import calculate_risk
 from iasg.adaptive.windows import CompletedWindow
 from iasg.anomaly.extract import WindowRow
 from iasg.anomaly.quality import WindowQuality
-from iasg.anomaly.spec import FEATURE_NAMES
 from iasg.config import Settings
 from iasg.models import ACTION_MONITOR, ACTION_THROTTLE, PolicyDecision
 from iasg.policy.writer import PolicyWriter
@@ -74,7 +73,6 @@ def test_behavioural_burst_is_endpoint_scoped_and_not_learned_as_normal():
         row=WindowRow(
             ip="203.0.113.120",
             window_start=NOW,
-            features={name: 0.0 for name in FEATURE_NAMES},
             quality=WindowQuality(),
         ),
         route_counts={("GET", "/api/products"): 20},

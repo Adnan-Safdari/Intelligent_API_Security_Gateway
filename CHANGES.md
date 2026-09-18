@@ -145,36 +145,6 @@ Commits covered: `180fbd0`, `2a6e8e9`, `aaddadb`.
   depend on when a request arrived, includes in-flight/refused requests, and
   exposes queue drops, sequence gaps, and in-flight counts without adding Redis
   I/O to the request path.
-- Added the versioned anomaly feature implementation under
-  `control-plane/iasg/anomaly/`. A single extractor serves offline builds and
-  runtime scoring and initially produces 12 ordered features: request count,
-  one-second peak, inter-arrival variation, path/route diversity, POST and login
-  ratios, known login failure ratio, backend 404/5xx ratios, mean measured body
-  size, and p95 upstream duration. Unknown measurements remain null until
-  training-partition median imputation.
-- Added quality metadata for measurement coverage, pending requests, timeouts,
-  telemetry loss/gaps, insufficient history, and malformed records. These
-  fields are kept out of the model input.
-- Added durable three-stream capture under `control-plane/iasg/dataset/` using
-  its own Redis consumer groups. Capture writes, flushes, and fsyncs before
-  acknowledging, redelivers unacknowledged entries after failure, detects stream
-  trimming numerically, and records loss in the run manifest.
-- Added the frozen dataset builder. It derives labels only from the traffic
-  plan, groups address histories wholly into deterministic train/validation/test
-  splits, keeps attacks out of training, forces reserved low-and-slow scenarios
-  into test, derives medians only from training, separates features from
-  identifying/label metadata, writes an evaluation plan before fitting, hashes
-  artifacts, and refuses to rebuild a `FROZEN` directory without an explicit
-  override.
-- Added a Compose-based traffic laboratory under `testing/traffic/` with nine
-  benign personas and seven attack scenarios. Personas deliberately cover
-  behavior that simplistic rules misclassify—failed human logins, legitimate
-  dead links, and regular mobile polling. Address identity is preflight-tested,
-  attack labels are written before traffic, and held-out attacks use separate
-  pools.
-- Froze `datasets/v1`, the first real gateway-derived dataset: 85 rows from one
-  180-second run, 25 distinct sessions, and 5,042 requests, with no reported
-  telemetry drops or trim loss.
 
 ### Features modified
 
@@ -198,13 +168,6 @@ Commits covered: `180fbd0`, `2a6e8e9`, `aaddadb`.
   reflection-based wiring guard (`gateway/internal/proxy/telemetry_sinks.go`).
   This prevents a configured stream from silently receiving no writes and
   verifies the health reporter observes the actual queue instances.
-- Fixed four live-collection failures (`8596764`): Compose commands that YAML
-  had split across lines, an unquoted `redis>=5.0` shell requirement, missing
-  `RUN_ID`/duration environment forwarding, and a `depends_on` path that could
-  recreate the gateway with the small default stream limits. Capture now loads
-  environment settings instead of silently targeting localhost.
-- Made the real dataset build execute its leakage checks before writing
-  `FROZEN`, rather than relying on tests that used synthetic rows.
 
 ### Security/enforcement changes
 
@@ -223,19 +186,9 @@ Commits covered: `180fbd0`, `2a6e8e9`, `aaddadb`.
 - Added top-level normalized route definitions and per-route authentication
   success/failure status mappings to `gateway/configs/config.yaml` and its
   example.
-- Added `gateway/configs/config.collect.yaml`, selected with `IASG_CONFIG`, with
-  200,000-entry arrival/completion streams and a 16,384-record telemetry queue.
-  Detection and enforcement thresholds remain the normal gateway settings.
-- Added `datasets/raw/` to `.gitignore` while keeping frozen versioned datasets
-  trackable.
 
 ### Infrastructure/Docker changes
 
-- Added the Compose `collect` profile with traffic-generator and capture
-  services running inside the Compose network, where trusted forwarded client
-  addresses survive Docker Desktop source-NAT behavior.
-- Added run ID, traffic duration, capture duration, Redis connection, and
-  collection configuration wiring for repeatable capture runs.
 
 ### Testing changes
 
@@ -244,27 +197,12 @@ Commits covered: `180fbd0`, `2a6e8e9`, `aaddadb`.
 - Added upstream timing/origin, body-size, login-outcome, arrival, heartbeat,
   queue, sink-wiring, and policy-before-body regression tests, including race
   coverage for live detector state.
-- Added broad anomaly tests that recompute all 12 features and quality counters,
-  enforce runtime/offline availability equivalence, preserve null semantics,
-  pin vector order/spec versions, and reject identity or detector leakage.
-- Added dataset capture/build tests for fsync-before-ack durability, crash
-  redelivery, trim loss, malformed records, deterministic group splitting,
-  reserved scenarios, training-only medians, manifests, and frozen-directory
-  protection.
-- Added traffic-persona tests that execute plans through the real extractor and
-  verify each persona or held-out scenario continues to exercise its intended
-  behavioral property.
 
 ### Documentation changes
 
-- Added the anomaly feature contract at `gateway/docs/anomaly-features.md`,
-  including zero-versus-unknown semantics, arrival/completion availability,
-  label independence, and the rule that a model is only advisory.
 - Rewrote `control-plane/ALGORITHMS.md` around trust boundaries and failure
   prevention, documented known analytical limits, and corrected source anchors
   and test counts.
-- Added `testing/traffic/README.md` and expanded Redis telemetry documentation
-  for the three streams, their consumers, health data, and safe `XTRIM` reset.
 - Corrected `AGENTS.md` to state the real body-limit ordering, the tracked
   status of `gateway/configs/config.yaml`, and the three-stream telemetry model.
 
@@ -276,15 +214,6 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
 
 ### Features added
 
-- Added a resumable multi-run collection driver at `testing/traffic/collect.sh`.
-  It starts capture before traffic, assigns a distinct seed to every run, waits
-  for in-flight completions, clears prior policy/campaign state, restarts the
-  gateway without losing the collection config, and stops the control plane so
-  the model is not trained on traffic already shaped by itself.
-- Froze `datasets/v2`: 17,160 rows from 24 runs (9,236 train, 3,837 validation,
-  4,087 test), with roughly 264 rows per attack scenario and no recorded
-  telemetry loss. This provided enough benign-only training data to fit the
-  first model.
 - Added adaptive policy generation and analyst-controlled enforcement
   (`cd0666d`). The control plane now consumes completed 60-second windows,
   maintains endpoint/method rolling median-and-MAD baselines, uses warm-up,
@@ -308,28 +237,9 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   and the more specific endpoint policy wins within the same origin
   (`gateway/internal/policy/store.go`). Policy telemetry now includes policy and
   campaign IDs, risk, confidence, mode, issuer, and normalized scope.
-- Froze `datasets/v3`, rebuilt from 23 clean runs against feature spec v2 with
-  16,438 rows and the runtime's 13-feature schema. It adds derived
-  `endpoint_method_deviation` and evaluation-only `detector_fired` and
-  `gateway_blocked` metadata. One contaminated duplicate-generator run was
-  deliberately excluded.
-- Added `unmatched_route_ratio` as an arrival-time feature and bumped the
-  positional feature contract to v3 (`control-plane/iasg/anomaly/spec.py`).
-  The value is zero for all captured benign personas and about 54-99.9% for the
-  scanning scenarios. `datasets/v4` freezes the same 23 runs under this
-  14-feature schema and contains 16,438 rows.
 
 ### Features modified
 
-- Dataset rows now carry an opaque `client_id` rather than raw addresses,
-  preserve benign persona names in metadata, retain per-endpoint counts for
-  baseline derivation, and mark whether a window is safe to learn from. These
-  values remain outside `features.csv`.
-- The builder now records detector firings separately from gateway blocks, so
-  evaluation can measure attack windows missed by both without treating a
-  blocked request—which never reached a detector—as a detector miss.
-- The feature contract advanced from v1/12 features (`datasets/v2`) to v2/13
-  features (`datasets/v3`) and then v3/14 features (`datasets/v4`).
 - Policy decisions gained stable policy IDs, target/scope, risk and confidence,
   issuer/mode, baseline/config versions, supersession, expiry, and a
   structured explanation. The Go gateway accepts both legacy `temp_block` and
@@ -343,18 +253,6 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
 
 ### Bug fixes
 
-- Dataset builds now read `sessions.jsonl`, discard and report windows from
-  unplanned addresses instead of labeling them benign, and reject a run when
-  more than 5% of its rows are unplanned. This addresses the stray public and
-  Docker host addresses found in v1. Persona identity is retained so the stated
-  per-persona false-positive evaluation is actually possible (`d26e0ba`).
-- Collection now forwards distinct traffic seeds and sessions-per-persona and
-  stops the control plane unconditionally before and during a sequence, closing
-  a restart-policy race that had inserted live policies into collection runs.
-- The production builder now executes split-disjointness and label-independence
-  checks on the rows being frozen; malformed paths are reported and become
-  fatal under `--strict`. Health sequence/counter parsing was extracted and
-  hardened during the adaptive/dataset merge (`a1362ee`).
 - Fixed unedited approval of an adaptive temporary-block recommendation
   (`d0cc08c`). PostgreSQL payloads now retain canonical `temp_block`, while only
   the Redis policy serializer rewrites it to `temporary_block` for the Go wire
@@ -413,18 +311,12 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
 - Expanded PostgreSQL tests for adaptive configuration, baselines,
   recommendations, lifecycle/audit durability, approval, and canonical-versus-
   wire action serialization.
-- Expanded dataset tests for unplanned traffic, persona preservation,
-  anonymization, endpoint deviation, build-time integrity checks, strict
-  malformed-record handling, detector/gateway metadata isolation, and frozen
-  artifact verification.
 
 ### Documentation changes
 
 - Added `gateway/docs/network-level-blocking.md`, explaining why L7 enforcement
   remains the default behind trusted proxies and why pre-HTTP drops would lose
   client identity and telemetry.
-- Added `datasets/README.md`, documenting every frozen artifact, null semantics,
-  split rules, leakage boundaries, manifests, and verification/rebuild workflow.
 - Added `gateway/docs/adaptive-policy.md` and updated the policy and
   system-architecture documentation for adaptive baselines, guardrails,
   lifecycle, and endpoint-scoped policies.
@@ -434,8 +326,7 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   positives; the remaining missed traffic is documented for future detector work.
   The document recommends implementing those behaviors in the deterministic Go
   detectors instead of adding another classifier or LLM decision path.
-- Updated MkDocs navigation for adaptive-policy, dataset, and network-blocking
-  material.
+- Updated MkDocs navigation for adaptive-policy and network-blocking material.
 
 Commits covered: `d26e0ba`, `c9c37a2`, `5de1eb0`, `9efe91f`, `c2d22df`,
 `56a6585`, `cd0666d`, `d0cc08c`, `a1362ee`, `4a9a055`, `f4b13c5`,

@@ -18,7 +18,6 @@ from iasg.adaptive.lifecycle import (
 )
 from iasg.adaptive.risk import calculate_risk
 from iasg.adaptive.windows import WindowConsumer
-from iasg.anomaly.spec import FEATURE_NAMES
 from iasg.config import Settings
 from iasg.models import ACTION_MONITOR, ACTION_TEMP_BLOCK, ACTION_THROTTLE, Campaign, Evidence, PolicyDecision
 from iasg.policy.writer import PolicyWriter
@@ -169,12 +168,6 @@ def test_adaptive_policy_uses_canonical_temporary_block_wire_action():
     written, _ = PolicyWriter(store, Settings()).write([proposed])
     assert written == 1
     assert json.loads(store.get(f"policy:{proposed.ip}"))["action"] == "temporary_block"
-
-
-def test_window_features_exclude_sensitive_request_fields():
-    forbidden = {"body", "password", "token", "cookie", "authorization", "ip", "user_agent"}
-    assert forbidden.isdisjoint(FEATURE_NAMES)
-    assert "endpoint_method_deviation" in FEATURE_NAMES
 
 
 def test_runtime_learning_requires_complete_heartbeat_coverage():

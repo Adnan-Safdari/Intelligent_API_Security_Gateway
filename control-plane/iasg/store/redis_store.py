@@ -79,7 +79,7 @@ class RedisStore:
         self._client.set(key, value, ex=int(ttl_seconds) if ttl_seconds else None)
 
     def keys(self, pattern: str) -> list[str]:
-        # scan_iter rather than KEYS, which blocks the server on large datasets.
+        # scan_iter rather than KEYS, which blocks Redis across large keyspaces.
         return list(self._client.scan_iter(match=pattern, count=500))
 
     def stream_first_id(self, stream: str) -> str | None:

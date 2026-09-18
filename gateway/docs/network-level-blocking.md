@@ -48,11 +48,8 @@ Which gives two deployments with opposite answers:
 - **Anything in front** — load balancer, CDN, ingress, or Docker's own NAT. The
   peer is the proxy. Refusing by peer refuses *everyone behind it, at once*.
 
-The second case is not hypothetical here. Under Compose, every one of the 79
-personas in a dataset collection run arrives from a single peer address. The
-traffic harness has a pre-flight that refuses to start when identities collapse
-that way, precisely because the resulting data looks perfectly normal and is
-silently wrong.
+The second case is not hypothetical here. Under Compose, host traffic commonly
+arrives through Docker's NAT address rather than its original client address.
 
 So any implementation would have to carry a hard rule:
 
@@ -69,25 +66,7 @@ worse than the failure mode of stopping.
 
 ## What it would buy
 
-Worth being concrete, using this project's own traffic rather than a general
-claim about floods.
-
-In a ten-minute collection run, one `api_flood` session sends **~12,000
-requests — 57% of all traffic in the run**, from a single address. Reproduce it
-with:
-
-```bash
-PYTHONPATH=. python -c "
-from testing.traffic.generate import plan_run
-from collections import Counter
-c = Counter()
-for a in plan_run(1, 8, 600.0): c[a.name] += len(a.plan)
-total = sum(c.values())
-for name, n in c.most_common(3): print(f'{name:20} {n:6,}  {100*n/total:4.1f}%')
-"
-```
-
-For every one of those requests the gateway currently does: parse the request
+For every flood request the gateway currently does: parse the request
 line and headers, resolve the client, match a route template, write an arrival
 record, run the enforcer, write a completion record. Refusing at accept skips all
 of it.
@@ -115,16 +94,12 @@ carrying the `403` and its timing. The block is visible in the data.
 Refusing at L4 happens *outside* that chain entirely. A dropped connection
 produces no arrival and no completion, which has three consequences:
 
-1. **The anomaly features go blind.** `request_count`,
-   `peak_1s_requests`, `interarrival_cv` and the rest are computed from
-   telemetry records. No records, no features — the address simply stops
-   existing for the minute.
+1. **Adaptive baselines lose trustworthy observations.** No records means the
+   address simply stops existing for the minute.
 
-2. **An attack window becomes indistinguishable from a quiet one.** A dataset
-   collected while L4 blocking is active would record a blocked flood as
-   silence. Silence is what an idle user looks like. The label would say attack
-   and the features would say nothing happened, which is worse than not having
-   the row.
+2. **A blocked window becomes indistinguishable from a quiet one.** Silence is
+   what an idle user looks like, so the control plane cannot learn whether the
+   traffic stopped because of enforcement or because the client left.
 
 3. **The campaign stops being re-scored.** The control plane reasons over the
    evidence stream. Cut the evidence and a campaign freezes at whatever it last
@@ -178,12 +153,6 @@ worst failure costs one wrong `403` that expires on its own.
 **Treat L4 as an opt-in for direct-connect deployments only** — off by default,
 refusing to start behind a proxy, and justified by sustained high-rate floods
 rather than by attacks in general.
-
-**Never enable it on the path used to measure the held-out scenarios.**
-`slow_brute_force` and `low_and_slow_enumeration` exist to prove the anomaly
-layer catches what the deterministic detectors miss. Blocking them at the socket
-would delete the evidence being measured, and the measurement would come back
-looking excellent.
 
 ---
 

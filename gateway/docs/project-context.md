@@ -213,7 +213,6 @@ Intelligent_API_Security_Gateway/
 ├── testing/
 │   ├── jmeter/                         # JMeter demo plans
 │   ├── signals/                        # HTTP test scripts for detectors (not in the gateway module)
-│   └── traffic/                        # generates the labelled traffic behind datasets/
 ├── gateway-dashboard/                  # Next.js command center (UI + /api/overview)
 │   ├── app/
 │   └── lib/

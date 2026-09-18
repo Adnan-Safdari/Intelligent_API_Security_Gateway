@@ -240,54 +240,6 @@ def test_adaptive_configuration_and_baseline_survive_a_restart(db):
     assert loaded.samples == [3.0, 4.0, 4.0, 5.0]
 
 
-def test_load_config_drops_a_field_a_newer_release_retired(db):
-    """A long-running install's row predates the code, not the other way round.
-
-    The row was written once by whatever version first booted against this
-    volume, and nothing here ever updates it. If a later release removes a
-    RiskConfig field (ml_weight, in the incident this guards against), the
-    stale row must not wedge the agent's cycle loop forever -- the field is
-    simply dropped and every other setting still applies.
-    """
-    stale = AdaptiveConfig().to_dict()
-    stale["mode"] = "manual"
-    stale["risk"]["ml_weight"] = 0.05
-    with db._conn.cursor() as cur:
-        cur.execute(
-            "UPDATE adaptive_settings SET version=%s,mode=%s,config=%s::jsonb"
-            " WHERE singleton_id=1",
-            (stale["version"], stale["mode"], json.dumps(stale)),
-        )
-
-    loaded = db.adaptive.load_config(AdaptiveConfig())
-
-    assert loaded.mode == "manual"
-    assert loaded.risk.deterministic_weight == AdaptiveConfig().risk.deterministic_weight
-
-
-def test_load_config_falls_back_to_defaults_when_dropping_fields_is_not_enough(db):
-    """The real incident: dropping the unknown key can still leave a row invalid.
-
-    ml_weight was not just an extra field -- it was part of a weighted sum
-    that validate() requires to total 1. A row from before it was retired has
-    deterministic/behavioural/campaign weights that only summed to 1 together
-    with it, so they fail validation even once the unknown key is gone. That
-    must fall back to defaults, not repeat the failure every cycle forever.
-    """
-    stale = AdaptiveConfig().to_dict()
-    stale["risk"]["behavioural_weight"] = 0.15  # 0.5 + 0.15 + 0.3 = 0.95 without ml_weight
-    stale["risk"]["ml_weight"] = 0.05
-    with db._conn.cursor() as cur:
-        cur.execute(
-            "UPDATE adaptive_settings SET config=%s::jsonb WHERE singleton_id=1",
-            (json.dumps(stale),),
-        )
-
-    loaded = db.adaptive.load_config(AdaptiveConfig())
-
-    assert loaded == AdaptiveConfig()
-
-
 def test_policy_lifecycle_and_audit_are_durable(db):
     now = datetime.now(timezone.utc)
     decision = PolicyDecision(

@@ -71,8 +71,8 @@ class Store(Protocol):
         Compared against a group's last-delivered id, this is how a reader
         learns that entries were trimmed away before it got to them. Prevention
         can always be exceeded -- a long enough run outruns any cap -- so the
-        dataset detects the loss and marks the windows instead of pretending it
-        cannot happen.
+        adaptive baseline learning marks affected windows untrusted instead of
+        pretending the loss cannot happen.
         """
         ...
 

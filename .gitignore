@@ -85,11 +85,4 @@ build/
 site/
 .claude/settings.json
 
-# Anomaly datasets -- raw captures and frozen versions alike -- are kept outside
-# the repository. Capture and build still write here locally.
-datasets/
-
-# Trained model binaries: exactly reproducible from a frozen dataset and a
-# fixed seed, so the artefact worth keeping is the metadata beside them.
-models/**/*.joblib
 IASG Operations dashboard.zip

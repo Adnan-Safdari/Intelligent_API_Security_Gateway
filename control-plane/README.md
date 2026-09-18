@@ -272,4 +272,4 @@ path — is the dependable form. `pytest` and `python -m iasg` work either way.
 adaptive settings, endpoint baseline summaries and samples, recommendations,
 and the policy audit lifecycle survive restarts there. Redis remains transport
 and the expiring active-policy lookup. See the Adaptive Policy documentation
-for training, migration, and three-mode demo steps.
+for baseline, migration, and three-mode demo steps.

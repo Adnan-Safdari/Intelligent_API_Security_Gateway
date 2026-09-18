@@ -7,8 +7,8 @@ import (
 
 // Health is one heartbeat from the gateway's telemetry path.
 //
-// One stream, appended to once a second, answers three questions the dataset
-// needs and that no per-request record can:
+// One stream, appended to once a second, answers three questions adaptive
+// baseline learning needs and that no per-request record can:
 //
 //   - Was telemetry lost in this window? The drop counters are process-wide
 //     and monotonic, so a delta across the window says so. It is deliberately

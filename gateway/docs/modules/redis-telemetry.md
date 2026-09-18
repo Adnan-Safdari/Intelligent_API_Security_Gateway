@@ -27,12 +27,7 @@ none of them should have to learn to skip half of it.
 | --- | --- | --- |
 | Console / dashboard | `iasg:events` | — |
 | Control plane (`iasg-agent`) | `iasg:events` | — |
-| Dataset capture (`iasg-dataset`) | all three | — |
-
-Redis delivers every entry to every consumer group independently, so capture
-sees the same entries the agent does without disturbing it.
-
-**Why arrivals exist at all.** Windowing for the anomaly features keys on
+**Why arrivals exist at all.** Adaptive baseline windowing keys on
 arrival time. A request that arrives at 12:00:59 and finishes at 12:01:02
 belongs to the 12:00 window; with completion records alone it would be counted
 in the wrong minute, and slow requests are what an attack produces, so that
@@ -113,14 +108,6 @@ storage:
     arrival_maxlen: 2000                   # defaulted, not in the file
     health_stream_key: iasg:telemetry:health  # defaulted, not in the file
     health_maxlen: 86400                   # defaulted, not in the file
-```
-
-A dataset collection run wants far more history than a hot window does, so it
-uses `configs/config.collect.yaml` instead — same detection and enforcement,
-200,000 entries per request stream and a 16,384-entry queue:
-
-```bash
-IASG_CONFIG=configs/config.collect.yaml docker compose -f infra/docker-compose.yml up -d gateway
 ```
 
 Docker Compose sets `IASG_REDIS_HOST=redis` so the gateway container talks to the Redis service.

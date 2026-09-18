@@ -32,10 +32,6 @@ cd gateway && go test ./internal/signals/ -race      # detectors hold live state
 cd control-plane && PYTHONPATH=. .venv/bin/python -m pytest -q
 cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg --once
 
-# Anomaly dataset. Capture needs Redis and refuses to run without it, because
-# the memory fallback would produce an empty run that looks like quiet traffic.
-cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg.dataset.capture --run-id <id> --out datasets/raw/<id>
-cd control-plane && PYTHONPATH=. .venv/bin/python -m iasg.dataset.build --runs datasets/raw/<id> --out datasets/v1
 ```
 
 Go 1.22 in `go.mod` (containers run 1.23), Python ≥3.11. There are no linters
@@ -109,11 +105,8 @@ change and will be committed if you stage it blindly. Stage selectively.
 
 **Telemetry writes to three streams, not one.** `iasg:events` on completion,
 `iasg:arrivals` before the request runs, and `iasg:telemetry:health` once a
-second. Windowing keys on arrival time, so anything that consumes telemetry
-for the anomaly features reads arrivals; the console and the `iasg:stats` /
-`iasg:attackers` counters read only `iasg:events` and must keep doing so. Use
-`configs/config.collect.yaml` (`IASG_CONFIG=...`) for a capture run — the
-default caps are a hot window, not a dataset.
+second. Adaptive baseline windows key on arrival time; the console and the
+`iasg:attackers` counters read only `iasg:events` and must keep doing so.
 
 **Adding a section to `enforcement:` config needs three places** — `main.go`
 building the server config, `proxy.Config.Enforcement()` reassembling the block
