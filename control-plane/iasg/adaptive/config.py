@@ -195,14 +195,20 @@ class AdaptiveConfig:
         return asdict(self)
 
     @classmethod
-    def from_mapping(cls, value: dict[str, Any] | None, base: "AdaptiveConfig | None" = None) -> "AdaptiveConfig":
+    def from_mapping(
+        cls,
+        value: dict[str, Any] | None,
+        base: "AdaptiveConfig | None" = None,
+        *,
+        strict: bool = True,
+    ) -> "AdaptiveConfig":
         base = base or cls()
         if not value:
             return base.validate()
-        baseline = replace(base.baseline, **_known(BaselineConfig, value.get("baseline", {})))
-        risk_values = _known(RiskConfig, value.get("risk", {}))
+        baseline = replace(base.baseline, **_known(BaselineConfig, value.get("baseline", {}), strict=strict))
+        risk_values = _known(RiskConfig, value.get("risk", {}), strict=strict)
         risk = replace(base.risk, **risk_values)
-        guard_values = _known(GuardrailConfig, value.get("guardrails", {}))
+        guard_values = _known(GuardrailConfig, value.get("guardrails", {}), strict=strict)
         for name in ("allowlist", "blocklist"):
             if name in guard_values:
                 if not isinstance(guard_values[name], (list, tuple)):
@@ -240,11 +246,11 @@ def load_adaptive_config(raw_or_path: str | None) -> AdaptiveConfig:
     return AdaptiveConfig.from_mapping(parsed)
 
 
-def _known(cls, values: Any) -> dict[str, Any]:
+def _known(cls, values: Any, *, strict: bool = True) -> dict[str, Any]:
     if not isinstance(values, dict):
         raise ValueError(f"{cls.__name__} must be an object")
     names = set(cls.__dataclass_fields__)
     unknown = set(values) - names
-    if unknown:
+    if unknown and strict:
         raise ValueError(f"unknown {cls.__name__} fields: {', '.join(sorted(unknown))}")
-    return dict(values)
+    return {key: value for key, value in values.items() if key in names}
