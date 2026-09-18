@@ -275,7 +275,21 @@ class PostgresAdaptive:
             self.ensure_config(default)
             return default
         value = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-        return AdaptiveConfig.from_mapping(value, default)
+        # Not strict: this row can predate the running code by many releases,
+        # and a field a newer version retired must not wedge the agent every
+        # cycle forever. IASG_ADAPTIVE_CONFIG (freshly authored each boot)
+        # stays strict, so a typo there still fails loudly.
+        try:
+            return AdaptiveConfig.from_mapping(value, default, strict=False)
+        except ValueError as err:
+            # Dropping unknown fields is not always enough: numbers a retired
+            # field used to balance (weights that summed to 1 only together
+            # with it) can survive the drop and still fail validate(). A
+            # persisted row that predates the running code is not worth
+            # trusting piecemeal at that point -- fall back to defaults rather
+            # than repeat this cycle's failure forever.
+            print(f"[adaptive] stored config rejected by this version ({err}); using defaults")
+            return default
 
     def get_baseline(self, key: EndpointKey) -> BaselineSummary | None:
         with self._conn.cursor() as cur:
