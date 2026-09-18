@@ -53,9 +53,9 @@ const err = (msg, status = 400) => {
 }
 
 // The logged-in user, for the wishlist/reviews mock data that never left the
-// browser. sf_user is what a real login (backend or gateway) or the offline
-// mock login stored; either way this looks it up (or adopts it) by email so
-// wishlist and reviews keep working for a real account with no mock record.
+// browser. sf_user is what a real API login stored; this looks it up (or
+// adopts it) by email so wishlist and reviews keep working for an account
+// that has no mock record.
 const getCurrentUser = () => {
   const stored = localStorage.getItem('sf_user')
   if (!stored) return null
@@ -68,7 +68,7 @@ const getCurrentUser = () => {
   const known = users.find((u) => u.email === saved.email)
   if (known) return known
 
-  const adopted = { ...saved, password: undefined, wishlist: saved.wishlist || [] }
+  const adopted = { ...saved, wishlist: saved.wishlist || [] }
   users.push(adopted)
   return adopted
 }
@@ -142,7 +142,7 @@ export const productApi = {
   // through the gateway or straight to the API depending on the API mode. This
   // is the one product call that leaves the browser; the rest below are still
   // the in-memory mock. If the backend is unreachable it falls back to the mock
-  // so the storefront stays usable offline, the same way login does.
+  // so browsing the catalogue still works offline.
   getAllProducts: async (params = {}) => {
     const qs = new URLSearchParams()
     if (params.category) qs.set('category', params.category)
@@ -239,29 +239,17 @@ export const productApi = {
 // ─── User API ─────────────────────────────────────────────────────────────────
 export const userApi = {
   // Real: POST /api/users/register
-  register: async ({ name, email, password }) => {
+  register: async ({ name, email }) => {
     await delay()
     if (users.find((u) => u.email === email)) err('Email already in use')
-    const user = { _id: `u${Date.now()}`, name, email, password, isAdmin: false, wishlist: [] }
+    // Client-side register is profile-only. Real auth is POST /api/login.
+    const user = { _id: `u${Date.now()}`, name, email, isAdmin: false, wishlist: [] }
     users.push(user)
-    const { password: _, ...safe } = user
-    return { user: safe, token: makeToken(user._id) }
+    return { user, token: makeToken(user._id) }
   },
 
-  // Real: POST /api/users/login
-  //
-  // Falls back to the offline mock only when the API itself is unreachable --
-  // a real refusal (wrong password, rate limited, blocked) is a real answer
-  // and is shown as one, rather than quietly handing out a working mock
-  // session for credentials the backend just rejected.
+  // Real: POST /api/login — passwords are checked only by the backend.
   login: async ({ email, password }) => {
-    const localLogin = () => {
-      const user = users.find((u) => u.email === email && u.password === password)
-      if (!user) err('Invalid email or password', 401)
-      const { password: _, ...safe } = user
-      return { user: safe, token: makeToken(user._id) }
-    }
-
     const BASE_URL = getApiBaseUrl()
     let res
     try {
@@ -274,9 +262,7 @@ export const userApi = {
       // fetch() throwing here doesn't only mean "the API is down" -- a
       // refusal the gateway wrote itself and didn't (or couldn't) mark with
       // CORS for this origin looks identical to the browser: an opaque
-      // network error. Falling back to the mock on that would turn a real
-      // block into a working fake session, so check the API is actually
-      // unreachable before doing that.
+      // network error.
       let reachable = true
       try {
         reachable = (await fetch(`${BASE_URL}/api/health`)).ok
@@ -286,8 +272,7 @@ export const userApi = {
       if (reachable) {
         throw new Error('The login request was blocked in a way the browser could not read the reason for.')
       }
-      console.warn('Login endpoint unreachable, using the offline mock:', e)
-      return localLogin()
+      throw new Error('Could not reach the login API. Is the stack running?')
     }
 
     if (res.status === 403) {
@@ -322,8 +307,7 @@ export const userApi = {
     await delay(150)
     const user = getCurrentUser()
     if (!user) err('Not authenticated', 401)
-    const { password: _, ...safe } = user
-    return safe
+    return user
   },
 
   // Real: PUT /api/users/profile
@@ -333,9 +317,7 @@ export const userApi = {
     if (!user) err('Not authenticated', 401)
     if (data.name) user.name = data.name
     if (data.email) user.email = data.email
-    if (data.password) user.password = data.password
-    const { password: _, ...safe } = user
-    return { user: safe, token: makeToken(user._id) }
+    return { user, token: makeToken(user._id) }
   },
 
   // Real: GET /api/users/wishlist

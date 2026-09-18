@@ -328,9 +328,10 @@ export const MOCK_PRODUCTS = [
 ]
 
 // ─── Mock Users ───────────────────────────────────────────────────────────────
+// Profile shells only — passwords live in the API / Postgres seed, never here.
 export const MOCK_USERS = [
-  { _id: 'u1', name: 'Jane Doe', email: 'jane@example.com', password: 'user123', isAdmin: false, wishlist: ['p1', 'p3'] },
-  { _id: 'u2', name: 'Admin User', email: 'admin@shopforge.com', password: 'admin123', isAdmin: true, wishlist: [] },
+  { _id: 'u1', name: 'Jane Doe', email: 'jane@example.com', isAdmin: false, wishlist: ['p1', 'p3'] },
+  { _id: 'u2', name: 'Admin User', email: 'admin@shopforge.com', isAdmin: true, wishlist: [] },
 ]
 
 // ─── Mock Orders ──────────────────────────────────────────────────────────────
