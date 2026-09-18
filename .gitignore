@@ -60,6 +60,8 @@ testing/jmeter/
 testing/jmeter/*
 !testing/jmeter/adaptive_rate_limit.jmx
 !testing/jmeter/bola_demo.jmx
+!testing/jmeter/accd_to_doc/
+!testing/jmeter/accd_to_doc/**
 
 # Database
 *.db
