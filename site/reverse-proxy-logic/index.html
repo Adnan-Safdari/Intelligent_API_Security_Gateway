@@ -1,0 +1,1702 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Engineering documentation for the Go-based API security gateway.">
+      
+      
+      
+      
+        <link rel="prev" href="../project-structure/">
+      
+      
+        <link rel="next" href="../client-ip/">
+      
+      
+      <link rel="icon" href="../assets/blank-favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Reverse Proxy Logic - Intelligent API Security Gateway</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.6f8fc17f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#reverse-proxy-logic" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Intelligent API Security Gateway" class="md-header__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent API Security Gateway
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Reverse Proxy Logic
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Intelligent API Security Gateway" class="md-nav__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent API Security Gateway
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-context/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Context
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Architecture
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../system-architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    System Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../request-lifecycle/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Request Lifecycle
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-structure/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Structure
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Reverse Proxy Logic
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Reverse Proxy Logic
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-gateway-is-doing" class="md-nav__link">
+    <span class="md-ellipsis">
+      What The Gateway Is Doing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Request Flow
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proxy-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      Proxy Package
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Proxy Package">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it does
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-it-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why it matters
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#middleware-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Middleware Layer
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Middleware Layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loggingmiddleware" class="md-nav__link">
+    <span class="md-ellipsis">
+      LoggingMiddleware
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requestinspectionmiddleware" class="md-nav__link">
+    <span class="md-ellipsis">
+      RequestInspectionMiddleware
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attack-detection-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Attack Detection Layer
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attack Detection Layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#api-flood-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      API Flood Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sql-injection-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      SQL Injection Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#brute-force-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Brute Force Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unknown-route-scanning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Unknown-Route Scanning
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-traversal-and-enumeration-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Path Traversal and Enumeration Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ip-reputation" class="md-nav__link">
+    <span class="md-ellipsis">
+      IP Reputation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Folder
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Folder">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configsconfigyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      configs/config.yaml
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configsconfigyamlexample" class="md-nav__link">
+    <span class="md-ellipsis">
+      configs/config.yaml.example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-is-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      How it is used
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configgo" class="md-nav__link">
+    <span class="md-ellipsis">
+      config.go
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#about-internalcontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      About internal/context
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-runtime-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Current Runtime Summary
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#if-you-want-to-extend-it-later" class="md-nav__link">
+    <span class="md-ellipsis">
+      If You Want To Extend It Later
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client-ip/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Identifying the Client
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Security Pipeline
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Security Pipeline
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../detection-signals/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Detection Signals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../policy-enforcement/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Policy Enforcement
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-level-blocking/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network-Level Blocking
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../control-plane/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Control Plane
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Anomaly Detection
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Anomaly Detection
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-policy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adaptive Policy and Analyst Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Modules
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Modules
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/proxy-module/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Proxy Module
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/signal-tests/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Signal Test Scripts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/redis-telemetry/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Redis Telemetry
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/dashboard/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Command Center Dashboard
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operations
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Operations
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-locally/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running the Gateway Locally
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-with-docker/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running with Docker
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../protecting-your-own-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Protecting Your Own API
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-gateway-is-doing" class="md-nav__link">
+    <span class="md-ellipsis">
+      What The Gateway Is Doing
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#request-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      Request Flow
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#proxy-package" class="md-nav__link">
+    <span class="md-ellipsis">
+      Proxy Package
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Proxy Package">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-it-does" class="md-nav__link">
+    <span class="md-ellipsis">
+      What it does
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#why-it-matters" class="md-nav__link">
+    <span class="md-ellipsis">
+      Why it matters
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#middleware-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Middleware Layer
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Middleware Layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#loggingmiddleware" class="md-nav__link">
+    <span class="md-ellipsis">
+      LoggingMiddleware
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#requestinspectionmiddleware" class="md-nav__link">
+    <span class="md-ellipsis">
+      RequestInspectionMiddleware
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#attack-detection-layer" class="md-nav__link">
+    <span class="md-ellipsis">
+      Attack Detection Layer
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Attack Detection Layer">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#api-flood-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      API Flood Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sql-injection-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      SQL Injection Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#brute-force-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Brute Force Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#unknown-route-scanning" class="md-nav__link">
+    <span class="md-ellipsis">
+      Unknown-Route Scanning
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-traversal-and-enumeration-detection" class="md-nav__link">
+    <span class="md-ellipsis">
+      Path Traversal and Enumeration Detection
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ip-reputation" class="md-nav__link">
+    <span class="md-ellipsis">
+      IP Reputation
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration Folder
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Folder">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#configsconfigyaml" class="md-nav__link">
+    <span class="md-ellipsis">
+      configs/config.yaml
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configsconfigyamlexample" class="md-nav__link">
+    <span class="md-ellipsis">
+      configs/config.yaml.example
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#how-it-is-used" class="md-nav__link">
+    <span class="md-ellipsis">
+      How it is used
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configgo" class="md-nav__link">
+    <span class="md-ellipsis">
+      config.go
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#about-internalcontext" class="md-nav__link">
+    <span class="md-ellipsis">
+      About internal/context
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#current-runtime-summary" class="md-nav__link">
+    <span class="md-ellipsis">
+      Current Runtime Summary
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#if-you-want-to-extend-it-later" class="md-nav__link">
+    <span class="md-ellipsis">
+      If You Want To Extend It Later
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="reverse-proxy-logic">Reverse Proxy Logic<a class="headerlink" href="#reverse-proxy-logic" title="Permanent link">&para;</a></h1>
+<p>This document explains how the gateway reverse proxy works, how configuration is loaded, and what happened to the old <code>internal/context</code> package.</p>
+<h2 id="what-the-gateway-is-doing">What The Gateway Is Doing<a class="headerlink" href="#what-the-gateway-is-doing" title="Permanent link">&para;</a></h2>
+<p>The gateway is an HTTP reverse proxy. That means it accepts a request on the gateway port, inspects it with middleware, and then forwards it to a backend API if the request is allowed to continue.</p>
+<p>In this project, the gateway runs on <code>0.0.0.0:8082</code> inside the container and is published on host port <code>8082</code> through Docker Compose.</p>
+<p>The backend API in your Docker stack runs on <code>vulnerable_api:5002</code>, so requests like <code>http://localhost:8082/api/health</code> should reach the gateway first and then be forwarded to the backend.</p>
+<h2 id="request-flow">Request Flow<a class="headerlink" href="#request-flow" title="Permanent link">&para;</a></h2>
+<p>The runtime flow starts in <code>gateway/cmd/server/main.go</code>:</p>
+<ol>
+<li>Load YAML configuration from <code>configs/config.yaml</code>.</li>
+<li>Apply <code>IASG_BACKEND_URL</code> if it is set in the environment.</li>
+<li>Build the gateway server configuration.</li>
+<li>Start the proxy server.</li>
+</ol>
+<p>Inside <code>gateway/internal/proxy/server.go</code>, the server builds the request pipeline like this:</p>
+<ol>
+<li>Trusted client-IP resolver</li>
+<li>Telemetry recorder (assigns context and records on return; does not read the body)</li>
+<li><code>LoggingMiddleware</code></li>
+<li>Policy/reflex enforcer, including an atomic Redis quota check when a rate applies</li>
+<li><code>BodyLimitMiddleware</code>, then <code>telemetry.CaptureBody</code></li>
+<li>Reflex observer wrapping reputation, flooding, unknown-route scanning, SQLi, traversal, and brute-force detectors</li>
+<li>Reverse proxy handler</li>
+</ol>
+<p>The middleware order matters. The outer middleware sees the request first, and the inner proxy runs last.</p>
+<h2 id="proxy-package">Proxy Package<a class="headerlink" href="#proxy-package" title="Permanent link">&para;</a></h2>
+<p>The main reverse proxy implementation lives in <code>gateway/internal/proxy/reverse_proxy.go</code>.</p>
+<h3 id="what-it-does">What it does<a class="headerlink" href="#what-it-does" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Parses the configured backend URL.</li>
+<li>Creates a <code>httputil.NewSingleHostReverseProxy</code> for that backend.</li>
+<li>Configures the outbound HTTP transport with timeout and connection limits.</li>
+<li>Adds the <code>X-Gateway: IASG</code> header to proxied requests.</li>
+<li>Sends the backend its own hostname in <code>Host</code> and the client's in
+  <code>X-Forwarded-Host</code>, which it always overwrites. <code>proxy.preserve_host: true</code>
+  forwards the client's <code>Host</code> instead. See
+  <a href="../protecting-your-own-api/">Protecting your own API</a>.</li>
+</ul>
+<h3 id="why-it-matters">Why it matters<a class="headerlink" href="#why-it-matters" title="Permanent link">&para;</a></h3>
+<p>This is the part that forwards admitted traffic to the backend API. Earlier
+middleware enforces existing policies and records detection evidence; refused
+requests never reach the reverse proxy.</p>
+<h2 id="middleware-layer">Middleware Layer<a class="headerlink" href="#middleware-layer" title="Permanent link">&para;</a></h2>
+<p>The middleware in <code>gateway/internal/proxy/middleware.go</code> does the first layer of request visibility.</p>
+<h3 id="loggingmiddleware">LoggingMiddleware<a class="headerlink" href="#loggingmiddleware" title="Permanent link">&para;</a></h3>
+<p>This logs:</p>
+<ul>
+<li>request method</li>
+<li>request path</li>
+<li>client IP</li>
+<li>user agent</li>
+</ul>
+<h3 id="requestinspectionmiddleware">RequestInspectionMiddleware<a class="headerlink" href="#requestinspectionmiddleware" title="Permanent link">&para;</a></h3>
+<p>This legacy debug helper printed headers and bodies to stdout for every
+request, which put passwords and tokens in the logs. It has been deleted, not
+merely left unwired -- only an explanatory comment remains at
+<code>internal/proxy/middleware.go:37</code>. Admitted requests instead pass through the
+body-size cap and <code>telemetry.CaptureBody</code>, which captures a redacted snippet
+and restores the body for forwarding. Requests refused by policy are recorded
+without reading their bodies.</p>
+<h2 id="attack-detection-layer">Attack Detection Layer<a class="headerlink" href="#attack-detection-layer" title="Permanent link">&para;</a></h2>
+<p>The gateway has six detection middlewares in <code>internal/signals</code>. None of them
+refuses a request -- that is the enforcer's job, acting on a decision made
+earlier -- so a false positive here costs a log line rather than a customer.</p>
+<h3 id="api-flood-detection">API Flood Detection<a class="headerlink" href="#api-flood-detection" title="Permanent link">&para;</a></h3>
+<p>File: <code>gateway/internal/signals/api_flooding.go</code></p>
+<p>This tracks request timestamps per IP address in memory.</p>
+<p>Behavior:</p>
+<ul>
+<li>groups requests by client IP</li>
+<li>keeps a one minute window</li>
+<li>counts requests in that window</li>
+<li>logs a flood alert if the count goes above the configured threshold</li>
+<li>records evidence and allows the request; refusing is the enforcer's job</li>
+</ul>
+<h3 id="sql-injection-detection">SQL Injection Detection<a class="headerlink" href="#sql-injection-detection" title="Permanent link">&para;</a></h3>
+<p>File: <code>gateway/internal/signals/sqli_injection.go</code></p>
+<p>This reads the URL path, decoded query values, and JSON/body content for known SQLi signatures such as:</p>
+<ul>
+<li><code>' OR</code></li>
+<li><code>--</code></li>
+<li><code>UNION SELECT</code></li>
+<li><code>OR 1=1</code></li>
+</ul>
+<p>The comment marker <code>--</code> by itself is retained as low-confidence context but does not fire the detector. A stronger signature emits standardized evidence, logs a formatted alert, and still allows the request through. The dashboard and control plane distinguish this detection from any later policy enforcement.</p>
+<h3 id="brute-force-detection">Brute Force Detection<a class="headerlink" href="#brute-force-detection" title="Permanent link">&para;</a></h3>
+<p>File: <code>gateway/internal/signals/brute_force.go</code></p>
+<p>Rather than a hardcoded login path and status code, this reads the top-level
+<code>routes.auth_outcomes</code> list -- each entry names a method and route template,
+plus which backend statuses mean <code>success</code> and which mean
+<code>invalid_credentials</code>. A configured invalid-credentials response grows a
+consecutive-failure streak for that client and login target; a configured
+success resets it; gateway refusals never reach the detector and are never
+interpreted as an authentication outcome. This is a change from an earlier,
+hardcoded implementation -- a doc or comment that still lists <code>/api/login</code> and
+<code>401</code>/<code>403</code> as fixed is describing that older version.</p>
+<p>The detector tracks per-<code>(ip, route, target)</code> streaks and reports the single
+strongest one via <code>Metrics(ip)</code>, which the collector and the reflex read. It
+does not classify "classic brute force" versus "password spraying" -- that
+distinction exists only as a control-plane campaign classification, derived
+from repeated brute-force evidence, never as its own gateway signal. It also
+does not log: unlike the other detectors here, a firing streak produces
+<code>Evidence</code> but no <code>SECURITY ALERT</code> line.</p>
+<p>Config comes from <code>enforcement.brute_force</code> (<code>enabled</code>, <code>max_failures</code>,
+<code>window</code>, <code>max_clients</code>, <code>max_targets_per_client</code>) plus the shared
+<code>routes.auth_outcomes</code> declaration. This signal is advisory-only -- see
+<a href="#unknown-route-scanning">Unknown-Route Scanning</a> below for what that means.</p>
+<h3 id="unknown-route-scanning">Unknown-Route Scanning<a class="headerlink" href="#unknown-route-scanning" title="Permanent link">&para;</a></h3>
+<p>File: <code>gateway/internal/signals/unknown_route_scanning.go</code></p>
+<p>Consults the same compiled route table <code>telemetry</code> uses. A request that the
+table classifies <code>&lt;unmatched&gt;</code> records its raw path against the requesting
+client; a known route that happens to return a backend 404 is irrelevant, and
+repeating one broken link stays one path. The detector needs several distinct
+paths within its rolling window before it fires. <code>max_clients</code> and
+<code>max_paths_per_client</code> bound retained attacker input, and inactive entries are
+swept after the window elapses.</p>
+<p>Config comes from <code>enforcement.unknown_route_scanning</code> (<code>enabled</code>,
+<code>distinct_paths</code>, <code>window</code>, <code>max_clients</code>, <code>max_paths_per_client</code>).</p>
+<p>Both this signal and brute force above are <strong>advisory-only</strong>: naming either one
+in <code>block.signals</code> makes the gateway refuse to start with an explicit error
+(<code>internal/enforcement/reflex.go</code>) rather than silently do nothing. They can
+still become an expiring throttle or block, but only after control-plane
+correlation and the policy writer's safety checks -- see
+<a href="../detection-signals/">Detection Signals</a>.</p>
+<h3 id="path-traversal-and-enumeration-detection">Path Traversal and Enumeration Detection<a class="headerlink" href="#path-traversal-and-enumeration-detection" title="Permanent link">&para;</a></h3>
+<p>File: <code>gateway/internal/signals/enumeration_path_traversal.go</code></p>
+<p>Matches traversal signatures (<code>../</code>, <code>%2e%2e%2f</code> and the encoded variants) in
+the path and decoded query, and known-sensitive paths such as <code>/.env</code>, <code>/.git</code>
+and <code>/wp-admin</code>. Request-scoped: it describes one request, not a window.</p>
+<p>Config comes from <code>enforcement.enumeration_path_traversal</code>.</p>
+<h3 id="ip-reputation">IP Reputation<a class="headerlink" href="#ip-reputation" title="Permanent link">&para;</a></h3>
+<p>File: <code>gateway/internal/signals/ip_reputation.go</code></p>
+<p>The other five ask what an address just did. This one asks who it is, against a
+list loaded from <code>configs/reputation.txt</code> plus an optional feed fetched on an
+interval. Being listed is a standing fact, so this is the only detector that
+knows something on a first request -- and the only source of evidence about an
+address that has not yet tripped anything.</p>
+<p>It fires on a <strong>cooldown</strong>, because a listed address is listed on every request
+it makes. Firing each time would write one <code>Evidence</code> per request, swamping the
+control plane's detector counts and the event stream both. Inside the cooldown
+the address still contributes its score; it simply does not fire again.</p>
+<p>Config comes from <code>enforcement.ip_reputation</code> (<code>enabled</code>, <code>feed_path</code>,
+<code>feed_url</code>, <code>refresh_interval</code>, <code>score</code>, <code>cooldown</code>). The list and refresh
+interval are structural; <code>enabled</code>, <code>score</code> and <code>cooldown</code> can be changed on a
+running gateway from the console.</p>
+<h2 id="configuration-folder">Configuration Folder<a class="headerlink" href="#configuration-folder" title="Permanent link">&para;</a></h2>
+<p>Yes, the <code>configs</code> folder is used.</p>
+<p>It contains the runtime YAML that the gateway loads when it starts.</p>
+<h3 id="configsconfigyaml"><code>configs/config.yaml</code><a class="headerlink" href="#configsconfigyaml" title="Permanent link">&para;</a></h3>
+<p>This is the active config used by the gateway in Docker and local runs.</p>
+<h3 id="configsconfigyamlexample"><code>configs/config.yaml.example</code><a class="headerlink" href="#configsconfigyamlexample" title="Permanent link">&para;</a></h3>
+<p>This is the template copy you can keep for fresh setups.</p>
+<h3 id="how-it-is-used">How it is used<a class="headerlink" href="#how-it-is-used" title="Permanent link">&para;</a></h3>
+<p><code>gateway/cmd/server/main.go</code> calls <code>config.Load(...)</code>, which reads the YAML into Go structs defined in <code>gateway/internal/config/config.go</code>.</p>
+<p>Then <code>main.go</code> passes those values into the proxy server:</p>
+<ul>
+<li>listen address</li>
+<li>backend URL</li>
+<li>timeouts</li>
+<li>rate limit config</li>
+<li>attack detection config</li>
+<li>brute force config</li>
+</ul>
+<p>So the config folder is not just documentation. It directly controls how the gateway starts and behaves.</p>
+<h2 id="configgo"><code>config.go</code><a class="headerlink" href="#configgo" title="Permanent link">&para;</a></h2>
+<p>The file <code>gateway/internal/config/config.go</code> defines the shape of the YAML config.</p>
+<p>It contains Go structs such as:</p>
+<ul>
+<li><code>Config</code></li>
+<li><code>ServerConfig</code></li>
+<li><code>ProxyConfig</code></li>
+<li><code>EnforcementConfig</code></li>
+<li><code>RateLimitConfig</code></li>
+<li><code>AttackDetectionConfig</code></li>
+</ul>
+<p>It also contains <code>Load(path string)</code>, which:</p>
+<ol>
+<li>reads the file from disk</li>
+<li>unmarshals YAML into Go structs</li>
+<li>fills some defaults</li>
+<li>validates required fields</li>
+</ol>
+<p>So <code>config.go</code> is definitely used. It is the bridge between your YAML files and the running gateway.</p>
+<h2 id="about-internalcontext">About <code>internal/context</code><a class="headerlink" href="#about-internalcontext" title="Permanent link">&para;</a></h2>
+<p>The old <code>internal/context</code> package is not used by the current gateway code.</p>
+<p>It contained:</p>
+<ul>
+<li><code>RequestContext</code></li>
+<li><code>BuildRequestContext</code></li>
+<li><code>NewRequestContext</code></li>
+</ul>
+<p>But nothing in the live proxy flow imported or called it. The current runtime
+uses the trusted IP resolver, telemetry, policy enforcement, bounded body
+capture, detectors, and reverse proxying described above.</p>
+<p>Because it was unused, the package has been removed.</p>
+<h2 id="current-runtime-summary">Current Runtime Summary<a class="headerlink" href="#current-runtime-summary" title="Permanent link">&para;</a></h2>
+<p>The gateway now does exactly this at runtime:</p>
+<ol>
+<li>Accept the request on port <code>8082</code>.</li>
+<li>Resolve the real client IP, believing <code>X-Forwarded-For</code> only from a
+   configured trusted proxy.</li>
+<li>Assign a request ID and start the telemetry record.</li>
+<li>Log request metadata and consult the local policy/reflex snapshot:
+   <code>block</code>, <code>temp_block</code>, and <code>escalate</code> return <code>403</code>; <code>allow</code> and <code>monitor</code>
+   forward normally. An applicable rate uses a shared Redis token bucket per
+   IP, path, and method, returning <code>429</code> with <code>Retry-After</code> when exhausted.</li>
+<li>Cap the admitted body and capture its redacted telemetry snippet.</li>
+<li>Run the six detectors, each filling in <code>Evidence</code>.</li>
+<li>Forward the request to the backend API on <code>5002</code>.</li>
+<li>Let the reflex observe what they found, after the response, and record a
+   block if a trusted detector crossed its threshold.</li>
+<li>Enqueue the telemetry record for background publication to <code>iasg:events</code>.</li>
+</ol>
+<p>So it detects <em>and</em> enforces, but only ever on a decision made earlier — by the
+control plane, or by the reflex on a previous request. Nothing in the request
+path calls the control plane, PostgreSQL, or a model. Only applicable quotas
+perform synchronous Redis I/O, with a short configurable timeout and fail-open
+behaviour. Throttling never sleeps or queues requests. See
+<a href="../policy-enforcement/">Policy enforcement</a> for the JSON contract, configuration,
+and Docker verification commands.</p>
+<h2 id="if-you-want-to-extend-it-later">If You Want To Extend It Later<a class="headerlink" href="#if-you-want-to-extend-it-later" title="Permanent link">&para;</a></h2>
+<p>Genuinely open, in rough order of value:</p>
+<ul>
+<li>add a gateway health endpoint — there is no mux, so every path proxies and
+  liveness cannot be checked without reaching the backend</li>
+<li>convert alert logging into structured JSON logs</li>
+<li>export metrics, so throughput and latency are observable without reading
+  container logs</li>
+<li>graceful shutdown: there is no <code>signal.Notify</code> or <code>Shutdown</code> call, so
+  <code>docker compose stop</code> drops in-flight requests</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>

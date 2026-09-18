@@ -49,8 +49,6 @@ The system has five decision-making mechanisms:
 3. **Campaign correlation** groups related evidence across addresses and cycles.
 4. **The risk/confidence policy engine** turns evidence, behavioural deviation,
    and campaign facts into a bounded policy recommendation.
-5. **The optional Isolation Forest** contributes an advisory anomaly score only;
-   it cannot originate enforcement or contribute to policy confidence.
 
 IP reputation is optional supporting evidence, never independent authority to
 enforce. Body caps, detector cooldowns, Redis streams, token buckets, policy

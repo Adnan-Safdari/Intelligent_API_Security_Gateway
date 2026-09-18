@@ -15,9 +15,9 @@ export function validateAdaptive(config) {
   const g = config.guardrails || {};
   const unknownBaseline = unknownKeys(b, ["method", "window_seconds", "rolling_windows", "warmup_windows", "mad_multiplier", "minimum_mad", "minimum_threshold_rpm", "maximum_threshold_rpm", "hysteresis_ratio", "cooldown_seconds"]);
   if (unknownBaseline) return `unknown baseline setting: ${unknownBaseline}`;
-  const unknownRisk = unknownKeys(r, ["deterministic_weight", "behavioural_weight", "campaign_weight", "ml_weight", "detector_points", "repeated_evidence_increment", "severity_multipliers", "throttle_score", "temporary_block_score", "confidence_deterministic_weight", "confidence_campaign_weight"]);
+  const unknownRisk = unknownKeys(r, ["deterministic_weight", "behavioural_weight", "campaign_weight", "detector_points", "repeated_evidence_increment", "severity_multipliers", "throttle_score", "temporary_block_score", "confidence_deterministic_weight", "confidence_campaign_weight"]);
   if (unknownRisk) return `unknown risk setting: ${unknownRisk}`;
-  const unknownGuard = unknownKeys(g, ["maximum_automatic_action", "minimum_confidence_throttle", "minimum_confidence_temporary_block", "maximum_policy_duration_seconds", "monitor_duration_seconds", "throttle_duration_seconds", "temporary_block_duration_seconds", "minimum_throttle_rpm", "maximum_throttle_rpm", "default_throttle_rpm", "throttle_baseline_fraction", "policy_cooldown_seconds", "minimum_deterministic_evidence_throttle", "minimum_deterministic_evidence_temporary_block", "strong_ml_anomaly", "analyst_escalation_confidence", "analyst_escalation_min_clients", "analyst_escalation_min_stages", "allowlist", "blocklist"]);
+  const unknownGuard = unknownKeys(g, ["maximum_automatic_action", "minimum_confidence_throttle", "minimum_confidence_temporary_block", "maximum_policy_duration_seconds", "monitor_duration_seconds", "throttle_duration_seconds", "temporary_block_duration_seconds", "minimum_throttle_rpm", "maximum_throttle_rpm", "default_throttle_rpm", "throttle_baseline_fraction", "behavioural_throttle_enabled", "behavioural_throttle_minimum_deviation", "policy_cooldown_seconds", "minimum_deterministic_evidence_throttle", "minimum_deterministic_evidence_temporary_block", "analyst_escalation_confidence", "analyst_escalation_min_clients", "analyst_escalation_min_stages", "allowlist", "blocklist"]);
   if (unknownGuard) return `unknown guardrail setting: ${unknownGuard}`;
   if (b.method !== "median_mad") return "baseline.method must be median_mad";
   if (b.window_seconds !== 60) return "baseline.window_seconds must remain 60";
@@ -30,7 +30,7 @@ export function validateAdaptive(config) {
   if (!numberBetween(b.hysteresis_ratio, 0, 0.5)) return "baseline.hysteresis_ratio must be 0..0.5";
   if (!integerBetween(b.cooldown_seconds, 0, 86400)) return "baseline.cooldown_seconds must be 0..86400";
 
-  const weights = [r.deterministic_weight, r.behavioural_weight, r.campaign_weight, r.ml_weight];
+  const weights = [r.deterministic_weight, r.behavioural_weight, r.campaign_weight];
   if (weights.some((value) => !numberBetween(value, 0, 1)) || Math.abs(weights.reduce((a, b2) => a + b2, 0) - 1) > 0.001) {
     return "risk weights must each be 0..1 and total 1";
   }
@@ -63,6 +63,13 @@ export function validateAdaptive(config) {
     return "throttle rates must be ordered within 1..100000";
   }
   if (!numberBetween(g.throttle_baseline_fraction, 0.01, 1)) return "throttle baseline fraction must be 0.01..1";
+  if (g.behavioural_throttle_enabled !== undefined && typeof g.behavioural_throttle_enabled !== "boolean") {
+    return "behavioural throttle enablement must be true or false";
+  }
+  if (g.behavioural_throttle_minimum_deviation !== undefined &&
+      !numberBetween(g.behavioural_throttle_minimum_deviation, 0.1, 100)) {
+    return "behavioural throttle deviation must be 0.1..100";
+  }
   if (!integerBetween(g.policy_cooldown_seconds, 0, 86400)) return "policy cooldown must be 0..86400 seconds";
   if (!numberBetween(g.analyst_escalation_confidence, 0, 1)) return "analyst escalation confidence must be 0..1";
   if (!integerBetween(g.analyst_escalation_min_clients, 1, 100000) || !integerBetween(g.analyst_escalation_min_stages, 2, 20)) return "analyst escalation size/stage minimums are invalid";
@@ -70,7 +77,6 @@ export function validateAdaptive(config) {
       !integerBetween(g.minimum_deterministic_evidence_temporary_block, g.minimum_deterministic_evidence_throttle, 1000)) {
     return "deterministic evidence minimums are invalid";
   }
-  if (!numberBetween(g.strong_ml_anomaly, 0, 1)) return "strong ML anomaly must be within 0..1";
   if (!Array.isArray(g.allowlist) || !Array.isArray(g.blocklist)) return "allowlist and blocklist must be arrays";
   for (const [name, entries] of [["allowlist", g.allowlist], ["blocklist", g.blocklist]]) {
     if (entries.some((entry) => !isAddressOrCidr(entry))) return `${name} contains an invalid address or CIDR`;

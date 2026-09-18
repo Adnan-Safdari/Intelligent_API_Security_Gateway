@@ -1,16 +1,15 @@
-"""Connect completed windows, baselines, ML advice, risk, and lifecycle."""
+"""Connect completed windows, baselines, risk, and lifecycle."""
 
 from __future__ import annotations
 
 import ipaddress
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from iasg.adaptive.baseline import BaselineLearner, BaselineRepository, BaselineSummary, EndpointKey
 from iasg.adaptive.config import AdaptiveConfig
 from iasg.adaptive.lifecycle import Lifecycle, LifecycleRepository
-from iasg.adaptive.risk import AnomalyObservation, RiskResult, calculate_risk
+from iasg.adaptive.risk import RiskResult, calculate_risk
 from iasg.adaptive.windows import CompletedWindow
-from iasg.ml.scorer import ModelScorer
 from iasg.models import (
     ACTION_ALLOW,
     ACTION_MONITOR,
@@ -34,7 +33,6 @@ class EndpointObservation:
 class WindowAssessment:
     ip: str
     endpoints: tuple[EndpointObservation, ...]
-    anomaly: AnomalyObservation
 
     @property
     def most_deviant(self) -> EndpointObservation | None:
@@ -50,12 +48,10 @@ class AdaptiveController:
         self,
         baselines: BaselineRepository,
         lifecycle: LifecycleRepository,
-        scorer: ModelScorer,
         config: AdaptiveConfig,
     ) -> None:
         self.baselines = baselines
         self.lifecycle = Lifecycle(lifecycle)
-        self.scorer = scorer
         self.config = config.validate()
         self._windows: dict[str, WindowAssessment] = {}
 
@@ -65,7 +61,7 @@ class AdaptiveController:
     def observe(
         self, windows: list[CompletedWindow]
     ) -> list[tuple[PolicyDecision, bool, str]]:
-        """Learn safe windows and save ML-only observations as monitor advice."""
+        """Learn safe windows and preserve endpoint context for decisions."""
         learner = BaselineLearner(self.baselines, self.config.baseline)
         recommendations: list[tuple[PolicyDecision, bool, str]] = []
         for window in windows:
@@ -76,16 +72,9 @@ class AdaptiveController:
                 deviation = learner.deviation(before, observed)
                 endpoint_rows.append(EndpointObservation(key, observed, before, deviation))
 
-            features = dict(window.row.features)
-            features["endpoint_method_deviation"] = max(
-                (item.deviation for item in endpoint_rows), default=0.0
-            )
-            scored_row = replace(window.row, features=features)
-            anomaly = self.scorer.score(scored_row)
             assessment = WindowAssessment(
                 ip=window.row.ip,
                 endpoints=tuple(endpoint_rows),
-                anomaly=anomaly,
             )
             self._windows[window.row.ip] = assessment
 
@@ -96,18 +85,22 @@ class AdaptiveController:
                 self.config.guardrails.allowlist,
                 self.config.guardrails.blocklist,
             )
-            if configured or (anomaly.available and anomaly.score is not None and anomaly.score > 0):
-                context = assessment.most_deviant
-                result = calculate_risk(
-                    self.config, None, [],
-                    endpoint=context.key if context else None,
-                    baseline=context.baseline if context else None,
-                    observed_rate=context.observed if context else 0,
-                    anomaly=anomaly,
+            context = assessment.most_deviant
+            result = calculate_risk(
+                self.config, None, [],
+                endpoint=context.key if context else None,
+                baseline=context.baseline if context else None,
+                observed_rate=context.observed if context else 0,
+            )
+            behavioural_throttle = bool(
+                (result.explanation.get("final") or {}).get(
+                    "behavioural_throttle_authorized"
                 )
+            )
+            if configured or behavioural_throttle:
                 decision = self._decision(
-                    window.row.ip, None, result, context, anomaly,
-                    action=ACTION_MONITOR,
+                    window.row.ip, None, result, context,
+                    action=ACTION_MONITOR if configured else None,
                 )
                 recommendation, enforce, why = self.lifecycle.stage(
                     decision, self.config
@@ -117,7 +110,17 @@ class AdaptiveController:
             for (method, route), observed in window.route_counts.items():
                 learner.observe(
                     EndpointKey.of(method, route), observed,
-                    trusted=window.safe_to_learn and configured != ACTION_TEMP_BLOCK,
+                    # A burst that has just justified a behavioural policy
+                    # must not immediately raise the normal comparison point.
+                    trusted=(
+                        window.safe_to_learn
+                        and configured != ACTION_TEMP_BLOCK
+                        and not (
+                            behavioural_throttle
+                            and context is not None
+                            and context.key == EndpointKey.of(method, route)
+                        )
+                    ),
                     now=window.row.window_start,
                 )
         return recommendations
@@ -129,11 +132,6 @@ class AdaptiveController:
         for ip in campaign.ips:
             assessment = self._windows.get(ip)
             context = assessment.most_deviant if assessment else None
-            # Distinct from the scorer's own "model_unavailable"/
-            # "insufficient_history" -- this ip has no completed rate window
-            # at all yet (e.g. its first-ever request just tripped a
-            # signature detector), so the model was never even asked.
-            anomaly = assessment.anomaly if assessment else AnomalyObservation(reason="no_window_observed")
             relevant = [row for row in evidence if row.ip == ip]
             result = calculate_risk(
                 self.config,
@@ -142,9 +140,8 @@ class AdaptiveController:
                 endpoint=context.key if context else None,
                 baseline=context.baseline if context else None,
                 observed_rate=context.observed if context else 0,
-                anomaly=anomaly,
             )
-            decision = self._decision(ip, campaign, result, context, anomaly)
+            decision = self._decision(ip, campaign, result, context)
             recommendation, enforce, why = self.lifecycle.stage(decision, self.config)
             staged.append((recommendation.decision, enforce, why))
         return staged
@@ -155,7 +152,6 @@ class AdaptiveController:
         campaign: Campaign | None,
         result: RiskResult,
         endpoint: EndpointObservation | None,
-        anomaly: AnomalyObservation,
         *,
         action: str | None = None,
     ) -> PolicyDecision:
@@ -210,9 +206,6 @@ class AdaptiveController:
             issued_by=issued_by,
             baseline_version=baseline_version,
             config_version=self.config.version,
-            model_version=anomaly.model_version,
-            model_score=anomaly.score,
-            model_status=anomaly.reason,
         )
 
 

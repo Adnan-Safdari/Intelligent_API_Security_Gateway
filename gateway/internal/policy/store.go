@@ -64,7 +64,6 @@ type Decision struct {
 	IssuedBy           string          `json:"issued_by"`
 	BaselineVersion    string          `json:"baseline_version"`
 	ConfigVersion      int             `json:"config_version"`
-	ModelVersion       string          `json:"model_version"`
 	SupersedesPolicyID string          `json:"supersedes_policy_id"`
 	Explanation        json.RawMessage `json:"explanation"`
 	EndpointScope      *EndpointScope  `json:"endpoint_scope"`

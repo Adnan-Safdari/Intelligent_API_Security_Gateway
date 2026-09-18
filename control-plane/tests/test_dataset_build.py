@@ -136,8 +136,7 @@ def test_splits_are_deterministic_so_two_builds_are_comparable():
 
 
 def test_attacks_never_enter_the_training_partition():
-    """Train is benign only: an anomaly model fitted on attacks is a classifier
-    with two examples of each."""
+    """The clean reference partition excludes every labelled attack."""
     split = Split()
     for i in range(50):
         assert split.assign(("run1", f"203.0.113.{i}", ""), 1, "credential_stuffing") != "train"

@@ -286,10 +286,8 @@ page. Settings changes are stored in Redis, and **Revert to file** returns to
 - **One backend per gateway.** Routing by hostname or path to several services
   means one gateway per service, or a router behind the gateway.
 - **No HTTPS in the gateway.** It has to sit behind a proxy that terminates it.
-- **The anomaly model was trained on the demo backend's traffic**, so its
-  scores say little about a different API. It cannot cause a block by itself:
-  enforcement requires deterministic detector evidence. See
-  [Feature Specification](anomaly-features.md).
+- **Adaptive baselines learn from the demo backend's traffic**, so reset and
+  warm them before protecting a different API.
 - **Detection signatures are generic.** The SQL injection and traversal
   patterns are short lists meant for the demo. Extend them for your API in
   `enforcement.attack_detection` and `enforcement.enumeration_path_traversal`.

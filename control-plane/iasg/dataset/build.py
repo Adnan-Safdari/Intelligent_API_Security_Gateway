@@ -167,9 +167,9 @@ def rows_for_run(run: RawRun, run_id: str) -> RunRows:
     Windows for the addresses this run planned, and only those.
 
     An address the plan never assigned is *unlabelled*, not benign: nothing in
-    attacks.jsonl covers it, so label_for answers 0 and it would join the class
-    the anomaly model is fitted on. That is how a stray browser tab teaches the
-    model what normal looks like.
+    attacks.jsonl covers it, so label_for answers 0 and it would join the clean
+    reference population. That is how a stray browser tab corrupts an offline
+    analysis dataset.
     """
     arrivals = read_jsonl(run.arrivals)
     completions = read_jsonl(run.completions)

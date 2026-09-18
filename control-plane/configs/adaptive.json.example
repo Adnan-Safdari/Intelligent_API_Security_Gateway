@@ -15,9 +15,8 @@
   },
   "risk": {
     "deterministic_weight": 0.5,
-    "behavioural_weight": 0.15,
+    "behavioural_weight": 0.2,
     "campaign_weight": 0.3,
-    "ml_weight": 0.05,
     "detector_points": {
       "sqli": 100,
       "traversal": 100,
@@ -48,10 +47,11 @@
     "maximum_throttle_rpm": 300,
     "default_throttle_rpm": 60,
     "throttle_baseline_fraction": 0.5,
+    "behavioural_throttle_enabled": false,
+    "behavioural_throttle_minimum_deviation": 2.0,
     "policy_cooldown_seconds": 300,
     "minimum_deterministic_evidence_throttle": 1,
     "minimum_deterministic_evidence_temporary_block": 2,
-    "strong_ml_anomaly": 0.8,
     "analyst_escalation_confidence": 0.75,
     "analyst_escalation_min_clients": 5,
     "analyst_escalation_min_stages": 2,

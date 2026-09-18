@@ -35,9 +35,8 @@ class BaselineConfig:
 @dataclass(frozen=True)
 class RiskConfig:
     deterministic_weight: float = 0.50
-    behavioural_weight: float = 0.15
+    behavioural_weight: float = 0.20
     campaign_weight: float = 0.30
-    ml_weight: float = 0.05
     detector_points: dict[str, float] = field(default_factory=lambda: {
         "sqli": 100.0,
         "traversal": 100.0,
@@ -76,10 +75,13 @@ class GuardrailConfig:
     maximum_throttle_rpm: int = 300
     default_throttle_rpm: int = 60
     throttle_baseline_fraction: float = 0.50
+    # Disabled by default: a valid-traffic burst is ambiguous unless an
+    # operator explicitly opts in to this narrower, endpoint-only response.
+    behavioural_throttle_enabled: bool = False
+    behavioural_throttle_minimum_deviation: float = 2.0
     policy_cooldown_seconds: int = 300
     minimum_deterministic_evidence_throttle: int = 1
     minimum_deterministic_evidence_temporary_block: int = 2
-    strong_ml_anomaly: float = 0.80
     analyst_escalation_confidence: float = 0.75
     analyst_escalation_min_clients: int = 5
     analyst_escalation_min_stages: int = 2
@@ -124,7 +126,6 @@ class AdaptiveConfig:
             r.deterministic_weight,
             r.behavioural_weight,
             r.campaign_weight,
-            r.ml_weight,
         )
         if any(value < 0 or value > 1 for value in weights) or not 0.99 <= sum(weights) <= 1.01:
             errors.append("risk weights must each be 0..1 and total 1")
@@ -165,14 +166,16 @@ class AdaptiveConfig:
             errors.append("throttle rates must be ordered within 1..100000")
         if not 0.01 <= g.throttle_baseline_fraction <= 1:
             errors.append("throttle_baseline_fraction must be between 0.01 and 1")
+        if not isinstance(g.behavioural_throttle_enabled, bool):
+            errors.append("behavioural_throttle_enabled must be boolean")
+        if not 0.1 <= g.behavioural_throttle_minimum_deviation <= 100:
+            errors.append("behavioural_throttle_minimum_deviation must be between 0.1 and 100")
         if not 0 <= g.policy_cooldown_seconds <= 86_400:
             errors.append("policy_cooldown_seconds must be between 0 and 86400")
         if g.minimum_deterministic_evidence_throttle < 1:
             errors.append("minimum deterministic evidence for throttle must be at least 1")
         if g.minimum_deterministic_evidence_temporary_block < g.minimum_deterministic_evidence_throttle:
             errors.append("temporary block evidence minimum cannot be below throttle")
-        if not 0 <= g.strong_ml_anomaly <= 1:
-            errors.append("strong_ml_anomaly must be within 0..1")
         if not 0 <= g.analyst_escalation_confidence <= 1:
             errors.append("analyst_escalation_confidence must be within 0..1")
         if g.analyst_escalation_min_clients < 1 or g.analyst_escalation_min_stages < 2:

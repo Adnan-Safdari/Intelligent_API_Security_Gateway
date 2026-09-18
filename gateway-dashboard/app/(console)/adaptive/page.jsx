@@ -150,7 +150,6 @@ export default function AdaptivePage() {
                 />
                 <strong>{option.label}</strong>
                 <span>{option.behaviour}</span>
-                {option.mlNote ? <small>{option.mlNote}</small> : null}
               </label>
             ))}
           </fieldset>
@@ -161,13 +160,13 @@ export default function AdaptivePage() {
               <p>
                 <b>Automatic bounded enforcement.</b> Maximum automatic action:{" "}
                 {actionLabel(draft.guardrails.maximum_automatic_action)}. Maximum TTL:{" "}
-                {draft.guardrails.maximum_policy_duration_seconds} seconds. ML-only anomalies remain
-                monitor-only.
+                {draft.guardrails.maximum_policy_duration_seconds} seconds.
               </p>
             ) : null}
             <p>
-              Compact safety guardrails: deterministic gateway evidence is required; a policy is
-              time-bounded; and manual emergency overrides take precedence.
+              Compact safety guardrails: deterministic gateway evidence is required unless the
+              explicitly enabled, ready-baseline throttle path applies; every policy is time-bounded;
+              and manual emergency overrides take precedence.
             </p>
           </div>
 
@@ -347,7 +346,7 @@ export default function AdaptivePage() {
             <h2>Baseline and decision inspection</h2>
             <p className="section-note">
               Baselines learn in every mode. Open any decision explanation to inspect its evidence,
-              baseline deviation, advisory anomaly, and guardrails.
+              baseline deviation and guardrails.
             </p>
           </div>
           <span>{data.baselines?.length || 0} normalized endpoints</span>
@@ -494,6 +493,18 @@ export default function AdaptivePage() {
                   value={draft.guardrails.throttle_baseline_fraction}
                   onChange={(value) => edit("guardrails", "throttle_baseline_fraction", Number(value))}
                 />
+                <Field.Toggle
+                  label="Enable ready-baseline behavioural throttles"
+                  checked={Boolean(draft.guardrails.behavioural_throttle_enabled)}
+                  onChange={(value) => edit("guardrails", "behavioural_throttle_enabled", value)}
+                />
+                <Field.Number
+                  label="Behavioural throttle minimum deviation"
+                  step="0.1"
+                  value={draft.guardrails.behavioural_throttle_minimum_deviation ?? 2}
+                  hint="Only a ready endpoint baseline exceeding this ratio can create a throttle; blocks still require detector evidence."
+                  onChange={(value) => edit("guardrails", "behavioural_throttle_minimum_deviation", Number(value))}
+                />
                 <Field.Number
                   label="Policy cooldown (seconds)"
                   value={draft.guardrails.policy_cooldown_seconds}
@@ -508,12 +519,6 @@ export default function AdaptivePage() {
                   label="Evidence required: temporary block"
                   value={draft.guardrails.minimum_deterministic_evidence_temporary_block}
                   onChange={(value) => edit("guardrails", "minimum_deterministic_evidence_temporary_block", Number(value))}
-                />
-                <Field.Number
-                  label="Strong ML anomaly"
-                  step="0.01"
-                  value={draft.guardrails.strong_ml_anomaly}
-                  onChange={(value) => edit("guardrails", "strong_ml_anomaly", Number(value))}
                 />
                 <Field.Textarea
                   label="Emergency allowlist (address/CIDR per line)"
@@ -597,12 +602,6 @@ export default function AdaptivePage() {
                   step="0.01"
                   value={draft.risk.campaign_weight}
                   onChange={(value) => edit("risk", "campaign_weight", Number(value))}
-                />
-                <Field.Number
-                  label="ML advisory weight"
-                  step="0.01"
-                  value={draft.risk.ml_weight}
-                  onChange={(value) => edit("risk", "ml_weight", Number(value))}
                 />
                 <Field.Number
                   label="Throttle risk score"

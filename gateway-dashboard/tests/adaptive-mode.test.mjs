@@ -8,7 +8,6 @@ test("each enforcement mode states the lifecycle it changes", () => {
   assert.match(modeCopy("monitor").behaviour, /Never write an enforcing gateway policy/);
   assert.match(modeCopy("manual").behaviour, /approve, edit, or reject/);
   assert.match(modeCopy("automatic").behaviour, /guardrail-compliant throttle or temporary-block/);
-  assert.equal(modeCopy("automatic").mlNote, "ML-only anomalies remain monitor-only.");
 });
 
 test("the adaptive page exposes the required mode boundary text", async () => {

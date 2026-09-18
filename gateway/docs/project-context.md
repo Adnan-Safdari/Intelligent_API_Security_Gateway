@@ -214,7 +214,6 @@ Intelligent_API_Security_Gateway/
 │   ├── jmeter/                         # JMeter demo plans
 │   ├── signals/                        # HTTP test scripts for detectors (not in the gateway module)
 │   └── traffic/                        # generates the labelled traffic behind datasets/
-├── models/                             # trained model artifacts read by the control plane's ModelScorer
 ├── gateway-dashboard/                  # Next.js command center (UI + /api/overview)
 │   ├── app/
 │   └── lib/
@@ -419,11 +418,10 @@ checkable claim here as something to verify against the code before relying
 on it, the same way the rest of this document should be read.
 
 Known reconciliation passes: the gateway was originally detect-and-log only;
-enforcement, the adaptive control-plane engine, and the anomaly-detection ML
+enforcement and the adaptive control-plane engine
 path were added afterward and are documented in
-[Policy Enforcement](policy-enforcement.md),
-[Adaptive Policy and Analyst Control](adaptive-policy.md), and
-[Feature Specification](anomaly-features.md) respectively. The console's login
+[Policy Enforcement](policy-enforcement.md) and
+[Adaptive Policy and Analyst Control](adaptive-policy.md). The console's login
 system was later removed entirely (`gateway-dashboard/lib/auth.js` is a stub);
 see [Command Center Dashboard](modules/dashboard.md).
 

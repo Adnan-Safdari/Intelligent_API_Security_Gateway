@@ -16,7 +16,6 @@ export const MODE_OPTIONS = Object.freeze([
     label: "Automatic",
     heading: "Automatic bounded enforcement",
     behaviour: "Automatically apply only guardrail-compliant throttle or temporary-block policies.",
-    mlNote: "ML-only anomalies remain monitor-only.",
   }),
 ]);
 

@@ -32,7 +32,6 @@ enough to finish privacy-safe 60-second windows and endpoint baselines.
 2. **Adaptive endpoint baselines** learn trusted normal traffic per method and route.
 3. **Campaign correlation** connects related evidence across addresses and cycles.
 4. **The risk/confidence policy engine** makes a bounded, explainable recommendation.
-5. **An optional Isolation Forest** adds advisory anomaly context only.
 
 IP reputation is supporting evidence, not independent policy authority. Body
 limits, cooldowns, Redis streams, policy TTLs, and token buckets support safe
@@ -42,13 +41,13 @@ LLM explanation and assessment run only after policy selection; the default
 
 Read [ALGORITHMS.md](ALGORITHMS.md) for the mechanism-level explanation and
 [`../gateway/docs/adaptive-policy.md`](../gateway/docs/adaptive-policy.md) for
-the baseline, risk/confidence, and advisory-model contract.
+the baseline, risk/confidence, and policy guardrail contract.
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e ".[dev,postgres,ml]"
+.venv/bin/pip install -e ".[dev,postgres]"
 ```
 
 Needs Redis on `localhost:6379`. Nothing else — no Docker, no Postgres, no LLM.
@@ -200,7 +199,6 @@ direction the agent starts making that correction itself. Bounded hard: one rung
 several samples before it moves at all, opposing corrections cancel, and it shifts only
 the starting recommendation — the checks above run afterwards and are not learnable, since
 a system that could learn its way past its own rails eventually would. Feedback
-is still a tally. Separately, the offline Isolation Forest is advisory only and
 cannot authorize enforcement without deterministic evidence.
 
 Both features are off until configured. With nothing set, the ladder behaves exactly as it
