@@ -1,5 +1,6 @@
 import { getPool } from "./postgres";
 import { isIP } from "node:net";
+import { normalizeStoredAdaptive } from "./adaptive-config.mjs";
 
 export const MODES = ["monitor", "manual", "automatic"];
 export const ACTIONS = ["monitor", "throttle", "temp_block"];
@@ -102,7 +103,7 @@ export async function readAdaptive() {
     ]);
     return {
       available: true,
-      config: settings.rows[0]?.config || null,
+      config: normalizeStoredAdaptive(settings.rows[0]?.config || null),
       settingsUpdatedAt: settings.rows[0]?.updated_at || null,
       settingsUpdatedBy: settings.rows[0]?.updated_by || "",
       baselines: baselines.rows.map((row) => ({

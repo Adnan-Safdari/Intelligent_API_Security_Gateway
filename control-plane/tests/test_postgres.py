@@ -240,6 +240,31 @@ def test_adaptive_configuration_and_baseline_survive_a_restart(db):
     assert loaded.samples == [3.0, 4.0, 4.0, 5.0]
 
 
+def test_loading_a_legacy_config_repairs_the_dashboard_document(db):
+    """A retired field cannot keep returning through the dashboard form."""
+    stale = AdaptiveConfig().to_dict()
+    stale["mode"] = "manual"
+    stale["risk"]["ml_weight"] = 0.05
+    with db._conn.cursor() as cur:
+        cur.execute(
+            "UPDATE adaptive_settings SET version=%s,mode=%s,config=%s::jsonb"
+            " WHERE singleton_id=1",
+            (7, stale["mode"], json.dumps(stale)),
+        )
+
+    loaded = db.adaptive.load_config(AdaptiveConfig())
+
+    with db._conn.cursor() as cur:
+        cur.execute("SELECT version,mode,config FROM adaptive_settings WHERE singleton_id=1")
+        version, mode, persisted = cur.fetchone()
+    persisted = persisted if isinstance(persisted, dict) else json.loads(persisted)
+
+    assert loaded.version == version == 7
+    assert mode == "manual"
+    assert "ml_weight" not in persisted["risk"]
+    assert persisted == json.loads(json.dumps(loaded.to_dict()))
+
+
 def test_policy_lifecycle_and_audit_are_durable(db):
     now = datetime.now(timezone.utc)
     decision = PolicyDecision(

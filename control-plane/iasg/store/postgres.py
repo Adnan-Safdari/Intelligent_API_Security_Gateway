@@ -19,6 +19,7 @@ holding campaigns in Redis under a 24-hour TTL.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 from iasg.adaptive.baseline import BaselineSummary, EndpointKey
@@ -269,7 +270,7 @@ class PostgresAdaptive:
 
     def load_config(self, default: AdaptiveConfig) -> AdaptiveConfig:
         with self._conn.cursor() as cur:
-            cur.execute("SELECT config FROM adaptive_settings WHERE singleton_id = 1")
+            cur.execute("SELECT config, version FROM adaptive_settings WHERE singleton_id = 1")
             row = cur.fetchone()
         if not row:
             self.ensure_config(default)
@@ -280,7 +281,7 @@ class PostgresAdaptive:
         # cycle forever. IASG_ADAPTIVE_CONFIG (freshly authored each boot)
         # stays strict, so a typo there still fails loudly.
         try:
-            return AdaptiveConfig.from_mapping(value, default, strict=False)
+            config = AdaptiveConfig.from_mapping(value, default, strict=False)
         except ValueError as err:
             # Dropping unknown fields is not always enough: numbers a retired
             # field used to balance (weights that summed to 1 only together
@@ -289,7 +290,23 @@ class PostgresAdaptive:
             # trusting piecemeal at that point -- fall back to defaults rather
             # than repeat this cycle's failure forever.
             print(f"[adaptive] stored config rejected by this version ({err}); using defaults")
-            return default
+            config = default
+
+        # The dashboard reads this durable document directly. Leaving retired
+        # fields there means it faithfully sends them back on the next edit,
+        # where strict validation rejects the same setting the agent ignored.
+        # Persist the config actually in use so one cycle completes the
+        # migration for every reader, rather than merely hiding it here.
+        config = replace(config, version=int(row[1]))
+        canonical = config.to_dict()
+        if json.dumps(value, sort_keys=True) != json.dumps(canonical, sort_keys=True):
+            with self._conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE adaptive_settings SET mode=%s, config=%s::jsonb"
+                    " WHERE singleton_id=1",
+                    (config.mode, json.dumps(canonical)),
+                )
+        return config
 
     def get_baseline(self, key: EndpointKey) -> BaselineSummary | None:
         with self._conn.cursor() as cur:
