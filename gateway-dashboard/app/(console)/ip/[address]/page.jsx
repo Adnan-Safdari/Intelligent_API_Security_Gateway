@@ -129,9 +129,6 @@ export default function IpPage({ params }) {
                 explanation={policy.explanation}
                 riskScore={policy.riskScore}
                 confidence={policy.confidence}
-                modelScore={policy.modelScore}
-                modelStatus={policy.modelStatus}
-                modelVersion={policy.modelVersion}
               />
             </article>
           ) : null}

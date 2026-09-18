@@ -2,7 +2,7 @@
 
 This page originally walked through the control plane as it stood on the
 `pranav/agentic-evidence-pipeline` branch, before gateway enforcement,
-`iasg/adaptive/`, `iasg/policy/simulation.py`, and the anomaly-detection ML
+`iasg/adaptive/` and `iasg/policy/simulation.py`
 path existed. That snapshot is no longer a safe way to learn the current
 system — enough has changed underneath it (test count, module list, which
 code path is actually live) that patching it line by line would mean

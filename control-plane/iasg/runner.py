@@ -33,7 +33,6 @@ from iasg.explanation.agent import ExplanationAgent
 from iasg.feedback import overrides as human
 from iasg.feedback.memory import FeedbackMemory
 from iasg.feedback.overrides import OverrideChannel
-from iasg.ml.scorer import ModelScorer
 from iasg.models import ACTION_ESCALATE, ACTION_MONITOR, Campaign, PolicyDecision
 from iasg.policy.agent import PolicyAgent
 from iasg.policy.simulation import Simulator
@@ -121,7 +120,6 @@ class Runner:
         self.adaptive = AdaptiveController(
             baseline_repository,
             lifecycle_repository,
-            ModelScorer(settings.model_path, settings.model_metadata_path),
             settings.adaptive,
         )
         self.provider = provider
@@ -229,8 +227,6 @@ class Runner:
                         "dry_run": self.settings.dry_run,
                         "mode": self.adaptive.config.mode,
                         "config_version": self.adaptive.config.version,
-                        "model_available": self.adaptive.scorer.available,
-                        "model_error": self.adaptive.scorer.error,
                         # "null" when narration is off, "ollama" when a model
                         # is configured -- reachability isn't tracked here, so
                         # this says what's configured, not what's answering.
@@ -245,7 +241,7 @@ class Runner:
     def _respond(self, campaign, evidence, pending, result: CycleResult, config) -> None:
         """Decide, check the decision is safe, let a human overrule it, write."""
         # 4. decide -- validated numeric configuration and completed-window
-        # facts only.  ML is advisory input here; the scorer never runs in Go.
+        # facts only. The gateway never waits for this control-plane work.
         staged = self.adaptive.decisions(campaign, evidence)
         decisions = [decision for decision, _, _ in staged]
         eligible = {decision.policy_id: enforce for decision, enforce, _ in staged}

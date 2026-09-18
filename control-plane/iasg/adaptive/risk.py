@@ -18,18 +18,6 @@ from iasg.models import (
 
 
 @dataclass(frozen=True)
-class AnomalyObservation:
-    available: bool = False
-    score: float | None = None
-    model_version: str = ""
-    feature_schema_version: str = ""
-    # Precise cause when score is None, so a decision can say why the model
-    # didn't contribute instead of leaving it blank. "" only for the default
-    # instance built before any window/model lookup runs.
-    reason: str = ""
-
-
-@dataclass(frozen=True)
 class RiskResult:
     score: float
     confidence: float
@@ -46,10 +34,8 @@ def calculate_risk(
     endpoint: EndpointKey | None = None,
     baseline: BaselineSummary | None = None,
     observed_rate: int = 0,
-    anomaly: AnomalyObservation | None = None,
 ) -> RiskResult:
     evidence = list(evidence)
-    anomaly = anomaly or AnomalyObservation()
     risk = config.risk
     guard = config.guardrails
 
@@ -84,6 +70,13 @@ def calculate_risk(
             (observed_rate - baseline.derived_threshold) / baseline.derived_threshold,
         )
     behavioural_score = _clamp(deviation * 100.0, 0.0, 100.0)
+    behavioural_throttle = (
+        guard.behavioural_throttle_enabled
+        and baseline is not None
+        and baseline.ready
+        and baseline.derived_threshold > 0
+        and deviation >= guard.behavioural_throttle_minimum_deviation
+    )
 
     campaign_confidence = _clamp(campaign.confidence if campaign else 0.0, 0.0, 1.0)
     campaign_severity = risk.severity_multipliers.get(
@@ -91,15 +84,10 @@ def calculate_risk(
     )
     campaign_score = _clamp(campaign_confidence * campaign_severity * 100.0, 0.0, 100.0)
 
-    ml_score = (
-        _clamp(float(anomaly.score), 0.0, 1.0) * 100.0
-        if anomaly.available and anomaly.score is not None else 0.0
-    )
     contributions = {
         "deterministic": deterministic_score * risk.deterministic_weight,
         "behavioural": behavioural_score * risk.behavioural_weight,
         "campaign": campaign_score * risk.campaign_weight,
-        "ml": ml_score * risk.ml_weight,
     }
     total = _clamp(sum(contributions.values()), 0.0, 100.0)
 
@@ -109,14 +97,20 @@ def calculate_risk(
         0.0,
         1.0,
     )
-    candidate = _candidate(total, config)
+    # A ready baseline represents a completed set of trusted observations, not
+    # a detector hit. Its confidence is therefore used only for the explicit,
+    # throttle-only behavioural path below; it can never justify a block.
+    behavioural_confidence = min(
+        1.0, baseline.sample_count / max(config.baseline.warmup_windows, 1)
+    ) if behavioural_throttle else 0.0
+    confidence = max(confidence, behavioural_confidence)
+    candidate = ACTION_THROTTLE if behavioural_throttle else _candidate(total, config)
     action, guardrail_reasons = _guard(
         candidate,
-        total,
         confidence,
         deterministic_score,
         deterministic_count,
-        anomaly,
+        behavioural_throttle,
         config,
     )
     rpm = _throttle_rate(action, baseline, config)
@@ -132,6 +126,7 @@ def calculate_risk(
             "observed": observed_rate,
             "deviation": round(deviation, 4),
             "baseline_ready": bool(baseline and baseline.ready),
+            "sample_count": baseline.sample_count if baseline else 0,
             "version": baseline.version if baseline else 0,
         },
         "campaign": {
@@ -140,14 +135,6 @@ def calculate_risk(
             "confidence": campaign_confidence,
             "facts": campaign.reason if campaign else "",
             "stages": list(campaign.stages) if campaign else [],
-        },
-        "ml": {
-            "model_available": anomaly.available,
-            "anomaly_score": anomaly.score,
-            "model_version": anomaly.model_version,
-            "feature_schema_version": anomaly.feature_schema_version,
-            "reason": anomaly.reason,
-            "note": "anomaly score is advisory and is not policy confidence",
         },
         "components": {
             name: {
@@ -161,6 +148,8 @@ def calculate_risk(
             "confidence": round(confidence, 3),
             "candidate_action": candidate,
             "selected_action": action,
+            "behavioural_throttle_authorized": behavioural_throttle,
+            "behavioural_throttle_minimum_deviation": guard.behavioural_throttle_minimum_deviation,
             "guardrails": guardrail_reasons,
             "configuration_version": config.version,
         },
@@ -181,21 +170,26 @@ def _candidate(score: float, config: AdaptiveConfig) -> str:
 
 def _guard(
     candidate: str,
-    score: float,
     confidence: float,
     deterministic_score: float,
     deterministic_count: int,
-    anomaly: AnomalyObservation,
+    behavioural_throttle: bool,
     config: AdaptiveConfig,
 ) -> tuple[str, list[str]]:
     guard = config.guardrails
     reasons: list[str] = []
     action = candidate
 
-    # A statistical surprise is a reason to investigate, never authority to
-    # police a client.  Reputation is excluded above for the same reason.
+    # A statistical surprise remains monitor-only unless an operator opted in
+    # to a ready-baseline throttle. That exception cannot produce a block.
     if deterministic_count == 0:
-        return ACTION_MONITOR, ["no deterministic gateway evidence; monitor only"]
+        if not behavioural_throttle:
+            return ACTION_MONITOR, ["no deterministic gateway evidence; monitor only"]
+        if AUTO_ACTIONS.index(guard.maximum_automatic_action) < AUTO_ACTIONS.index(ACTION_THROTTLE):
+            return ACTION_MONITOR, ["behavioural throttle exceeds the automatic-action ceiling"]
+        return ACTION_THROTTLE, [
+            "ready endpoint baseline exceeded the behavioural throttle deviation guardrail"
+        ]
 
     ceiling = AUTO_ACTIONS.index(guard.maximum_automatic_action)
     if AUTO_ACTIONS.index(action) > ceiling:
@@ -209,19 +203,6 @@ def _guard(
         elif confidence < guard.minimum_confidence_temporary_block:
             action = ACTION_THROTTLE
             reasons.append("temporary-block confidence minimum was not met")
-        else:
-            # If ML was necessary to cross the block line it must itself be
-            # strong.  A deterministic/campaign score already over the line is
-            # allowed without a deployed model.
-            without_ml = score - (
-                (_clamp(float(anomaly.score or 0), 0.0, 1.0) * 100.0)
-                * config.risk.ml_weight
-            )
-            if without_ml < config.risk.temporary_block_score and (
-                not anomaly.available or (anomaly.score or 0.0) < guard.strong_ml_anomaly
-            ):
-                action = ACTION_THROTTLE
-                reasons.append("ML-assisted block requires a strong anomaly")
 
     if action == ACTION_THROTTLE:
         if deterministic_count < guard.minimum_deterministic_evidence_throttle:

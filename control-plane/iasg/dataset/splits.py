@@ -6,9 +6,8 @@ plus a replay group, so
 one address's windows cannot land on both sides -- otherwise a model memorises
 an address in training and is graded on the same address's other minutes.
 
-Train is benign only: this is an anomaly model, fitted on what normal looks
-like. The threshold is chosen on validation and nowhere else, and test is
-looked at once.
+Train contains benign traffic only so offline analyses have a clean reference
+population. Validation and test remain separate from it.
 """
 
 from __future__ import annotations
@@ -61,9 +60,8 @@ class Split:
             if bucket < 0.6:
                 return TRAIN
             return VAL if bucket < 0.8 else TEST
-        # Attacks are never in train. An anomaly model fitted on attacks is a
-        # classifier with two examples of each attack, which is not what this
-        # is.
+        # Attacks are never in train, so the clean reference population stays
+        # independent from the scenarios used to assess it.
         return VAL if self._bucket(key) < self.val_fraction else TEST
 
 

@@ -47,7 +47,6 @@ as a collection of queues, caches, and timers:
 | Adaptive endpoint baseline | Learn safe normal traffic per method and route from trusted completed windows. |
 | Campaign correlation | Relate evidence across addresses and cycles into continuing attacks. |
 | Risk/confidence policy engine | Choose a bounded, explainable policy from evidence, behaviour, and campaign facts. |
-| Optional Isolation Forest advisory model | Add anomaly context when an installed model is valid; it cannot act alone. |
 
 Body limits, detector cooldowns, Redis streams, token buckets, policy snapshots,
 and TTLs support safe enforcement and reliable delivery; they are not separate

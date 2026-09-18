@@ -140,9 +140,6 @@ export default function PolicyPage() {
                           explanation={policy.explanation}
                           riskScore={policy.riskScore}
                           confidence={policy.confidence}
-                          modelScore={policy.modelScore}
-                          modelStatus={policy.modelStatus}
-                          modelVersion={policy.modelVersion}
                         />
                       </td>
                       <td><span className={`risk ${ACTION_TONE[policy.action] || "low"}`}>{actionLabel(policy.action)}</span></td>

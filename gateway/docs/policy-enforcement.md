@@ -36,7 +36,7 @@ this JSON as `policy:203.0.113.55` for address-wide policy or
 | --- | --- |
 | `action` | One of the action labels below |
 | `policy_id`, `scope`, `target_identity`, `endpoint_scope` | Lifecycle identity and optional normalized method/route scope |
-| `campaign_id`, `risk_score`, `confidence`, `reason`, `issued_at` | Explainable decision metadata; anomaly score remains separate from confidence |
+| `campaign_id`, `risk_score`, `confidence`, `reason`, `issued_at` | Explainable decision metadata |
 | `source` | Existing origin, usually `agent` or `human`; defaults to `agent` when absent |
 | `expires_in` | Declared lifetime in seconds; **Redis `PTTL` is authoritative** |
 | `requests_per_minute` | Positive sustained rate for `throttle`; absent or zero uses the configured fallback |

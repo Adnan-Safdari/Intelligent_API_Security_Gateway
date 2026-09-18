@@ -127,8 +127,8 @@ class Lifecycle:
             return Recommendation(decision, previous.status, now, now), False, why
         # A recommendation to monitor has no Redis key and therefore cannot
         # protect anyone from a later, evidence-backed action. Applying the
-        # change cooldown to it would turn an advisory ML observation into a
-        # five-minute blind spot for the first real attack on that scope.
+        # change cooldown to it would create a blind spot for the first real
+        # attack on that scope.
         if (
             previous
             and previous.status == STATUS_ACTIVE

@@ -33,7 +33,7 @@ flowchart TD
 This is an operational sequence, not six more decision algorithms. The five core
 mechanisms are deterministic detectors, adaptive endpoint baselines, campaign
 correlation, the risk/confidence policy engine, and an optional advisory
-Isolation Forest. Redis delivery, policy TTLs, safety simulation, and narration
+Redis delivery, policy TTLs, safety simulation, and narration
 preserve those mechanisms' boundaries.
 
 Three things about that order are deliberate:

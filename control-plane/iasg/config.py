@@ -103,8 +103,6 @@ class Settings:
     window_consumer_group: str = "iasg-windowing"
     window_consumer_name: str = "window-agent-1"
     window_completion_grace_seconds: int = 5
-    model_path: str = "models/current/model.joblib"
-    model_metadata_path: str = "models/current/metadata.json"
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -153,10 +151,6 @@ class Settings:
             window_completion_grace_seconds=_env_int(
                 "IASG_WINDOW_COMPLETION_GRACE_SECONDS",
                 cls.window_completion_grace_seconds,
-            ),
-            model_path=os.getenv("IASG_MODEL_PATH", cls.model_path),
-            model_metadata_path=os.getenv(
-                "IASG_MODEL_METADATA_PATH", cls.model_metadata_path
             ),
         )
 

@@ -121,11 +121,24 @@ class PolicyWriter:
         evidence_count = int(
             (decision.explanation or {}).get("deterministic_evidence_count") or 0
         )
+        final = (decision.explanation or {}).get("final") or {}
+        behavioural_throttle = bool(final.get("behavioural_throttle_authorized"))
         if decision.action == ACTION_THROTTLE:
-            if decision.confidence < guard.minimum_confidence_throttle:
-                return "confidence is below the throttle minimum"
-            if evidence_count < guard.minimum_deterministic_evidence_throttle:
-                return "deterministic evidence is below the throttle minimum"
+            if behavioural_throttle:
+                baseline = (decision.explanation or {}).get("baseline") or {}
+                if not guard.behavioural_throttle_enabled:
+                    return "behavioural throttles are disabled"
+                if not baseline.get("baseline_ready"):
+                    return "behavioural throttle requires a ready baseline"
+                if float(baseline.get("deviation") or 0) < guard.behavioural_throttle_minimum_deviation:
+                    return "behavioural deviation is below the throttle minimum"
+                if not decision.method or not decision.route_template:
+                    return "behavioural throttle must be endpoint scoped"
+            else:
+                if decision.confidence < guard.minimum_confidence_throttle:
+                    return "confidence is below the throttle minimum"
+                if evidence_count < guard.minimum_deterministic_evidence_throttle:
+                    return "deterministic evidence is below the throttle minimum"
             if not guard.minimum_throttle_rpm <= decision.requests_per_minute <= guard.maximum_throttle_rpm:
                 return "throttle rate is outside configured bounds"
         if decision.action == ACTION_TEMP_BLOCK:

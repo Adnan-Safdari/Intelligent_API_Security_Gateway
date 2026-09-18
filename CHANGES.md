@@ -291,10 +291,9 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   hysteresis, and threshold-change cooldowns, and learns only from windows
   considered safe.
 - Added a validated 0-100 adaptive risk calculation combining deterministic
-  evidence, endpoint deviation, campaign facts, and a small advisory ML weight.
-  Policy confidence is calculated separately from deterministic evidence and
-  campaign correlation; an ML-only anomaly can produce monitor advice but not
-  enforcement (`control-plane/iasg/adaptive/risk.py`).
+  evidence, endpoint deviation, and campaign facts. Policy confidence is
+  calculated separately from deterministic evidence and campaign correlation
+  (`control-plane/iasg/adaptive/risk.py`).
 - Added monitor, manual, and automatic operating modes plus a durable policy
   recommendation lifecycle. PostgreSQL now stores versioned settings,
   endpoint baselines, pending/approved/active/expired/revoked recommendations,
@@ -309,22 +308,6 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   and the more specific endpoint policy wins within the same origin
   (`gateway/internal/policy/store.go`). Policy telemetry now includes policy and
   campaign IDs, risk, confidence, mode, issuer, and normalized scope.
-- Added safe optional model loading (`control-plane/iasg/ml/scorer.py`) and a
-  reproducible Isolation Forest training/evaluation pipeline. Artifacts record
-  dataset and runtime schema versions, exact feature order, training runs,
-  library version, medians, score scale, admission rule, and whether the model
-  is loadable by the runtime. Missing or incompatible models leave adaptive
-  scoring operational with `model_available=false`.
-- Added protocol-aware evaluation (`control-plane/iasg/ml/evaluate.py`): the
-  threshold is selected on validation against a 1% false-positive budget for
-  every sufficiently supported benign persona, test is read once, small
-  personas receive confidence intervals, and coverage, conditional recall, and
-  operational recall are reported separately per attack scenario.
-- Added model experiment artifacts under `models/` while keeping reproducible
-  `.joblib` binaries ignored. The v2 baseline exposed 2.1% pooled operational
-  recall and an inability to extrapolate beyond benign training ranges. The
-  optional repeated `login_regularity` feature raised slow-brute-force recall
-  to 93.9% and pooled recall to 22.0%, but is explicitly not runtime-loadable.
 - Froze `datasets/v3`, rebuilt from 23 clean runs against feature spec v2 with
   16,438 rows and the runtime's 13-feature schema. It adds derived
   `endpoint_method_deviation` and evaluation-only `detector_fired` and
@@ -335,10 +318,6 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   The value is zero for all captured benign personas and about 54-99.9% for the
   scanning scenarios. `datasets/v4` freezes the same 23 runs under this
   14-feature schema and contains 16,438 rows.
-- Added v3/v4 model artifacts. The plain v4 Isolation Forest matches the current
-  feature schema and is marked runtime-loadable; the experiments also show why
-  pooled recall is misleading when a model mostly re-detects requests the
-  gateway already caught.
 
 ### Features modified
 
@@ -350,11 +329,9 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   evaluation can measure attack windows missed by both without treating a
   blocked request—which never reached a detector—as a detector miss.
 - The feature contract advanced from v1/12 features (`datasets/v2`) to v2/13
-  features (`datasets/v3`) and then v3/14 features (`datasets/v4`). Model
-  training reads and stamps the frozen dataset's own schema instead of assuming
-  the current runtime schema.
+  features (`datasets/v3`) and then v3/14 features (`datasets/v4`).
 - Policy decisions gained stable policy IDs, target/scope, risk and confidence,
-  issuer/mode, baseline/config/model versions, supersession, expiry, and a
+  issuer/mode, baseline/config versions, supersession, expiry, and a
   structured explanation. The Go gateway accepts both legacy `temp_block` and
   the adaptive Redis wire spelling `temporary_block` during migration.
 - Policy deletion from the dashboard now validates addresses with Node's IP
@@ -382,9 +359,6 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   (`d0cc08c`). PostgreSQL payloads now retain canonical `temp_block`, while only
   the Redis policy serializer rewrites it to `temporary_block` for the Go wire
   contract.
-- Fixed schema-mismatch handling in training: an old frozen dataset is rejected
-  by default, may be trained only with an explicit advisory override, and can no
-  longer be mislabeled as compatible with the runtime.
 
 ### Security/enforcement changes
 
@@ -401,9 +375,8 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   pending recommendations are suppressed until expiry or the configured change
   cooldown; approval delay consumes the original bounded enforcement window
   rather than granting a fresh TTL.
-- Baseline-derived throttles are bounded by configured RPM limits. ML can adjust
-  risk only as advisory input and cannot supply policy confidence or satisfy the
-  deterministic-evidence requirement for enforcement.
+- Baseline-derived throttles are bounded by configured RPM limits and still
+  require deterministic evidence and confidence for enforcement.
 - Analyst escalation remains an alert layered over a bounded throttle/block;
   it does not create a stronger fourth automatic gateway action.
 
@@ -412,24 +385,17 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
 - Added complete adaptive JSON configuration in
   `control-plane/configs/adaptive.json.example`: baseline windows and MAD
   parameters, risk weights and detector points, score thresholds, confidence
-  weights, action/duration/RPM ceilings, evidence and ML thresholds, change
+  weights, action/duration/RPM ceilings, evidence thresholds, change
   cooldowns, analyst escalation thresholds, and emergency CIDR lists.
 - Added environment settings for arrival/health streams, window consumer group
-  and grace period, adaptive JSON/path input, and deployed model/metadata paths
-  in `control-plane/.env.example`.
+  and grace period, and adaptive JSON/path input in `control-plane/.env.example`.
 - Adaptive settings are persisted and versioned in PostgreSQL. Dashboard saves
   validate the complete schema and use optimistic version checks so a stale
   page cannot overwrite a newer configuration.
-- Added `models/**/*.joblib` to `.gitignore`; model metadata and evaluation
-  results remain tracked and reproducible from frozen datasets.
 
 ### Infrastructure/Docker changes
 
-- Changed the control-plane image from Alpine to `python:3.12-slim` so official
-  NumPy/SciPy/scikit-learn wheels are usable without compiling on startup.
-- Compose now installs the `postgres` and `ml` extras, mounts frozen datasets
-  read-only, persists deployed models in `control_plane_models`, and supplies
-  telemetry-health and model artifact paths.
+- Compose installs the `postgres` extra and supplies telemetry-health settings.
 - Extended the collection profile with seed and sessions-per-persona controls
   and a capture deadline longer than traffic, preventing the final in-flight
   completions from being misread as a quiet partial window.
@@ -438,7 +404,7 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
 
 - Added `control-plane/tests/test_adaptive_enforcement.py`, covering baseline
   warm-up/learning safety, median/MAD thresholds, hysteresis, risk/confidence
-  separation, all three modes, action ceilings, evidence/ML guardrails,
+  separation, all three modes, action ceilings, evidence guardrails,
   emergency lists, scope/cooldown/expiry, no-renewal behavior, analyst approval,
   writer revalidation, and dry-run/per-cycle caps.
 - Added Go adaptive-policy tests for legacy and expanded wire formats,
@@ -447,15 +413,10 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
 - Expanded PostgreSQL tests for adaptive configuration, baselines,
   recommendations, lifecycle/audit durability, approval, and canonical-versus-
   wire action serialization.
-- Added ML tests for artifact metadata, safe no-model behavior, compatible and
-  incompatible schema loading, scoring, and trained model output.
 - Expanded dataset tests for unplanned traffic, persona preservation,
   anonymization, endpoint deviation, build-time integrity checks, strict
   malformed-record handling, detector/gateway metadata isolation, and frozen
   artifact verification.
-- Model experiments and reports explicitly measured per-persona false positives,
-  held-out-scenario coverage/recall, random-seed stability, gateway-missed
-  minutes, and alternatives that did not improve the model.
 
 ### Documentation changes
 
@@ -464,24 +425,17 @@ Commits covered: `ade0da8`, `90b749a`, `8148536`, `e8a7069`, `1840af9`,
   client identity and telemetry.
 - Added `datasets/README.md`, documenting every frozen artifact, null semantics,
   split rules, leakage boundaries, manifests, and verification/rebuild workflow.
-- Added and refined `gateway/docs/anomaly-evaluation.md` with the fixed 1%
-  per-persona false-positive budget, 100-row gate, confidence intervals,
-  coverage/conditional/operational recall, full-window admission, run-level
-  benign holdout, and separate model/policy delay definitions.
-- Added `gateway/docs/adaptive-policy.md` and updated the feature, policy, and
+- Added `gateway/docs/adaptive-policy.md` and updated the policy and
   system-architecture documentation for adaptive baselines, guardrails,
-  lifecycle, endpoint-scoped policies, and the model trust boundary.
-- Added `gateway/docs/anomaly-model-results.md`, recording baseline and
-  login-regularity results, schema/deployment limitations, failed alternatives,
-  and the Isolation Forest extrapolation problem.
+  lifecycle, and endpoint-scoped policies.
 - Added `attack-detection-options.pdf`, which evaluates deterministic follow-up
   rules on v4. The recommended unmatched-route and consecutive failed-login
   rules catch 65 of 76 gateway-missed attack minutes with no observed false
-  positives; combined with the retained anomaly model, 75 of 76 are covered.
+  positives; the remaining missed traffic is documented for future detector work.
   The document recommends implementing those behaviors in the deterministic Go
   detectors instead of adding another classifier or LLM decision path.
-- Updated MkDocs navigation for the evaluation, adaptive-policy, model-results,
-  dataset, and network-blocking material.
+- Updated MkDocs navigation for adaptive-policy, dataset, and network-blocking
+  material.
 
 Commits covered: `d26e0ba`, `c9c37a2`, `5de1eb0`, `9efe91f`, `c2d22df`,
 `56a6585`, `cd0666d`, `d0cc08c`, `a1362ee`, `4a9a055`, `f4b13c5`,

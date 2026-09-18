@@ -150,8 +150,7 @@ Open **Adaptive enforcement**.
   enforcing gateway policy.
 - **Manual** holds recommendations for an analyst to approve, edit or reject.
 - **Automatic** is the default bounded mode: only guardrail-compliant throttle
-  or temporary-block recommendations can become policy; ML-only anomalies are
-  still monitor-only.
+  or temporary-block recommendations can become policy.
 
 Show the active-policy/recommendation audit and the endpoint-baseline section.
 The point is not “AI blocks users”; it is that learning is visible, decisions

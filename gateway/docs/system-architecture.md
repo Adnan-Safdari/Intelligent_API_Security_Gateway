@@ -70,7 +70,6 @@ flowchart TD
         Runner[Runner cycle]
         Windows[Completed 60-second windows]
         Baselines[Endpoint median/MAD baselines]
-        Model[Advisory Isolation Forest]
     end
 
     Chain -->|background event publication| Redis
@@ -78,9 +77,7 @@ flowchart TD
     Chain -->|bounded atomic quota check when a rate applies| Redis
     Redis --> Runner
     Runner --> Windows --> Baselines
-    Windows --> Model
     Baselines --> Runner
-    Model --> Runner
     Runner --> Redis
     Runner --> PG
     PG --> Dashboard[Next.js dashboard]
