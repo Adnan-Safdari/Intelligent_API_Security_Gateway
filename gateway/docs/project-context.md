@@ -420,9 +420,8 @@ on it, the same way the rest of this document should be read.
 Known reconciliation passes: the gateway was originally detect-and-log only;
 enforcement and the adaptive control-plane engine
 path were added afterward and are documented in
-[Policy Enforcement](policy-enforcement.md),
-[Adaptive Policy and Analyst Control](adaptive-policy.md), and
-[Feature Specification](anomaly-features.md) respectively. The console's login
+[Policy Enforcement](policy-enforcement.md) and
+[Adaptive Policy and Analyst Control](adaptive-policy.md). The console's login
 system was later removed entirely (`gateway-dashboard/lib/auth.js` is a stub);
 see [Command Center Dashboard](modules/dashboard.md).
 

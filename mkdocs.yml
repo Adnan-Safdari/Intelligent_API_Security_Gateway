@@ -64,9 +64,6 @@ nav:
       - Network-Level Blocking: network-level-blocking.md
       - Control Plane: control-plane.md
   - Anomaly Detection:
-      - Feature Specification: anomaly-features.md
-      - Evaluation Protocol: anomaly-evaluation.md
-      - Model Results: anomaly-model-results.md
       - Adaptive Policy and Analyst Control: adaptive-policy.md
   - Modules:
       - Proxy Module: modules/proxy-module.md

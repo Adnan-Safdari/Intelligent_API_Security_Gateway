@@ -1,0 +1,1500 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Engineering documentation for the Go-based API security gateway.">
+      
+      
+      
+      
+        <link rel="prev" href="../redis-telemetry/">
+      
+      
+        <link rel="next" href="../../running-locally/">
+      
+      
+      <link rel="icon" href="../../assets/blank-favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Command Center Dashboard - Intelligent API Security Gateway</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.6f8fc17f.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#command-center-dashboard" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Intelligent API Security Gateway" class="md-header__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent API Security Gateway
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Command Center Dashboard
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Intelligent API Security Gateway" class="md-nav__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent API Security Gateway
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project-context/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Context
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Architecture
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../system-architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    System Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../request-lifecycle/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Request Lifecycle
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../project-structure/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Structure
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reverse-proxy-logic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Reverse Proxy Logic
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../client-ip/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Identifying the Client
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Security Pipeline
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Security Pipeline
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../detection-signals/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Detection Signals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../policy-enforcement/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Policy Enforcement
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../network-level-blocking/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network-Level Blocking
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../control-plane/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Control Plane
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Anomaly Detection
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Anomaly Detection
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adaptive-policy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adaptive Policy and Analyst Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Modules
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Modules
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../proxy-module/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Proxy Module
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../signal-tests/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Signal Test Scripts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../redis-telemetry/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Redis Telemetry
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Command Center Dashboard
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Command Center Dashboard
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pages
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-routes" class="md-nav__link">
+    <span class="md-ellipsis">
+      API routes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Shared modules
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setup warnings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overrides
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Environment
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running it
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operations
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Operations
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../running-locally/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running the Gateway Locally
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../running-with-docker/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running with Docker
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../protecting-your-own-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Protecting Your Own API
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pages" class="md-nav__link">
+    <span class="md-ellipsis">
+      Pages
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#api-routes" class="md-nav__link">
+    <span class="md-ellipsis">
+      API routes
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#shared-modules" class="md-nav__link">
+    <span class="md-ellipsis">
+      Shared modules
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#setup-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Setup warnings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      Settings
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#overrides" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overrides
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#environment" class="md-nav__link">
+    <span class="md-ellipsis">
+      Environment
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#running-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      Running it
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="command-center-dashboard">Command Center Dashboard<a class="headerlink" href="#command-center-dashboard" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>The operations console is a <strong>Next.js 15</strong> app in <code>gateway-dashboard/</code>, served
+on <a href="http://localhost:5177">http://localhost:5177</a>. It is a single App Router application — not a
+separate Express API plus React SPA.</p>
+<p>It reads live state from Redis and the durable record from Postgres, and it is
+the one place an operator can overrule the agent.</p>
+<h2 id="pages">Pages<a class="headerlink" href="#pages" title="Permanent link">&para;</a></h2>
+<p>The pages live in the <code>(console)</code> route group, which supplies the shared shell.
+The console runs open -- there is no login -- so whoever can reach the port can
+use every control on it:</p>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>File</th>
+<th>Shows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/</code></td>
+<td><code>app/(console)/page.jsx</code></td>
+<td>Overview: live traffic, stats, attack map, and setup warnings (below)</td>
+</tr>
+<tr>
+<td><code>/campaigns</code></td>
+<td><code>app/(console)/campaigns/page.jsx</code></td>
+<td>Campaigns the control plane has formed</td>
+</tr>
+<tr>
+<td><code>/events</code></td>
+<td><code>app/(console)/events/page.jsx</code></td>
+<td>The raw <code>iasg:events</code> stream</td>
+</tr>
+<tr>
+<td><code>/policy</code></td>
+<td><code>app/(console)/policy/page.jsx</code></td>
+<td>Active <code>policy:&lt;ip&gt;</code> keys, and overrides</td>
+</tr>
+<tr>
+<td><code>/history</code></td>
+<td><code>app/(console)/history/page.jsx</code></td>
+<td>Durable campaign history from Postgres</td>
+</tr>
+<tr>
+<td><code>/settings</code></td>
+<td><code>app/(console)/settings/page.jsx</code></td>
+<td>Live enforcement settings</td>
+</tr>
+<tr>
+<td><code>/adaptive</code></td>
+<td><code>app/(console)/adaptive/page.jsx</code></td>
+<td>Adaptive mode, guardrails and baselines; the analyst approval queue — see <a href="../../adaptive-policy/">Adaptive Policy and Analyst Control</a></td>
+</tr>
+<tr>
+<td><code>/signals</code></td>
+<td><code>app/(console)/signals/page.jsx</code></td>
+<td>The six gateway detectors, one row per <code>internal/signals/*.go</code> file, with real alert counts, each one's configured threshold, and which four of the six can arm the reflex to block on their own — see <a href="../../detection-signals/">Detection Signals</a></td>
+</tr>
+<tr>
+<td><code>/ip/&lt;address&gt;</code></td>
+<td><code>app/(console)/ip/[address]/page.jsx</code></td>
+<td>Everything known about one address in one place: its events, policy status, campaign membership and signals tripped, previously spread across four pages</td>
+</tr>
+</tbody>
+</table>
+<h2 id="api-routes">API routes<a class="headerlink" href="#api-routes" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Route</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/api/overview/route.js</code></td>
+<td>Live stats and events for the overview, and the setup checks over the last 500 events</td>
+</tr>
+<tr>
+<td><code>app/api/campaigns/route.js</code></td>
+<td>Active campaigns</td>
+</tr>
+<tr>
+<td><code>app/api/events/route.js</code></td>
+<td>The full event stream for investigation, deeper than the live poll's slice</td>
+</tr>
+<tr>
+<td><code>app/api/history/route.js</code></td>
+<td>Campaign history from Postgres</td>
+</tr>
+<tr>
+<td><code>app/api/overrides/route.js</code></td>
+<td>Operator instructions to the agent</td>
+</tr>
+<tr>
+<td><code>app/api/settings/route.js</code></td>
+<td>Read, change and revert the live enforcement settings</td>
+</tr>
+<tr>
+<td><code>app/api/adaptive/route.js</code></td>
+<td>Adaptive config, baselines, recommendations and audit for the console</td>
+</tr>
+<tr>
+<td><code>app/api/adaptive/settings/route.js</code></td>
+<td>Change the durable adaptive configuration</td>
+</tr>
+<tr>
+<td><code>app/api/adaptive/overrides/route.js</code></td>
+<td>An analyst's manual policy instruction on the adaptive path</td>
+</tr>
+<tr>
+<td><code>app/api/adaptive/recommendations/[id]/route.js</code></td>
+<td>Approve, edit or reject one pending recommendation</td>
+</tr>
+<tr>
+<td><code>app/api/ip/[address]/route.js</code></td>
+<td>Everything known about one address, for the investigation page</td>
+</tr>
+<tr>
+<td><code>app/api/policies/[address]/route.js</code></td>
+<td>Delete an address's active policy immediately</td>
+</tr>
+<tr>
+<td><code>app/api/admin/reset/route.js</code></td>
+<td>Clear the history and live telemetry</td>
+</tr>
+<tr>
+<td><code>app/api/health/route.js</code></td>
+<td>Liveness</td>
+</tr>
+</tbody>
+</table>
+<h2 id="shared-modules">Shared modules<a class="headerlink" href="#shared-modules" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>app/ui/chrome.jsx</code></td>
+<td>Console shell and page headers</td>
+</tr>
+<tr>
+<td><code>app/ui/parts.jsx</code></td>
+<td>Shared presentational pieces</td>
+</tr>
+<tr>
+<td><code>app/ui/icons.jsx</code></td>
+<td>Every icon the console uses (<code>lucide-react</code>), imported once</td>
+</tr>
+<tr>
+<td><code>app/ui/store.jsx</code></td>
+<td>Client-side polling provider</td>
+</tr>
+<tr>
+<td><code>app/ui/format.js</code></td>
+<td>Formatting helpers</td>
+</tr>
+<tr>
+<td><code>app/ui/export.js</code></td>
+<td>CSV export of whatever rows are currently on screen, filters included</td>
+</tr>
+<tr>
+<td><code>app/traffic-map.jsx</code></td>
+<td>Geographic plot of source addresses</td>
+</tr>
+<tr>
+<td><code>lib/redis.js</code></td>
+<td>Redis client</td>
+</tr>
+<tr>
+<td><code>lib/postgres.js</code></td>
+<td>Postgres pool</td>
+</tr>
+<tr>
+<td><code>lib/telemetry.js</code></td>
+<td>Reads the event stream and stats</td>
+</tr>
+<tr>
+<td><code>lib/plane.js</code></td>
+<td>Readers for what the control plane concluded — campaigns, policies, feedback — shared by the campaigns feed and the per-address investigation view</td>
+</tr>
+<tr>
+<td><code>lib/adaptive.js</code></td>
+<td>Validates a proposed adaptive configuration and a recommendation edit against the live guardrails</td>
+</tr>
+<tr>
+<td><code>lib/setup-checks.mjs</code></td>
+<td>The Overview's setup warnings, computed from recent events</td>
+</tr>
+<tr>
+<td><code>app/ui/setup-warnings.jsx</code></td>
+<td>Renders them; dismissal is per browser</td>
+</tr>
+<tr>
+<td><code>lib/adaptive-mode.mjs</code></td>
+<td>The three adaptive modes' labels and behaviour copy, shared by the settings form and its confirmation dialog</td>
+</tr>
+<tr>
+<td><code>lib/geo.js</code></td>
+<td>Address to coordinates</td>
+</tr>
+<tr>
+<td><code>lib/auth.js</code></td>
+<td>A stub — see below</td>
+</tr>
+</tbody>
+</table>
+<p>Every route still calls <code>requireRole(...)</code> with the role it would need if
+login were restored, but the stub grants every role unconditionally, so the
+argument is currently a statement of intent rather than an enforced check.</p>
+<h2 id="setup-warnings">Setup warnings<a class="headerlink" href="#setup-warnings" title="Permanent link">&para;</a></h2>
+<p>Two deployment mistakes leave the gateway running and recording while it
+protects nothing, and neither raises an error. Overview checks the last 500
+events (Docker healthcheck probes excluded) for both and shows a warning
+naming what it saw:</p>
+<table>
+<thead>
+<tr>
+<th>Warning</th>
+<th>Shown when</th>
+<th>Usually means</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Most traffic comes from private addresses</td>
+<td>At least 30 requests, 90% or more from private addresses</td>
+<td><code>server.trusted_proxies</code> does not list the proxy in front of the gateway, so every request is attributed to it. The gateway and the control plane never block private addresses.</td>
+</tr>
+<tr>
+<td>Endpoints missing from the route table</td>
+<td>An unmatched endpoint called by at least 2 clients, at least 5 times, and at least twice per client</td>
+<td><code>routes.templates</code> does not describe the API, so its own clients count toward unknown-route scanning.</td>
+</tr>
+</tbody>
+</table>
+<p>Both are heuristics, so each warning says when it is expected: an API whose
+clients really are on a private network, or testing from the same machine.</p>
+<p>The route check is built to ignore attacks. A scanner requests many paths once
+each, and a botnet requests one path once per address; neither repeats a path
+the way a real client does. Requests flagged by the SQL injection or
+path-traversal detectors are left out. Requests flagged by unknown-route
+scanning are kept, because a missing route makes its own clients trip that
+detector. Segments that look like identifiers are grouped, so <code>/users/1</code> and
+<code>/users/2</code> count as <code>/users/{id}</code>, the template the warning suggests.</p>
+<p>Dismissing a warning hides it in that browser until what it reports changes: a
+different address, or another missing route, shows again.</p>
+<h2 id="settings">Settings<a class="headerlink" href="#settings" title="Permanent link">&para;</a></h2>
+<p><code>/settings</code> changes what the running gateway detects and blocks, without a
+restart. Two Redis keys carry it:</p>
+<table>
+<thead>
+<tr>
+<th>Key</th>
+<th>Written by</th>
+<th>Holds</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>iasg:settings</code></td>
+<td>The console</td>
+<td>The override that was asked for</td>
+</tr>
+<tr>
+<td><code>iasg:settings:effective</code></td>
+<td>The gateway</td>
+<td>What it is actually enforcing</td>
+</tr>
+</tbody>
+</table>
+<p>The page reads the <strong>effective</strong> key, never the requested one. The gateway
+validates independently and can refuse a change -- a duration that will not
+parse, a CIDR that will not -- and when it does, the two keys disagree.
+Building the form from the request would tell an operator their change was live
+when it was not.</p>
+<p><code>Revert to file</code> deletes the override, and the gateway returns to exactly the
+settings it booted with. The YAML file stays the source of truth: the override
+is a layer on top of it, not a replacement for it.</p>
+<p>Only the <code>enforcement</code> block travels this way. Listen address, backend URL,
+timeouts and the Redis connection are structural -- changing them means
+rebuilding the server -- so they stay in the file, where a restart applies them.</p>
+<p>Both actions are typed confirmations rather than plain buttons, for the same
+reason the reset is: the console is open, and these change what a security
+gateway is doing to live traffic.</p>
+<h2 id="overrides">Overrides<a class="headerlink" href="#overrides" title="Permanent link">&para;</a></h2>
+<p>An operator's instruction is written to the <code>iasg_overrides</code> stream and read by
+the control plane <strong>before</strong> it decides anything, so a human does not have to
+wait for the agent to notice a campaign first.</p>
+<p>Overrides still pass through the same simulation and safety checks as the
+agent's own decisions, so an allowlisted range is protected from a mistyped
+instruction exactly as it is from the agent. Policy written this way is
+recorded with <code>source: human</code>.</p>
+<h2 id="environment">Environment<a class="headerlink" href="#environment" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>REDIS_HOST</code>, <code>REDIS_PORT</code></td>
+<td>Live panels</td>
+</tr>
+<tr>
+<td><code>IASG_POSTGRES_URL</code></td>
+<td>Campaign history</td>
+</tr>
+</tbody>
+</table>
+<h2 id="running-it">Running it<a class="headerlink" href="#running-it" title="Permanent link">&para;</a></h2>
+<p>Under Compose it starts automatically. Standalone:</p>
+<div class="highlight"><pre><span></span><code><span class="nb">cd</span><span class="w"> </span>gateway-dashboard
+npm<span class="w"> </span>ci
+npm<span class="w"> </span>run<span class="w"> </span>dev<span class="w">      </span><span class="c1"># next dev -H 0.0.0.0 -p 5177</span>
+npm<span class="w"> </span>start<span class="w">        </span><span class="c1"># production build on the same port</span>
+</code></pre></div>
+<p>The map plots public source addresses; private and container traffic is drawn
+at the gateway site instead. On Docker Desktop, host-originated traffic all
+arrives as one address — see the warning in
+<a href="../../running-with-docker/">Running with Docker</a>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "content.code.copy"], "search": "../../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>

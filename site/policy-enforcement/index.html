@@ -1,0 +1,1629 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Engineering documentation for the Go-based API security gateway.">
+      
+      
+      
+      
+        <link rel="prev" href="../detection-signals/">
+      
+      
+        <link rel="next" href="../network-level-blocking/">
+      
+      
+      <link rel="icon" href="../assets/blank-favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Policy Enforcement - Intelligent API Security Gateway</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.6f8fc17f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#policy-enforcement-and-adaptive-rate-limiting" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Intelligent API Security Gateway" class="md-header__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent API Security Gateway
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Policy Enforcement
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Intelligent API Security Gateway" class="md-nav__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent API Security Gateway
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-context/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Context
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Architecture
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../system-architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    System Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../request-lifecycle/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Request Lifecycle
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-structure/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Structure
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reverse-proxy-logic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Reverse Proxy Logic
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client-ip/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Identifying the Client
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Security Pipeline
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Security Pipeline
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../detection-signals/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Detection Signals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Policy Enforcement
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Policy Enforcement
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#policy-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      Policy contract
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Policy contract">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-escalate-already-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      What escalate already means
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-quota-and-expiry" class="md-nav__link">
+    <span class="md-ellipsis">
+      Distributed quota and expiry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#structured-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      Structured telemetry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tests
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verify-with-docker-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Verify with Docker Compose
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Code references
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-level-blocking/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network-Level Blocking
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../control-plane/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Control Plane
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Anomaly Detection
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Anomaly Detection
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-policy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adaptive Policy and Analyst Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Modules
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Modules
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/proxy-module/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Proxy Module
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/signal-tests/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Signal Test Scripts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/redis-telemetry/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Redis Telemetry
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/dashboard/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Command Center Dashboard
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operations
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Operations
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-locally/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running the Gateway Locally
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-with-docker/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running with Docker
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../protecting-your-own-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Protecting Your Own API
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#policy-contract" class="md-nav__link">
+    <span class="md-ellipsis">
+      Policy contract
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Policy contract">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#what-escalate-already-means" class="md-nav__link">
+    <span class="md-ellipsis">
+      What escalate already means
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#configuration" class="md-nav__link">
+    <span class="md-ellipsis">
+      Configuration
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#distributed-quota-and-expiry" class="md-nav__link">
+    <span class="md-ellipsis">
+      Distributed quota and expiry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#structured-telemetry" class="md-nav__link">
+    <span class="md-ellipsis">
+      Structured telemetry
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#tests" class="md-nav__link">
+    <span class="md-ellipsis">
+      Tests
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#verify-with-docker-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      Verify with Docker Compose
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Code references
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="policy-enforcement-and-adaptive-rate-limiting">Policy enforcement and adaptive rate limiting<a class="headerlink" href="#policy-enforcement-and-adaptive-rate-limiting" title="Permanent link">&para;</a></h1>
+<p>The Go gateway enforces decisions already made by the Python control plane or
+its own reflex. Policy lookup uses a background-refreshed local snapshot; the
+gateway never calls Python, PostgreSQL, or a model while handling a request.
+Distributed rate accounting is the one synchronous Redis operation: a bounded
+atomic token-bucket check, only when a policy or opt-in baseline names a rate.
+Requests are forwarded immediately, refused with <code>403</code>, or refused with <code>429</code>
+and <code>Retry-After</code>. Throttling never sleeps or queues a request.</p>
+<h2 id="policy-contract">Policy contract<a class="headerlink" href="#policy-contract" title="Permanent link">&para;</a></h2>
+<p>The existing Python <code>PolicyDecision.to_json()</code> format remains accepted. Store
+this JSON as <code>policy:203.0.113.55</code> for address-wide policy or
+<code>policy:&lt;ip&gt;:&lt;scope-digest&gt;</code> for endpoint scope, always with a Redis expiry:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"throttle"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"policy_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a5484d97-0791-4eb4-b1cb-6a7518f94b22"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"scope"</span><span class="p">:</span><span class="w"> </span><span class="s2">"client_endpoint"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"target_identity"</span><span class="p">:</span><span class="w"> </span><span class="s2">"203.0.113.55"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"endpoint_scope"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"POST"</span><span class="p">,</span><span class="w"> </span><span class="nt">"route_template"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/api/login"</span><span class="p">},</span>
+<span class="w">  </span><span class="nt">"campaign_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"demo-adaptive"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"confidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.95</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"risk_score"</span><span class="p">:</span><span class="w"> </span><span class="mf">81.5</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Repeated login attempts"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"agent"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"issued_at"</span><span class="p">:</span><span class="w"> </span><span class="s2">"2026-09-05T12:00:00+00:00"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"expires_in"</span><span class="p">:</span><span class="w"> </span><span class="mi">60</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"requests_per_minute"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span>
+<span class="p">}</span>
+</code></pre></div>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>action</code></td>
+<td>One of the action labels below</td>
+</tr>
+<tr>
+<td><code>policy_id</code>, <code>scope</code>, <code>target_identity</code>, <code>endpoint_scope</code></td>
+<td>Lifecycle identity and optional normalized method/route scope</td>
+</tr>
+<tr>
+<td><code>campaign_id</code>, <code>risk_score</code>, <code>confidence</code>, <code>reason</code>, <code>issued_at</code></td>
+<td>Explainable decision metadata</td>
+</tr>
+<tr>
+<td><code>source</code></td>
+<td>Existing origin, usually <code>agent</code> or <code>human</code>; defaults to <code>agent</code> when absent</td>
+</tr>
+<tr>
+<td><code>expires_in</code></td>
+<td>Declared lifetime in seconds; <strong>Redis <code>PTTL</code> is authoritative</strong></td>
+</tr>
+<tr>
+<td><code>requests_per_minute</code></td>
+<td>Positive sustained rate for <code>throttle</code>; absent or zero uses the configured fallback</td>
+</tr>
+<tr>
+<td><code>route</code>, <code>method</code></td>
+<td>Legacy exact selectors, still accepted</td>
+</tr>
+</tbody>
+</table>
+<p>New adaptive policies use the same configured route-template table as
+telemetry, so resource IDs do not create high-cardinality scopes. The client
+identity is resolved with the trusted-proxy rules. A manual address-wide
+override outranks an adaptive endpoint policy; among policies at the same
+priority, the endpoint scope wins.</p>
+<table>
+<thead>
+<tr>
+<th>Action</th>
+<th>Behaviour</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>allow</code>, <code>monitor</code></td>
+<td>Forward normally; do not apply the optional baseline to this match</td>
+</tr>
+<tr>
+<td><code>throttle</code></td>
+<td>Consume one token at the policy's rate; return <code>429</code> when none is available</td>
+</tr>
+<tr>
+<td><code>block</code>, <code>temp_block</code>, <code>temporary_block</code></td>
+<td>Return <code>403</code> without forwarding</td>
+</tr>
+<tr>
+<td><code>escalate</code></td>
+<td>Preserve the existing <code>403</code> behaviour described below</td>
+</tr>
+<tr>
+<td>Unknown</td>
+<td>Forward normally; an unrecognised label cannot create enforcement through a fallback</td>
+</tr>
+</tbody>
+</table>
+<p>The Python writer does not create <code>monitor</code> keys because they perform no
+enforcement. The gateway accepts them for compatibility with existing policy
+producers. The first applicable source wins: control-plane policies outrank
+gateway reflex decisions, including a less restrictive <code>allow</code> or <code>monitor</code>.
+A scoped policy only takes precedence on requests matching its selectors.</p>
+<h3 id="what-escalate-already-means">What <code>escalate</code> already means<a class="headerlink" href="#what-escalate-already-means" title="Permanent link">&para;</a></h3>
+<p><code>internal/policy/middleware.go</code> already treated <code>escalate</code> like <code>temp_block</code> and
+returned <code>403</code>. This remains unchanged. Separately, the Python runner writes
+the policy, produces its advisory explanation/assessment, then calls
+<code>AlertSink.raise_for()</code> to append one human-review alert per campaign to the
+<code>iasg_alerts</code> Redis stream. That stream is the existing alert mechanism; the
+gateway does not send notifications or call the control plane. Directly
+inserting an <code>escalate</code> key tests <code>403</code> but does not run Python's alert workflow.</p>
+<h2 id="configuration">Configuration<a class="headerlink" href="#configuration" title="Permanent link">&para;</a></h2>
+<p>This is the Go gateway's own configurable-limits surface — rate limits,
+timeouts, and the Redis policy lookup. It never reads <code>AdaptiveConfig</code> or
+Postgres directly; <code>adaptive-policy.md</code>'s "Configurable policy limits" is the
+control-plane side of that same category, on the other side of the <code>policy:</code>
+Redis keys.</p>
+<p>Merge these settings into the existing configuration; preserve local tuning.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">enforcement</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">policy</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">key_prefix</span><span class="p">:</span><span class="w"> </span><span class="s">"policy:"</span>
+<span class="w">    </span><span class="nt">refresh_interval</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5s</span>
+<span class="w">  </span><span class="nt">adaptive_rate_limit</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">fallback_requests_per_minute</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">60</span>
+<span class="w">    </span><span class="nt">burst</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">redis_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">25ms</span>
+<span class="w">    </span><span class="nt">policy_refresh_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2s</span>
+<span class="w">    </span><span class="nt">failure_backoff</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1s</span>
+<span class="w">    </span><span class="nt">cache_max_age</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10s</span>
+<span class="w">    </span><span class="nt">bucket_key_prefix</span><span class="p">:</span><span class="w"> </span><span class="s">"iasg:rate:"</span>
+<span class="w">  </span><span class="nt">rate_limit</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<span class="w">    </span><span class="nt">requests_per_minute</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100</span>
+<span class="w">    </span><span class="nt">burst</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">20</span>
+<span class="w">    </span><span class="nt">enforce</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre></div>
+<p><code>storage.redis</code> supplies the shared Redis address, credentials, database, and
+pool size. Enable <code>storage.redis.enabled</code> for distributed enforcement. Policy
+enforcement is opt-in in the example configuration. Replicas must use the same
+Redis database, key prefixes, and rate configuration.</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>fallback_requests_per_minute</code></td>
+<td>Rate for a legacy throttle policy with no positive rate; replaces the previous artificial delay</td>
+</tr>
+<tr>
+<td><code>adaptive_rate_limit.burst</code></td>
+<td>Maximum immediate token grant for policy and baseline quotas, capped at the applicable RPM</td>
+</tr>
+<tr>
+<td><code>redis_timeout</code></td>
+<td>Bounded quota operation/connect/pool wait; there are no command retries</td>
+</tr>
+<tr>
+<td><code>policy_refresh_timeout</code></td>
+<td>Total budget for a background scan across all pages; separate from the per-operation Redis timeout</td>
+</tr>
+<tr>
+<td><code>failure_backoff</code></td>
+<td>After Redis failure, temporarily bypass quota checks instead of repeatedly paying an outage timeout</td>
+</tr>
+<tr>
+<td><code>cache_max_age</code></td>
+<td>Maximum age of a successful policy snapshot before lookup fails open</td>
+</tr>
+<tr>
+<td><code>bucket_key_prefix</code></td>
+<td>Namespace for disposable distributed token-bucket state</td>
+</tr>
+<tr>
+<td><code>policy.refresh_interval</code></td>
+<td>Background polling cadence; new policies become visible at the next successful refresh</td>
+</tr>
+<tr>
+<td><code>rate_limit.enforce</code></td>
+<td>Opt-in baseline when no applicable policy supplies a different action</td>
+</tr>
+<tr>
+<td><code>rate_limit.requests_per_minute</code></td>
+<td>Baseline sustained rate; exemptions reuse <code>block.exempt_cidrs</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>rate_limit.enabled</code> still controls the independent per-IP flooding detector.
+It records evidence; it does not refuse requests. <code>enforce</code> controls the
+baseline. A throttle policy replaces the baseline in either direction.
+<code>enforcement.throttle.delay_ms</code> remains readable for configuration
+compatibility, but policy enforcement no longer delays requests.
+<code>rate_limit.burst</code> is a legacy field; distributed enforcement uses
+<code>adaptive_rate_limit.burst</code>. Adaptive settings require a gateway restart and
+are displayed, but cannot be changed, through the live settings wire.</p>
+<h2 id="distributed-quota-and-expiry">Distributed quota and expiry<a class="headerlink" href="#distributed-quota-and-expiry" title="Permanent link">&para;</a></h2>
+<p>Each bucket belongs to the resolved <strong>client IP + normalized route template + HTTP
+method + policy identity</strong>. Query parameters do not create new buckets.
+<code>/api/login</code> and <code>/api/products</code> are independent, as are <code>GET /api/login</code> and
+<code>POST /api/login</code>. Paths such as <code>/api/products/1</code> and <code>/api/products/2</code> share
+the configured <code>/api/products/{id}</code> bucket.</p>
+<p>Redis Lua performs refill, admission, decrement, and expiry atomically using
+Redis server time. A bucket starts with <code>min(burst, requests_per_minute)</code> tokens
+and refills at <code>requests_per_minute / 60</code> tokens per second. Thus a rate of
+20/minute with burst 5 admits five immediate requests and then roughly one
+every three seconds. This is a sustained-rate token bucket, not a hard
+20-request cap over every rolling minute. Replicas do not cache token grants,
+so their concurrent requests share the same allowance.</p>
+<p>An exhausted bucket returns <code>429</code> immediately. <code>Retry-After</code> is a positive
+integer number of seconds, rounded upward until another token can be granted.
+No goroutine sleeps waiting for refill.</p>
+<table>
+<thead>
+<tr>
+<th>Redis key</th>
+<th>Value and lifetime</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>policy:&lt;ip&gt;</code></td>
+<td>Existing JSON string, set by Python with a positive Redis TTL; never renewed by the gateway</td>
+</tr>
+<tr>
+<td><code>iasg:rate:&lt;digest&gt;</code></td>
+<td>Hash containing fractional <code>tokens</code> and <code>updated_ms</code>; digest is lowercase SHA-256 of JSON <code>[ip, path, method, policyKey, rawPolicyJSON]</code></td>
+</tr>
+<tr>
+<td><code>iasg:events</code></td>
+<td>Existing request event stream, now including policy details</td>
+</tr>
+<tr>
+<td><code>iasg_alerts</code></td>
+<td>Existing Python human-review alert stream for escalation</td>
+</tr>
+</tbody>
+</table>
+<p>The bucket prefix is configurable. Baseline buckets use empty policy key and
+raw JSON in their identity. Bucket expiry is the full-refill duration
+<code>ceil(capacity * 60000 / RPM)</code> milliseconds, capped by the policy's remaining
+<code>PTTL</code>. Changing the policy JSON creates a new policy identity. The Lua script
+also compares the current raw policy and checks <code>PTTL</code> atomically before
+charging: a deleted, replaced, or unexpiring policy cannot consume quota.
+This requires a shared Redis server; the existing <code>policy:&lt;ip&gt;</code> schema and
+multi-key Lua script are not Redis Cluster hash-slot compatible.</p>
+<p><code>policy.Store</code> loads values and millisecond TTLs together, then stores an
+absolute local expiry with each decision. Lookup checks that expiry on every
+request, even between refreshes. Expired, malformed, or unexpiring keys are
+not enforced. <code>expires_in</code> cannot extend an actual Redis TTL. A stale snapshot
+also stops enforcing after <code>cache_max_age</code>; a failed refresh clears it.
+Early block-policy deletion/replacement becomes visible on the next successful
+refresh, while natural expiry is checked locally on every request.</p>
+<p>When a policy expires, its bucket is no longer consulted. Normal forwarding
+resumes unless an independent reflex block or the opt-in baseline still
+applies. A failed quota check fails open; a cached block can remain effective
+until its actual expiry, snapshot-age bound, or the next failed refresh.
+Redis failure does not crash the gateway, wait for reconnection, or introduce
+an unbounded wait.</p>
+<h2 id="structured-telemetry">Structured telemetry<a class="headerlink" href="#structured-telemetry" title="Permanent link">&para;</a></h2>
+<p>Policy matches, including admitted throttled requests, add this optional
+object to the normal <code>iasg:events</code> record:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"policy"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">"action"</span><span class="p">:</span><span class="w"> </span><span class="s2">"throttle"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"source"</span><span class="p">:</span><span class="w"> </span><span class="s2">"agent"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"client_ip"</span><span class="p">:</span><span class="w"> </span><span class="s2">"203.0.113.55"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"route"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/api/login"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"method"</span><span class="p">:</span><span class="w"> </span><span class="s2">"POST"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"requests_per_minute"</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Repeated login attempts; quota_exhausted"</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">"outcome"</span><span class="p">:</span><span class="w"> </span><span class="s2">"throttled"</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>The existing top-level <code>decision</code> is retained (<code>rate_limited</code> for a 429).
+Policy outcomes are <code>allowed</code>, <code>throttled</code>, <code>blocked</code>, <code>matched</code> (unknown
+actions), or <code>fail_open</code> with a reason such as <code>redis_unavailable</code> or
+<code>policy_inactive</code>. Structured <code>policy_match</code> logs
+include <code>request_id</code>, <code>action</code>, <code>policy_source</code>, <code>client_ip</code>, <code>route</code>, <code>method</code>,
+<code>requests_per_minute</code>, <code>reason</code>, <code>outcome</code>, and <code>status</code>. Events are enqueued
+without waiting for Redis; a bounded telemetry queue drops events when full.
+Configure its capacity and background write timeout with
+<code>storage.redis.telemetry_queue_size</code> and
+<code>storage.redis.telemetry_write_timeout</code>.</p>
+<div class="highlight"><pre><span></span><code><span class="nt">storage</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">redis</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">telemetry_queue_size</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1024</span>
+<span class="w">    </span><span class="nt">telemetry_write_timeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">100ms</span>
+</code></pre></div>
+<p>The middleware order is client-IP resolver, telemetry event recorder, request
+logging, policy/reflex enforcer, request-body cap, telemetry snippet capture,
+reflex observer and detectors, then reverse proxy. A refused request is
+recorded without reading or inspecting its body. <code>X-Forwarded-For</code> is used only
+when the immediate TCP peer is trusted; the resolver walks the chain from the
+right to the first untrusted address.</p>
+<h2 id="tests">Tests<a class="headerlink" href="#tests" title="Permanent link">&para;</a></h2>
+<p>From <code>gateway/</code>:</p>
+<div class="highlight"><pre><span></span><code>go<span class="w"> </span>build<span class="w"> </span>./...
+go<span class="w"> </span>vet<span class="w"> </span>./...
+go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./...
+go<span class="w"> </span><span class="nb">test</span><span class="w"> </span>./internal/signals/<span class="w"> </span>-race
+</code></pre></div>
+<p>Run the real-Redis integration tests from the repository root:</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>infra/docker-compose.yml<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>redis
+docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>infra/docker-compose.yml<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--no-deps<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">IASG_TEST_REDIS_ADDR</span><span class="o">=</span>redis:6379<span class="w"> </span>gateway<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>sh<span class="w"> </span>-c<span class="w"> </span><span class="s1">'go test ./internal/policy/ -count=1'</span>
+</code></pre></div>
+<p>For a native PowerShell test run, set
+<code>$env:IASG_TEST_REDIS_ADDR = 'localhost:6379'</code> before <code>go test</code>. Integration
+tests skip when the environment variable is absent. The Go race detector
+requires CGO and a C compiler; use a toolchain with those installed.</p>
+<h2 id="verify-with-docker-compose">Verify with Docker Compose<a class="headerlink" href="#verify-with-docker-compose" title="Permanent link">&para;</a></h2>
+<p>These <strong>Bash</strong> commands start an isolated demo gateway on port 8083 using an
+unused Redis database 15. Reserve that database for the demo or choose another
+unused database everywhere below. They leave the normal gateway configuration,
+control-plane policies, dashboard settings, and event stream alone. Run from
+the repository root.</p>
+<div class="highlight"><pre><span></span><code>dc<span class="o">()</span><span class="w"> </span><span class="o">{</span><span class="w"> </span>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>infra/docker-compose.yml<span class="w"> </span><span class="s2">"</span><span class="nv">$@</span><span class="s2">"</span><span class="p">;</span><span class="w"> </span><span class="o">}</span>
+dc<span class="w"> </span>up<span class="w"> </span>-d<span class="w"> </span>redis<span class="w"> </span>vulnerable_api
+docker<span class="w"> </span>pull<span class="w"> </span>curlimages/curl:latest
+cat<span class="w"> </span>&gt;<span class="w"> </span>gateway/configs/adaptive-demo.yaml<span class="w"> </span><span class="s">&lt;&lt;'YAML'</span>
+<span class="s">server:</span>
+<span class="s">  host: 0.0.0.0</span>
+<span class="s">  port: 8082</span>
+<span class="s">  trusted_proxies: ["127.0.0.1/32"]</span>
+<span class="s">proxy:</span>
+<span class="s">  backend_url: http://vulnerable_api:5002</span>
+<span class="s">storage:</span>
+<span class="s">  redis:</span>
+<span class="s">    enabled: true</span>
+<span class="s">    host: redis</span>
+<span class="s">    port: 6379</span>
+<span class="s">    db: 15</span>
+<span class="s">enforcement:</span>
+<span class="s">  policy:</span>
+<span class="s">    enabled: true</span>
+<span class="s">    key_prefix: "policy:"</span>
+<span class="s">    refresh_interval: 100ms</span>
+<span class="s">  adaptive_rate_limit:</span>
+<span class="s">    fallback_requests_per_minute: 2</span>
+<span class="s">    burst: 2</span>
+<span class="s">    redis_timeout: 25ms</span>
+<span class="s">    failure_backoff: 1s</span>
+<span class="s">    cache_max_age: 1s</span>
+<span class="s">    bucket_key_prefix: "iasg:adaptive-demo:rate:"</span>
+<span class="s">  rate_limit:</span>
+<span class="s">    enabled: false</span>
+<span class="s">    enforce: false</span>
+<span class="s">  block:</span>
+<span class="s">    enabled: false</span>
+<span class="s">YAML</span>
+dc<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>-d<span class="w"> </span>--no-deps<span class="w"> </span>--name<span class="w"> </span>iasg-adaptive-demo<span class="w"> </span>-p<span class="w"> </span><span class="m">8083</span>:8082<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>-e<span class="w"> </span><span class="nv">IASG_CONFIG</span><span class="o">=</span>configs/adaptive-demo.yaml<span class="w"> </span>gateway
+docker<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>iasg-adaptive-demo
+<span class="c1"># Once it is listening, Ctrl-C leaves the demo gateway running.</span>
+</code></pre></div>
+<p>The curl container shares the demo gateway's network namespace. Connecting to
+its loopback interface makes the immediate peer the single explicitly trusted
+proxy address. This avoids Docker Desktop rewriting the host IP and does not
+require trusting arbitrary forwarded-IP headers.</p>
+<div class="highlight"><pre><span></span><code>demo_curl<span class="o">()</span><span class="w"> </span><span class="o">{</span>
+<span class="w">  </span>docker<span class="w"> </span>run<span class="w"> </span>--rm<span class="w"> </span>--network<span class="w"> </span>container:iasg-adaptive-demo<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>curlimages/curl:latest<span class="w"> </span>-sS<span class="w"> </span><span class="se">\</span>
+<span class="w">    </span>-H<span class="w"> </span><span class="s1">'X-Forwarded-For: 203.0.113.55'</span><span class="w"> </span><span class="s2">"</span><span class="nv">$@</span><span class="s2">"</span>
+<span class="o">}</span>
+
+<span class="c1"># No policy: backend health returns 200.</span>
+demo_curl<span class="w"> </span>-i<span class="w"> </span>http://127.0.0.1:8082/api/health
+
+<span class="c1"># Existing Python JSON, with no route/method selectors. EX is essential.</span>
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>SET<span class="w"> </span>policy:203.0.113.55<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="s1">'{"action":"throttle","campaign_id":"demo-adaptive","confidence":0.95,"reason":"Adaptive rate demo","source":"agent","issued_at":"2026-09-05T12:00:00+00:00","expires_in":60,"requests_per_minute":2}'</span><span class="w"> </span>EX<span class="w"> </span><span class="m">60</span>
+sleep<span class="w"> </span><span class="m">1</span>
+
+<span class="c1"># Two immediate 200 responses, then 429 with Retry-After.</span>
+<span class="k">for</span><span class="w"> </span>i<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="m">2</span><span class="w"> </span><span class="m">3</span><span class="p">;</span><span class="w"> </span><span class="k">do</span>
+<span class="w">  </span>demo_curl<span class="w"> </span>-i<span class="w"> </span>http://127.0.0.1:8082/api/health
+<span class="k">done</span>
+
+<span class="c1"># Different method and endpoint retain their own quotas.</span>
+demo_curl<span class="w"> </span>-I<span class="w"> </span>http://127.0.0.1:8082/api/health
+demo_curl<span class="w"> </span>-i<span class="w"> </span>http://127.0.0.1:8082/api/products
+
+<span class="c1"># A new temporary block replaces the throttle. Expect 403.</span>
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>SET<span class="w"> </span>policy:203.0.113.55<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span><span class="s1">'{"action":"temp_block","campaign_id":"demo-block","confidence":1,"reason":"Temporary block demo","source":"human","expires_in":3,"requests_per_minute":0}'</span><span class="w"> </span>EX<span class="w"> </span><span class="m">3</span>
+sleep<span class="w"> </span><span class="m">1</span>
+demo_curl<span class="w"> </span>-i<span class="w"> </span>http://127.0.0.1:8082/api/health
+
+<span class="c1"># Redis expiry releases the block, including between snapshot refreshes.</span>
+sleep<span class="w"> </span><span class="m">3</span>
+demo_curl<span class="w"> </span>-i<span class="w"> </span>http://127.0.0.1:8082/api/health
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>PTTL<span class="w"> </span>policy:203.0.113.55
+<span class="c1"># Expected: HTTP 200 and PTTL -2 (key no longer exists).</span>
+
+<span class="c1"># Inspect evidence and disposable bucket keys.</span>
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>XREVRANGE<span class="w"> </span>iasg:events<span class="w"> </span>+<span class="w"> </span>-<span class="w"> </span>COUNT<span class="w"> </span><span class="m">3</span>
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>--scan<span class="w"> </span>--pattern<span class="w"> </span><span class="s1">'iasg:adaptive-demo:rate:*'</span>
+</code></pre></div>
+<p>Cleanup stops only the demo container and removes its temporary configuration
+and known demo telemetry keys. Bucket keys expire automatically.</p>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>stop<span class="w"> </span>iasg-adaptive-demo
+rm<span class="w"> </span>gateway/configs/adaptive-demo.yaml
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>DEL<span class="w"> </span>policy:203.0.113.55<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>iasg:ip:203.0.113.55:latest<span class="w"> </span>iasg:stats<span class="w"> </span>iasg:attackers
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>XTRIM<span class="w"> </span>iasg:events<span class="w"> </span>MAXLEN<span class="w"> </span><span class="m">0</span>
+dc<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-T<span class="w"> </span>redis<span class="w"> </span>redis-cli<span class="w"> </span>-n<span class="w"> </span><span class="m">15</span><span class="w"> </span>XINFO<span class="w"> </span>GROUPS<span class="w"> </span>iasg:events
+</code></pre></div>
+<p>The isolated demo has no control-plane consumer. If exercising the main stack
+instead, clean its test history through <code>POST /api/admin/reset</code> with
+<code>{"confirm":"reset"}</code> and verify <code>XINFO GROUPS iasg:events</code> still contains the
+consumer groups. Never <code>DEL</code> the main event stream: that also deletes its
+consumer groups. Resetting history deliberately does not remove <code>policy:*</code>.</p>
+<h2 id="code-references">Code references<a class="headerlink" href="#code-references" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>internal/policy/store.go</code></td>
+<td>Policy snapshot, absolute expiry, stale-cache bound</td>
+</tr>
+<tr>
+<td><code>internal/policy/middleware.go</code></td>
+<td>Action mapping, selectors, quota outcomes</td>
+</tr>
+<tr>
+<td><code>internal/policy/</code></td>
+<td>Redis Lua limiter and policy tests</td>
+</tr>
+<tr>
+<td><code>internal/netutil/ip.go</code></td>
+<td>Trusted client-IP resolution</td>
+</tr>
+<tr>
+<td><code>internal/telemetry/</code></td>
+<td>Structured request events and background publication</td>
+</tr>
+<tr>
+<td><code>control-plane/iasg/models.py</code></td>
+<td>Existing serialized policy contract</td>
+</tr>
+<tr>
+<td><code>control-plane/iasg/policy/writer.py</code></td>
+<td>Public-address, positive-TTL, cycle-cap, and dry-run rails</td>
+</tr>
+<tr>
+<td><code>control-plane/iasg/alerts.py</code></td>
+<td>Existing escalation alerts</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>

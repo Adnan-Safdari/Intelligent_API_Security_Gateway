@@ -1,0 +1,2217 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Engineering documentation for the Go-based API security gateway.">
+      
+      
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../system-architecture/">
+      
+      
+      <link rel="icon" href="../assets/blank-favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Project Context - Intelligent API Security Gateway</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.6f8fc17f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#project-context-intelligent-api-security-gateway" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Intelligent API Security Gateway" class="md-header__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent API Security Gateway
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Project Context
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Intelligent API Security Gateway" class="md-nav__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent API Security Gateway
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Project Context
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Project Context
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-problem-statement" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Problem Statement
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-main-goal-intended-request-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Main Goal — Intended Request Lifecycle
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-functional-requirements-srs-vs-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Functional Requirements (SRS) vs Status
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-what-actually-runs-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. What Actually Runs Today
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. What Actually Runs Today">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.1 Bootstrap
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-live-middleware-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.2 Live middleware chain
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-config-that-is-actually-used-at-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.3 Config that is actually used at runtime
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-removed-unused-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.4 Removed / unused pieces
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-repository-structure-accurate" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Repository Structure (Accurate)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-current-modules-detailed" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. Current Modules (Detailed)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Current Modules (Detailed)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-reverse-proxy-internalproxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.1 Reverse proxy (internal/proxy)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-signals-internalsignals" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.2 Signals (internal/signals)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7.2 Signals (internal/signals)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#implemented-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      Implemented now
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#considered-and-deprioritized" class="md-nav__link">
+    <span class="md-ellipsis">
+      Considered and deprioritized
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-config-internalconfig-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.3 Config (internal/config + configs/)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-netutil-internalnetutil" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.4 Netutil (internal/netutil)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-planned-target-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      8. Planned Target Architecture
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Planned Target Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-detection-metrics-not-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.1 Detection → metrics (not decisions)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-centralized-decision-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.2 Centralized decision engine
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-adaptive-rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.3 Adaptive rate limiting
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-logging-fr6" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.4 Logging (FR6)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-admin-configuration-fr7" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.5 Admin configuration (FR7)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-docker-local-ports-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      9. Docker / Local Ports (Compose)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-documentation-status-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      10. Documentation Status (Important)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-design-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      11. Design Philosophy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-meeting-decisions-locked-in-direction" class="md-nav__link">
+    <span class="md-ellipsis">
+      12. Meeting Decisions (Locked-in Direction)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-next-development-priorities-recommended-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      13. Next Development Priorities (Recommended Order)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-key-implementation-facts-for-coding-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      14. Key Implementation Facts for Coding Agents
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-one-paragraph-absolute-truth" class="md-nav__link">
+    <span class="md-ellipsis">
+      15. One-Paragraph Absolute Truth
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Architecture
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../system-architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    System Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../request-lifecycle/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Request Lifecycle
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-structure/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Structure
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reverse-proxy-logic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Reverse Proxy Logic
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client-ip/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Identifying the Client
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Security Pipeline
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Security Pipeline
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../detection-signals/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Detection Signals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../policy-enforcement/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Policy Enforcement
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-level-blocking/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network-Level Blocking
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../control-plane/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Control Plane
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Anomaly Detection
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Anomaly Detection
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-policy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adaptive Policy and Analyst Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Modules
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Modules
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/proxy-module/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Proxy Module
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/signal-tests/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Signal Test Scripts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/redis-telemetry/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Redis Telemetry
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/dashboard/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Command Center Dashboard
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operations
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Operations
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-locally/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running the Gateway Locally
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-with-docker/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running with Docker
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../protecting-your-own-api/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Protecting Your Own API
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#1-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-problem-statement" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Problem Statement
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-main-goal-intended-request-lifecycle" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Main Goal — Intended Request Lifecycle
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-functional-requirements-srs-vs-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Functional Requirements (SRS) vs Status
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-what-actually-runs-today" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. What Actually Runs Today
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="5. What Actually Runs Today">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#51-bootstrap" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.1 Bootstrap
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#52-live-middleware-chain" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.2 Live middleware chain
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#53-config-that-is-actually-used-at-runtime" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.3 Config that is actually used at runtime
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#54-removed-unused-pieces" class="md-nav__link">
+    <span class="md-ellipsis">
+      5.4 Removed / unused pieces
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-repository-structure-accurate" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Repository Structure (Accurate)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#7-current-modules-detailed" class="md-nav__link">
+    <span class="md-ellipsis">
+      7. Current Modules (Detailed)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7. Current Modules (Detailed)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#71-reverse-proxy-internalproxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.1 Reverse proxy (internal/proxy)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#72-signals-internalsignals" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.2 Signals (internal/signals)
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="7.2 Signals (internal/signals)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#implemented-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      Implemented now
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#considered-and-deprioritized" class="md-nav__link">
+    <span class="md-ellipsis">
+      Considered and deprioritized
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#73-config-internalconfig-configs" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.3 Config (internal/config + configs/)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#74-netutil-internalnetutil" class="md-nav__link">
+    <span class="md-ellipsis">
+      7.4 Netutil (internal/netutil)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#8-planned-target-architecture" class="md-nav__link">
+    <span class="md-ellipsis">
+      8. Planned Target Architecture
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="8. Planned Target Architecture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#81-detection-metrics-not-decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.1 Detection → metrics (not decisions)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#82-centralized-decision-engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.2 Centralized decision engine
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#83-adaptive-rate-limiting" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.3 Adaptive rate limiting
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#84-logging-fr6" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.4 Logging (FR6)
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#85-admin-configuration-fr7" class="md-nav__link">
+    <span class="md-ellipsis">
+      8.5 Admin configuration (FR7)
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#9-docker-local-ports-compose" class="md-nav__link">
+    <span class="md-ellipsis">
+      9. Docker / Local Ports (Compose)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#10-documentation-status-important" class="md-nav__link">
+    <span class="md-ellipsis">
+      10. Documentation Status (Important)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#11-design-philosophy" class="md-nav__link">
+    <span class="md-ellipsis">
+      11. Design Philosophy
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#12-meeting-decisions-locked-in-direction" class="md-nav__link">
+    <span class="md-ellipsis">
+      12. Meeting Decisions (Locked-in Direction)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#13-next-development-priorities-recommended-order" class="md-nav__link">
+    <span class="md-ellipsis">
+      13. Next Development Priorities (Recommended Order)
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#14-key-implementation-facts-for-coding-agents" class="md-nav__link">
+    <span class="md-ellipsis">
+      14. Key Implementation Facts for Coding Agents
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#15-one-paragraph-absolute-truth" class="md-nav__link">
+    <span class="md-ellipsis">
+      15. One-Paragraph Absolute Truth
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="project-context-intelligent-api-security-gateway">Project Context: Intelligent API Security Gateway<a class="headerlink" href="#project-context-intelligent-api-security-gateway" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p>Comprehensive handoff document for contributors and other AIs.<br />
+Combines product intent (SRS / team decisions) with the <strong>actual</strong> repository state as of July 2026.</p>
+</blockquote>
+<hr />
+<h2 id="1-overview">1. Overview<a class="headerlink" href="#1-overview" title="Permanent link">&para;</a></h2>
+<p><strong>Intelligent API Security Gateway (IASG)</strong> is a capstone project: a <strong>security-focused reverse proxy</strong>, not a full-featured API gateway like Kong, APISIX, or NGINX.</p>
+<p>Primary purpose: detect malicious API behavior and dynamically mitigate attacks <strong>before</strong> requests reach the backend. Backend services require <strong>zero modifications</strong>.</p>
+<div class="highlight"><pre><span></span><code>                Client
+                   │
+                   ▼
+        Intelligent API Security Gateway
+                   │
+                   ▼
+              Backend API
+</code></pre></div>
+<p>Stack focus:</p>
+<ul>
+<li><strong>Language</strong>: Go 1.22+</li>
+<li><strong>Module</strong>: <code>github.com/Adnan-Safdari/Intelligent_API_Security_Gateway</code></li>
+<li><strong>Core runtime</strong>: <code>gateway/</code> (Go reverse proxy)</li>
+<li><strong>Demo backend</strong>: <code>vulnerable-app/</code> (Node API + web)</li>
+<li><strong>Admin UI</strong>: <code>gateway-dashboard/</code> (Next.js command center on :5177, reads Redis)</li>
+<li><strong>Compose stack</strong>: <code>infra/docker-compose.yml</code></li>
+<li><strong>Docs site</strong>: MkDocs (<code>mkdocs.yml</code> → <code>gateway/docs/</code>)</li>
+</ul>
+<hr />
+<h2 id="2-problem-statement">2. Problem Statement<a class="headerlink" href="#2-problem-statement" title="Permanent link">&para;</a></h2>
+<p>Modern apps expose many Internet-facing APIs, expanding the attack surface. Existing approaches have gaps:</p>
+<table>
+<thead>
+<tr>
+<th>Limitation</th>
+<th>Consequence</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Security logic duplicated in each backend</td>
+<td>Inconsistent protection, hard to maintain</td>
+</tr>
+<tr>
+<td>Static rate limits</td>
+<td>Cannot separate legitimate spikes from floods</td>
+</tr>
+<tr>
+<td>Detection separated from mitigation</td>
+<td>Alerts without adaptive response</td>
+</tr>
+<tr>
+<td>Rule-heavy commercial gateways</td>
+<td>Static signatures over behavior</td>
+</tr>
+<tr>
+<td>Little behavior-based security in lightweight self-hosted proxies</td>
+<td>Gap for this project</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Solution direction:</strong> a Go reverse proxy that performs behavior analysis, adaptive rate limiting, unified risk scoring, and intelligent Allow / Throttle / Block decisions.</p>
+<hr />
+<h2 id="3-main-goal-intended-request-lifecycle">3. Main Goal — Intended Request Lifecycle<a class="headerlink" href="#3-main-goal-intended-request-lifecycle" title="Permanent link">&para;</a></h2>
+<p>Every request should follow:</p>
+<div class="highlight"><pre><span></span><code>Incoming Request
+        │
+        ▼
+Intercept Request
+        │
+        ▼
+Behavior Analysis (detectors → metrics)
+        │
+        ▼
+Risk Scoring
+        │
+        ▼
+Decision Engine
+        │
+ ┌──────┼──────────┐
+ │      │          │
+ ▼      ▼          ▼
+Allow Throttle   Block
+ │
+ ▼
+Forward to Backend
+</code></pre></div>
+<p>The backend should only receive requests the decision engine marks as <strong>Allow</strong> (or Allow under throttle policy, depending on how throttle is enforced).</p>
+<p><strong>Important team decision:</strong> detectors must <strong>not</strong> block on their own. They emit metrics; one centralized engine decides.</p>
+<p>Preferred AI role (future):</p>
+<div class="highlight"><pre><span></span><code>Detectors → Metrics → Risk Scoring → Decision Engine → AI explanation (optional)
+</code></pre></div>
+<p>Not:</p>
+<div class="highlight"><pre><span></span><code>AI → Allow / Block
+</code></pre></div>
+<hr />
+<h2 id="4-functional-requirements-srs-vs-status">4. Functional Requirements (SRS) vs Status<a class="headerlink" href="#4-functional-requirements-srs-vs-status" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>ID</th>
+<th>Requirement</th>
+<th>Status</th>
+<th>Reality in code</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>FR1</strong></td>
+<td>Intercept API requests (reverse proxy + middleware)</td>
+<td><strong>Complete</strong></td>
+<td>Working</td>
+</tr>
+<tr>
+<td><strong>FR2</strong></td>
+<td>Analyze request behavior (detectors → metrics)</td>
+<td><strong>Complete</strong></td>
+<td>Six detectors: flood, SQLi, brute force (<code>consecutive_failed_logins</code>), traversal/enumeration, unknown-route scanning, and IP reputation. Each fills the same <code>Evidence</code> shape; <code>signals.Collector</code> summarises them per request, the reflex reads that summary, and telemetry publishes it for the control plane</td>
+</tr>
+<tr>
+<td><strong>FR3</strong></td>
+<td>Adaptive rate limiting as a <strong>decision outcome</strong></td>
+<td><strong>Complete</strong></td>
+<td>An opt-in baseline (<code>rate_limit.enforce</code>) holds every address to <code>requests_per_minute</code>; a throttle policy carries its own rate, set from campaign severity, and replaces the baseline in both directions. <code>policy.Limiter</code> answers <code>429</code> over whichever applies. Recovery is the policy's TTL lapsing</td>
+</tr>
+<tr>
+<td><strong>FR4</strong></td>
+<td>Risk scoring + centralized decision engine</td>
+<td><strong>Superseded by design</strong></td>
+<td>Scoring is per-detector; decisions are split between the gateway reflex and the control plane. No central engine, and the dead <code>trust_engine</code> config has been removed</td>
+</tr>
+<tr>
+<td><strong>FR5</strong></td>
+<td>Forward valid / reject blocked / throttle</td>
+<td><strong>Complete</strong></td>
+<td><code>policy.Enforcer</code> answers <code>403</code> for <code>temp_block</code>/<code>escalate</code> and <code>429</code> for a throttled address over its rate; the gateway's own reflex blocks on a threshold cross</td>
+</tr>
+<tr>
+<td><strong>FR6</strong></td>
+<td>Logging &amp; monitoring (Postgres + dashboard)</td>
+<td><strong>Complete</strong></td>
+<td>Redis hot telemetry (capped event stream + counters), durable campaign and feedback history in Postgres, and the Next.js console on :5177</td>
+</tr>
+<tr>
+<td><strong>FR7</strong></td>
+<td>Admin configuration (thresholds, detectors, lists)</td>
+<td><strong>Complete</strong></td>
+<td>The console's Settings page changes the whole <code>enforcement</code> block on a running gateway, via an override in Redis. Structural settings still need a restart</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Overall progress estimate:</strong> the functional requirements are met, with FR4 deliberately answered a different way than the SRS imagined -- see that row. What remains is polish and evidence rather than missing subsystems.</p>
+<hr />
+<h2 id="5-what-actually-runs-today">5. What Actually Runs Today<a class="headerlink" href="#5-what-actually-runs-today" title="Permanent link">&para;</a></h2>
+<h3 id="51-bootstrap">5.1 Bootstrap<a class="headerlink" href="#51-bootstrap" title="Permanent link">&para;</a></h3>
+<p>Entrypoint: <code>gateway/cmd/server/main.go</code></p>
+<ol>
+<li>Load YAML from <code>IASG_CONFIG</code> or default <code>configs/config.yaml</code></li>
+<li>Optional override: <code>IASG_BACKEND_URL</code></li>
+<li>Build <code>proxy.Config</code> from server/proxy/enforcement slices of config</li>
+<li><code>proxy.NewServer(...).Start()</code></li>
+</ol>
+<p>Docker Compose runs: <code>go run ./cmd/server</code> with backend <code>http://vulnerable_api:5002</code>, host port <strong>8082</strong>.</p>
+<h3 id="52-live-middleware-chain">5.2 Live middleware chain<a class="headerlink" href="#52-live-middleware-chain" title="Permanent link">&para;</a></h3>
+<p>Order in <code>gateway/internal/proxy/server.go</code> (outer → inner):</p>
+<ol>
+<li><code>netutil.Resolver.Middleware</code> — resolve the real client IP, believing <code>X-Forwarded-For</code> only from a configured trusted proxy. First, so everything below keys off the same address</li>
+<li><code>telemetry.Middleware</code> — assign a request ID, and record the event on the way out</li>
+<li><code>LoggingMiddleware</code> — method, path, IP, User-Agent</li>
+<li><code>policy.Enforcer.Middleware</code> — <strong>the branch.</strong> <code>temp_block</code>/<code>escalate</code> answers <code>403</code>; a throttled address over its rate answers <code>429</code> with <code>Retry-After</code>; an address over the baseline rate answers <code>429</code>. Nothing below runs</li>
+<li><code>BodyLimitMiddleware</code>, then <code>telemetry.CaptureBody</code> — caps the admitted body and captures a redacted snippet. The old <code>RequestInspectionMiddleware</code> debug helper that printed full headers and bodies has been deleted, not merely left unwired — only an explanatory comment remains at <code>internal/proxy/middleware.go:37</code></li>
+<li><code>enforcement.Middleware</code> — the reflex. Observes <em>after</em> the handler, so it never adds latency; a block it records takes effect on the next request</li>
+<li>The six detectors — reputation, flood, unknown-route scanning, SQLi, traversal/enumeration, brute force (<code>consecutive_failed_logins</code>). Each <strong>records evidence and allows</strong></li>
+<li><code>NewReverseProxy</code> — <code>httputil.NewSingleHostReverseProxy</code> + <code>X-Gateway: IASG</code></li>
+</ol>
+<p><strong>Current behavior summary:</strong> the gateway detects <em>and</em> enforces, but never decides in the request path. Every refusal acts on a decision already made — by the control plane, written to <code>policy:&lt;ip&gt;</code> and read from a background-refreshed snapshot, or by the reflex on an earlier request. The detectors themselves still only ever record and allow, which is what keeps a false positive cheap.</p>
+<h3 id="53-config-that-is-actually-used-at-runtime">5.3 Config that is actually used at runtime<a class="headerlink" href="#53-config-that-is-actually-used-at-runtime" title="Permanent link">&para;</a></h3>
+<p>Used when building/starting the server:</p>
+<ul>
+<li><code>server.*</code> (host, port, timeouts)</li>
+<li><code>proxy.*</code> (backend_url, timeout, connection limits)</li>
+<li><code>enforcement.rate_limit</code> → flood detector</li>
+<li><code>enforcement.attack_detection</code> → SQLi patterns / enabled flag</li>
+<li><code>enforcement.brute_force</code> → enabled / max_failures / window / login_paths</li>
+<li><code>enforcement.enumeration_path_traversal</code> → traversal/enum detector</li>
+<li><code>enforcement.unknown_route_scanning</code> → route-scan detector</li>
+<li><code>enforcement.ip_reputation</code> → reputation feed and detector</li>
+<li><code>enforcement.block</code> → the gateway's own reflex blocking</li>
+<li><code>enforcement.policy</code> / <code>enforcement.adaptive_rate_limit</code> → control-plane policy and quotas</li>
+<li><code>routes.*</code> → route templates and login outcomes for telemetry and brute force</li>
+<li><code>storage.redis</code> → hot telemetry (stream, stats, per-IP latest)</li>
+</ul>
+<p>Accepted for compatibility but with <strong>no effect</strong>:</p>
+<ul>
+<li><code>enforcement.throttle</code> — quota admission never sleeps</li>
+</ul>
+<p>Retired — no longer parsed, and ignored if a config file still carries them:</p>
+<ul>
+<li><code>storage.postgres</code>, <code>signals.*</code>, <code>logging.*</code></li>
+</ul>
+<h3 id="54-removed-unused-pieces">5.4 Removed / unused pieces<a class="headerlink" href="#54-removed-unused-pieces" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>internal/context</code> (<code>RequestContext</code>, builder) — <strong>removed</strong>; was never imported by the live proxy path. Empty <code>internal/context/</code> directory may still exist on disk.</li>
+<li><code>proxy/security.go</code> — <strong>removed entirely</strong>, not merely superseded; the real wiring has always been in <code>server.go</code>.</li>
+<li><code>RequestInspectionMiddleware</code> — <strong>removed entirely</strong>. It printed every header and the raw request body to stdout for every request, which put passwords and tokens in the logs; only an explanatory comment remains at <code>internal/proxy/middleware.go:37</code>.</li>
+</ul>
+<hr />
+<h2 id="6-repository-structure-accurate">6. Repository Structure (Accurate)<a class="headerlink" href="#6-repository-structure-accurate" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>Intelligent_API_Security_Gateway/
+├── README.md
+├── mkdocs.yml                          # docs site root → gateway/docs
+├── infra/
+│   └── docker-compose.yml              # full local stack
+├── gateway/                            # Go module root
+│   ├── cmd/server/main.go              # ONLY gateway entrypoint
+│   ├── configs/
+│   │   ├── config.yaml                 # active runtime config
+│   │   └── config.yaml.example
+│   ├── Dockerfile
+│   ├── go.mod / go.sum
+│   ├── docs/                           # MkDocs content — see project-structure.md for the full list
+│   └── internal/
+│       ├── config/config.go            # YAML → structs + Load()
+│       ├── netutil/ip.go               # ClientIP helper
+│       ├── proxy/
+│       │   ├── server.go               # listen + middleware assembly
+│       │   ├── middleware.go           # logging + ChainMiddleware
+│       │   ├── reverse_proxy.go        # upstream forwarder
+│       │   └── live.go                  # live reconfiguration from the console
+│       ├── policy/                     # policy snapshot store, enforcing middleware, rate limiter
+│       ├── enforcement/                # the gateway's own reflex — a threshold cross too fast to wait an agent cycle for
+│       ├── reputation/                 # known-bad-address list loading and refresh
+│       ├── settings/                   # the iasg:settings live-override channel
+│       ├── storage/redis/              # the Redis adapter
+│       ├── telemetry/                  # event shape, redaction, recording middleware
+│       └── signals/
+│           ├── api_flooding.go         # request volume, windowed
+│           ├── sqli_injection.go       # injection signatures, request-scoped
+│           ├── brute_force.go          # consecutive failed logins, windowed + Metrics()
+│           ├── enumeration_path_traversal.go
+│           ├── unknown_route_scanning.go  # distinct unmatched-path scanning, windowed
+│           └── ip_reputation.go        # known-bad list, fires on a cooldown
+├── control-plane/                      # Python agent — see control-plane.md
+├── testing/
+│   ├── jmeter/                         # JMeter demo plans
+│   ├── signals/                        # HTTP test scripts for detectors (not in the gateway module)
+│   └── traffic/                        # generates the labelled traffic behind datasets/
+├── gateway-dashboard/                  # Next.js command center (UI + /api/overview)
+│   ├── app/
+│   └── lib/
+├── vulnerable-app/                     # intentional vulnerable demo API/UI
+└── DEMO.md                             # brute force demo guide
+</code></pre></div>
+<p><strong>Not present, despite an even older version of this document once claiming otherwise:</strong></p>
+<ul>
+<li><code>internal/trust/</code></li>
+</ul>
+<hr />
+<h2 id="7-current-modules-detailed">7. Current Modules (Detailed)<a class="headerlink" href="#7-current-modules-detailed" title="Permanent link">&para;</a></h2>
+<h3 id="71-reverse-proxy-internalproxy">7.1 Reverse proxy (<code>internal/proxy</code>)<a class="headerlink" href="#71-reverse-proxy-internalproxy" title="Permanent link">&para;</a></h3>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>server.go</code></td>
+<td>HTTP server, detector construction, middleware chain</td>
+</tr>
+<tr>
+<td><code>middleware.go</code></td>
+<td><code>ChainMiddleware</code>, logging, body inspection</td>
+</tr>
+<tr>
+<td><code>reverse_proxy.go</code></td>
+<td>Single-host reverse proxy + transport limits + gateway header</td>
+</tr>
+<tr>
+<td><code>security.go</code></td>
+<td>Compatibility SQLi middleware (not used by <code>Start</code>)</td>
+</tr>
+</tbody>
+</table>
+<h3 id="72-signals-internalsignals">7.2 Signals (<code>internal/signals</code>)<a class="headerlink" href="#72-signals-internalsignals" title="Permanent link">&para;</a></h3>
+<h4 id="implemented-now">Implemented now<a class="headerlink" href="#implemented-now" title="Permanent link">&para;</a></h4>
+<p>Every detector implements <code>Name()</code> + <code>Metrics(ip) Evidence</code> (shared contract in <code>evidence.go</code>). None of them block. A <code>Collector</code> fans a lookup out across all six and summarises the result — see <a href="../detection-signals/">Detection Signals</a> for the full contract.</p>
+<table>
+<thead>
+<tr>
+<th>Attack</th>
+<th>File</th>
+<th>Mechanism</th>
+<th>Metrics()</th>
+<th>Enforcement</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>API Flooding</strong></td>
+<td><code>api_flooding.go</code></td>
+<td>Per-IP sliding window; threshold = <code>requests_per_minute</code></td>
+<td>Yes — <code>requestRate</code>, <code>threshold</code>, <code>window</code>; Score 0–100</td>
+<td>Deterministic — can arm the reflex</td>
+</tr>
+<tr>
+<td><strong>SQL Injection</strong></td>
+<td><code>sqli_injection.go</code></td>
+<td>Signatures in path, query, and body</td>
+<td>Yes — <code>matchCount</code>, <code>matchedPatterns</code>; last-request evidence per IP</td>
+<td>Deterministic — can arm the reflex</td>
+</tr>
+<tr>
+<td><strong>Path Traversal + Enumeration</strong></td>
+<td><code>enumeration_path_traversal.go</code></td>
+<td>URL/query signatures (<code>../</code>, <code>/.env</code>, …)</td>
+<td>Yes — <code>pathTraversalDetected</code>, <code>enumerationDetected</code>, match counts</td>
+<td>Deterministic — can arm the reflex</td>
+</tr>
+<tr>
+<td><strong>Brute Force</strong> (<code>consecutive_failed_logins</code>)</td>
+<td><code>brute_force.go</code></td>
+<td>Consecutive invalid-credential outcomes per client and login target, read from <code>routes.auth_outcomes</code> — no hardcoded path or status code</td>
+<td>Yes — <code>consecutiveFailures</code>, <code>failedLogins</code>, <code>maxFailures</code></td>
+<td><strong>Advisory-only</strong> — the reflex refuses this signal if named in <code>block.signals</code></td>
+</tr>
+<tr>
+<td><strong>Unknown-Route Scanning</strong></td>
+<td><code>unknown_route_scanning.go</code></td>
+<td>Distinct paths the route table classifies <code>&lt;unmatched&gt;</code>, per client, within a rolling window</td>
+<td>Yes — distinct-path count vs. <code>distinct_paths</code></td>
+<td><strong>Advisory-only</strong> — same refusal as brute force</td>
+</tr>
+<tr>
+<td><strong>IP Reputation</strong></td>
+<td><code>ip_reputation.go</code></td>
+<td>Known-bad address lookup, fires on a cooldown</td>
+<td>Yes</td>
+<td>Deterministic — can arm the reflex</td>
+</tr>
+</tbody>
+</table>
+<p>Shared type (<code>internal/signals/evidence.go</code>):</p>
+<div class="highlight"><pre><span></span><code><span class="kd">type</span><span class="w"> </span><span class="nx">Evidence</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Signal</span><span class="w">         </span><span class="kt">string</span><span class="w">         </span><span class="c1">// api_flooding | sql_injection | enumeration_path_traversal |</span>
+<span class="w">                                   </span><span class="c1">// consecutive_failed_logins | unknown_route_scanning | ip_reputation</span>
+<span class="w">    </span><span class="nx">Score</span><span class="w">          </span><span class="kt">int</span><span class="w">            </span><span class="c1">// 0-100 contribution</span>
+<span class="w">    </span><span class="nx">ThresholdCross</span><span class="w"> </span><span class="kt">bool</span>
+<span class="w">    </span><span class="nx">AttackType</span><span class="w">     </span><span class="kt">string</span>
+<span class="w">    </span><span class="nx">Details</span><span class="w">        </span><span class="kt">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">any</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Brute force does not classify "spraying" versus "brute force" — that distinction exists only as a control-plane campaign classification derived from repeated brute-force evidence (<code>correlation/agent.py</code>), never as its own gateway signal.</p>
+<h4 id="considered-and-deprioritized">Considered and deprioritized<a class="headerlink" href="#considered-and-deprioritized" title="Permanent link">&para;</a></h4>
+<table>
+<thead>
+<tr>
+<th>Attack</th>
+<th>Status</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>XSS</strong></td>
+<td>Deprioritized</td>
+<td>Too WAF-like; stay API-centric</td>
+</tr>
+</tbody>
+</table>
+<p>The centralized decision engine imagined by the original SRS was superseded by design (see FR4 above) rather than left pending — decisions are split between the gateway reflex and the control plane's adaptive engine (<code>control-plane/iasg/adaptive/</code>), and persistent logging exists via Postgres.</p>
+<p><strong>Reference pattern:</strong> <code>Metrics(ip) Evidence</code> + never block.</p>
+<p>Every <code>internal/signals/*.go</code> detector has a matching <code>*_test.go</code> file beside it — the "unit tests live only in <code>testing/signals/</code>" framing this section once had is no longer accurate. HTTP-level test scripts additionally live in <code>testing/signals/</code> at the repo root, for verifying a <em>running</em> gateway rather than the Go logic in isolation. See <a href="../modules/signal-tests/">Signal Test Scripts</a>.</p>
+<h3 id="73-config-internalconfig-configs">7.3 Config (<code>internal/config</code> + <code>configs/</code>)<a class="headerlink" href="#73-config-internalconfig-configs" title="Permanent link">&para;</a></h3>
+<p>Bridge from YAML to Go. Validates <code>server.port</code> and <code>proxy.backend_url</code>. Defaults host to <code>0.0.0.0</code> if empty.</p>
+<h3 id="74-netutil-internalnetutil">7.4 Netutil (<code>internal/netutil</code>)<a class="headerlink" href="#74-netutil-internalnetutil" title="Permanent link">&para;</a></h3>
+<p><code>ClientIP(remoteAddr)</code> strips host:port for IP-keyed detection.</p>
+<hr />
+<h2 id="8-planned-target-architecture">8. Planned Target Architecture<a class="headerlink" href="#8-planned-target-architecture" title="Permanent link">&para;</a></h2>
+<h3 id="81-detection-metrics-not-decisions">8.1 Detection → metrics (not decisions)<a class="headerlink" href="#81-detection-metrics-not-decisions" title="Permanent link">&para;</a></h3>
+<p>Each detector should return metrics, for example:</p>
+<div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"failedLogins"</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"requestRate"</span><span class="p">:</span><span class="w"> </span><span class="mi">40</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"enumerationScore"</span><span class="p">:</span><span class="w"> </span><span class="mi">25</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pathTraversalDetected"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"sqliConfidence"</span><span class="p">:</span><span class="w"> </span><span class="mf">0.8</span>
+<span class="p">}</span>
+</code></pre></div>
+<p>Example metric ideas per attack family:</p>
+<table>
+<thead>
+<tr>
+<th>Family</th>
+<th>Example metrics</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>API Flooding</td>
+<td>request rate, burst size, window</td>
+</tr>
+<tr>
+<td>Enumeration</td>
+<td>sequential IDs, 404 ratio, endpoint discovery</td>
+</tr>
+<tr>
+<td>Path Traversal</td>
+<td><code>../</code>, encoded traversal, depth</td>
+</tr>
+<tr>
+<td>SQL Injection</td>
+<td>keyword matches, payload patterns, confidence</td>
+</tr>
+</tbody>
+</table>
+<h3 id="82-centralized-decision-engine">8.2 Centralized decision engine<a class="headerlink" href="#82-centralized-decision-engine" title="Permanent link">&para;</a></h3>
+<p>Conceptual risk score:</p>
+<div class="highlight"><pre><span></span><code>Risk Score = Flooding + Enumeration + Traversal + SQLi (+ …)
+</code></pre></div>
+<p>Decision bands (example; exact numbers belong in config):</p>
+<table>
+<thead>
+<tr>
+<th>Score</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0–30</td>
+<td>Allow</td>
+</tr>
+<tr>
+<td>30–70</td>
+<td>Throttle</td>
+</tr>
+<tr>
+<td>70+</td>
+<td>Block</td>
+</tr>
+</tbody>
+</table>
+<p>Responses:</p>
+<ul>
+<li><strong>Block</strong> → <code>403 Forbidden</code></li>
+<li><strong>Throttle</strong> → <code>429 Too Many Requests</code> (and/or delayed forwarding per policy)</li>
+<li><strong>Allow</strong> → forward to backend</li>
+</ul>
+<h3 id="83-adaptive-rate-limiting">8.3 Adaptive rate limiting<a class="headerlink" href="#83-adaptive-rate-limiting" title="Permanent link">&para;</a></h3>
+<p>ARL is <strong>not</strong> a pre-analysis gate and <strong>not</strong> a detector.</p>
+<p>Correct:</p>
+<div class="highlight"><pre><span></span><code>Analyze → Decision Engine → Throttle (adaptive limits by risk band)
+</code></pre></div>
+<p>Incorrect:</p>
+<div class="highlight"><pre><span></span><code>Rate Limit → Analyze
+</code></pre></div>
+<p>Example adaptive bands:</p>
+<table>
+<thead>
+<tr>
+<th>Risk</th>
+<th>Limit</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Low</td>
+<td>100 req/min</td>
+</tr>
+<tr>
+<td>Medium</td>
+<td>40 req/min</td>
+</tr>
+<tr>
+<td>High</td>
+<td>5 req/min</td>
+</tr>
+<tr>
+<td>Blocked</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<h3 id="84-logging-fr6">8.4 Logging (FR6)<a class="headerlink" href="#84-logging-fr6" title="Permanent link">&para;</a></h3>
+<p>Every request, any outcome. Suggested fields:</p>
+<ul>
+<li>Timestamp, IP, Endpoint, HTTP Method  </li>
+<li>Detectors triggered / metrics snapshot  </li>
+<li>Risk score, Decision, Response code  </li>
+</ul>
+<p>Storage target: <strong>PostgreSQL</strong> (Compose already runs Postgres on host port <strong>5434</strong>). Redis is available for hot state (Compose <strong>6379</strong>).</p>
+<p>Dashboard should later show: volume, allow/block/throttle counts, top attacking IPs, attack mix, risk trends, endpoint stats.</p>
+<h3 id="85-admin-configuration-fr7">8.5 Admin configuration (FR7)<a class="headerlink" href="#85-admin-configuration-fr7" title="Permanent link">&para;</a></h3>
+<p>Without recompilation:</p>
+<ul>
+<li>Detector thresholds / enable-disable  </li>
+<li>Adaptive rate-limit bands  </li>
+<li>Risk decision thresholds  </li>
+<li>Whitelist / blacklist  </li>
+</ul>
+<hr />
+<h2 id="9-docker-local-ports-compose">9. Docker / Local Ports (Compose)<a class="headerlink" href="#9-docker-local-ports-compose" title="Permanent link">&para;</a></h2>
+<p>From <code>infra/docker-compose.yml</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Service</th>
+<th>Port</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Gateway API</td>
+<td>http://localhost:8082</td>
+</tr>
+<tr>
+<td>Vulnerable API</td>
+<td>http://localhost:5002</td>
+</tr>
+<tr>
+<td>Vulnerable Web</td>
+<td>http://localhost:5175</td>
+</tr>
+<tr>
+<td>Dashboard Web</td>
+<td>http://localhost:5177</td>
+</tr>
+<tr>
+<td>MkDocs</td>
+<td>http://localhost:8000</td>
+</tr>
+<tr>
+<td>Postgres (gateway)</td>
+<td>localhost:5434</td>
+</tr>
+<tr>
+<td>Postgres (vuln API)</td>
+<td>localhost:5435</td>
+</tr>
+<tr>
+<td>Redis</td>
+<td>localhost:6379</td>
+</tr>
+</tbody>
+</table>
+<p>Gateway env in Compose:</p>
+<ul>
+<li><code>IASG_CONFIG=configs/config.yaml</code></li>
+<li><code>IASG_BACKEND_URL=http://vulnerable_api:5002</code></li>
+</ul>
+<hr />
+<h2 id="10-documentation-status-important">10. Documentation Status (Important)<a class="headerlink" href="#10-documentation-status-important" title="Permanent link">&para;</a></h2>
+<p>Documentation drifts behind the code in this project routinely enough that no
+blanket "current" claim in this section should be trusted at face value --
+this section itself has previously asserted accuracy it did not have (a
+five-detector count, <code>internal/enforcement</code>/<code>internal/storage</code> claimed absent
+while both were live, a phantom dashboard-API port). Treat any specific,
+checkable claim here as something to verify against the code before relying
+on it, the same way the rest of this document should be read.</p>
+<p>Known reconciliation passes: the gateway was originally detect-and-log only;
+enforcement and the adaptive control-plane engine
+path were added afterward and are documented in
+<a href="../policy-enforcement/">Policy Enforcement</a> and
+<a href="../adaptive-policy/">Adaptive Policy and Analyst Control</a>. The console's login
+system was later removed entirely (<code>gateway-dashboard/lib/auth.js</code> is a stub);
+see <a href="../modules/dashboard/">Command Center Dashboard</a>.</p>
+<p>The entrypoint is <code>cmd/server</code>. Any doc that says <code>cmd/gateway/main.go</code> is
+wrong; that path has not existed for a long time.</p>
+<p>When docs conflict with code, <strong>trust the Go sources and <code>reverse-proxy-logic.md</code></strong>.</p>
+<hr />
+<h2 id="11-design-philosophy">11. Design Philosophy<a class="headerlink" href="#11-design-philosophy" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Behavior-aware more than pure signature WAF  </li>
+<li>Detectors produce <strong>evidence</strong>; engine produces <strong>policy</strong>  </li>
+<li>Lightweight, modular, backend-agnostic  </li>
+<li>Suitable as a drop-in security layer in front of existing APIs  </li>
+<li>Stay API-centric (prefer abuse patterns over HTML/XSS WAF features)  </li>
+<li>AI assists explanation/analysis later; does not own Allow/Block  </li>
+</ul>
+<hr />
+<h2 id="12-meeting-decisions-locked-in-direction">12. Meeting Decisions (Locked-in Direction)<a class="headerlink" href="#12-meeting-decisions-locked-in-direction" title="Permanent link">&para;</a></h2>
+<ol>
+<li>No per-attack blocking logic ownership — common decision engine only.  </li>
+<li>Detectors emit metrics; engine combines them.  </li>
+<li>Agentic AI is a priority research/feature area, but as <strong>assistive explanation</strong>, not the enforcement brain.  </li>
+<li>Research each attack independently before coding.  </li>
+<li>After detectors mature: logging → dashboard → risk scoring polish → adaptive rate limiting → admin config.  </li>
+<li>Refactor detectors from “alert + allow” toward “metrics only,” then wire enforcement once.</li>
+</ol>
+<hr />
+<h2 id="13-next-development-priorities-recommended-order">13. Next Development Priorities (Recommended Order)<a class="headerlink" href="#13-next-development-priorities-recommended-order" title="Permanent link">&para;</a></h2>
+<ol>
+<li><strong>Define a shared metrics / request-security context</strong> (all detectors write into it; brute force <code>Metrics()</code> is the template).  </li>
+<li><strong>Centralized risk scoring + decision engine</strong> (consume metrics → Allow/Throttle/Block).  </li>
+<li><strong>Wire enforcement</strong> in the proxy (403 / 429 / forward) after the engine.  </li>
+<li><strong>Refactor flood + SQLi</strong> to expose <code>Metrics()</code> like brute force.  </li>
+<li><strong>Add missing detectors</strong> (enumeration, path traversal; optional dedicated credential stuffing) as metric producers.  </li>
+<li><strong>Connect adaptive rate limiting</strong> to risk bands.  </li>
+<li><strong>Persistent structured logging</strong> to Postgres.  </li>
+<li><strong>Dashboard</strong> consumption of those logs.  </li>
+<li><strong>Admin configuration</strong> API / UI for thresholds without rebuild.  </li>
+<li>Refresh MkDocs pages so they match the live chain and entrypoint.</li>
+</ol>
+<hr />
+<h2 id="14-key-implementation-facts-for-coding-agents">14. Key Implementation Facts for Coding Agents<a class="headerlink" href="#14-key-implementation-facts-for-coding-agents" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Work inside <code>gateway/</code> as the Go module root.  </li>
+<li>Do not reintroduce detector-owned hard blocks. Detectors observe and score; blocking belongs to <code>internal/enforcement</code> and the control plane.  </li>
+<li>There is no trust score and no <code>trust_engine</code> config. The model in use is <strong>risk</strong> (higher = worse): each detector emits a 0–100 score, and thresholds are read that way throughout. Do not reintroduce a competing trust-style scale.  </li>
+<li>Compose and Dockerfile expect <code>./cmd/server</code>.  </li>
+<li>Healthcheck in Dockerfile hits <code>/api/health</code> — that path is expected from the <strong>backend</strong>, not implemented as a gateway-local route today.  </li>
+<li>Prefer extending <code>internal/signals</code> (detection) and <code>internal/enforcement</code> (action) rather than bloating middleware with one-off blocks. Do not add an <code>internal/trust</code> or <code>internal/decision</code> package; that layer was considered and deliberately not built.</li>
+<li>Use <code>brute_force.go</code> as the reference detector pattern (detect + metrics + never block), or <code>ip_reputation.go</code> for one that is stateless apart from its cooldown.</li>
+<li>Adding a section to <code>enforcement:</code> config means three places: <code>main.go</code> builds the server config, <code>proxy.Config.Enforcement()</code> reassembles the block for the settings watcher, and <code>internal/settings</code> puts it on the wire. Missing the middle one is silent -- the detector reads a zero config and switches itself off. A reflection test in <code>internal/proxy</code> guards it.</li>
+</ul>
+<hr />
+<h2 id="15-one-paragraph-absolute-truth">15. One-Paragraph Absolute Truth<a class="headerlink" href="#15-one-paragraph-absolute-truth" title="Permanent link">&para;</a></h2>
+<p>IASG is a Go reverse proxy on port 8082 in front of a deliberately vulnerable API, paired with a Python control plane and a Next.js console. Six detectors — API flooding, SQL injection, brute force (<code>consecutive_failed_logins</code>), path traversal/enumeration, unknown-route scanning, and IP reputation — record evidence and always allow; the request path never decides anything. Refusals act on decisions made elsewhere: the control plane correlates evidence off-path every 30 seconds, groups addresses into campaigns, and writes <code>policy:&lt;ip&gt;</code> keys that the gateway reads from a background-refreshed snapshot, answering <code>403</code> for a block and <code>429</code> for an address over the rate its policy names. A faster gateway-side reflex covers the gap for signals trusted to act alone — brute force and unknown-route scanning are deliberately excluded from that trust and are advisory-only. The whole <code>enforcement</code> config block can be changed on a running gateway from the console. What the SRS called a centralized risk/decision engine was deliberately not built: scoring is per-detector and deciding is split between the reflex and the control plane's adaptive engine, which is why the <code>trust_engine</code> config was deleted rather than implemented. The console has no authentication, and the gateway has no health endpoint and no graceful shutdown — those are the honest gaps.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>

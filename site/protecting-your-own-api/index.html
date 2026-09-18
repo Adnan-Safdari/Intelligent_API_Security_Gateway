@@ -1,0 +1,1687 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Engineering documentation for the Go-based API security gateway.">
+      
+      
+      
+      
+        <link rel="prev" href="../running-with-docker/">
+      
+      
+      
+      <link rel="icon" href="../assets/blank-favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.5.49">
+    
+    
+      
+        <title>Protecting Your Own API - Intelligent API Security Gateway</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.6f8fc17f.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../stylesheets/extra.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#protecting-your-own-api" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Intelligent API Security Gateway" class="md-header__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Intelligent API Security Gateway
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Protecting Your Own API
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="black" data-md-color-accent="light-blue"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 7a5 5 0 0 1 5 5 5 5 0 0 1-5 5 5 5 0 0 1-5-5 5 5 0 0 1 5-5m0 2a3 3 0 0 0-3 3 3 3 0 0 0 3 3 3 3 0 0 0 3-3 3 3 0 0 0-3-3m0-7 2.39 3.42C13.65 5.15 12.84 5 12 5s-1.65.15-2.39.42zM3.34 7l4.16-.35A7.2 7.2 0 0 0 5.94 8.5c-.44.74-.69 1.5-.83 2.29zm.02 10 1.76-3.77a7.131 7.131 0 0 0 2.38 4.14zM20.65 7l-1.77 3.79a7.02 7.02 0 0 0-2.38-4.15zm-.01 10-4.14.36c.59-.51 1.12-1.14 1.54-1.86.42-.73.69-1.5.83-2.29zM12 22l-2.41-3.44c.74.27 1.55.44 2.41.44.82 0 1.63-.17 2.37-.44z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="blue-grey" data-md-color-accent="blue"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="m17.75 4.09-2.53 1.94.91 3.06-2.63-1.81-2.63 1.81.91-3.06-2.53-1.94L12.44 4l1.06-3 1.06 3zm3.5 6.91-1.64 1.25.59 1.98-1.7-1.17-1.7 1.17.59-1.98L15.75 11l2.06-.05L18.5 9l.69 1.95zm-2.28 4.95c.83-.08 1.72 1.1 1.19 1.85-.32.45-.66.87-1.08 1.27C15.17 23 8.84 23 4.94 19.07c-3.91-3.9-3.91-10.24 0-14.14.4-.4.82-.76 1.27-1.08.75-.53 1.93.36 1.85 1.19-.27 2.86.69 5.83 2.89 8.02a9.96 9.96 0 0 0 8.02 2.89m-1.64 2.02a12.08 12.08 0 0 1-7.8-3.47c-2.17-2.19-3.33-5-3.49-7.82-2.81 3.14-2.7 7.96.31 10.98 3.02 3.01 7.84 3.12 10.98.31"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      <label class="md-header__button md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+      </label>
+      <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Intelligent API Security Gateway" class="md-nav__button md-logo" aria-label="Intelligent API Security Gateway" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Intelligent API Security Gateway
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Overview
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-context/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Context
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Architecture
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            Architecture
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../system-architecture/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    System Architecture
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../request-lifecycle/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Request Lifecycle
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../project-structure/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Project Structure
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reverse-proxy-logic/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Reverse Proxy Logic
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../client-ip/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Identifying the Client
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Security Pipeline
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            Security Pipeline
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../detection-signals/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Detection Signals
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../policy-enforcement/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Policy Enforcement
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../network-level-blocking/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Network-Level Blocking
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../control-plane/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Control Plane
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Anomaly Detection
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            Anomaly Detection
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adaptive-policy/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Adaptive Policy and Analyst Control
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Modules
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            Modules
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/proxy-module/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Proxy Module
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/signal-tests/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Signal Test Scripts
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/redis-telemetry/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Redis Telemetry
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../modules/dashboard/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Command Center Dashboard
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="">
+            
+  
+  <span class="md-ellipsis">
+    Operations
+  </span>
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            Operations
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-locally/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running the Gateway Locally
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-with-docker/" class="md-nav__link">
+        
+  
+  <span class="md-ellipsis">
+    Running with Docker
+  </span>
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  <span class="md-ellipsis">
+    Protecting Your Own API
+  </span>
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  <span class="md-ellipsis">
+    Protecting Your Own API
+  </span>
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-get-the-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Get the files
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-edit-the-four-marked-sections" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Edit the four marked sections
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Edit the four marked sections">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#backend-url" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backend URL
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#route-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Route templates
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#object-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      Object endpoints
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ownership-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ownership checks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#login-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Login outcomes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trusted-proxies" class="md-nav__link">
+    <span class="md-ellipsis">
+      Trusted proxies
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-start-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Start it
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-route-traffic-through-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Route traffic through it
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Route traffic through it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#put-https-in-front" class="md-nav__link">
+    <span class="md-ellipsis">
+      Put HTTPS in front
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#close-the-way-around-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      Close the way around it
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-check-what-the-gateway-sees" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Check what the gateway sees
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-decide-what-may-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Decide what may block
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      Known limits
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Code references
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      Overview
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#1-get-the-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      1. Get the files
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#2-edit-the-four-marked-sections" class="md-nav__link">
+    <span class="md-ellipsis">
+      2. Edit the four marked sections
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="2. Edit the four marked sections">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#backend-url" class="md-nav__link">
+    <span class="md-ellipsis">
+      Backend URL
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#route-templates" class="md-nav__link">
+    <span class="md-ellipsis">
+      Route templates
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#object-endpoints" class="md-nav__link">
+    <span class="md-ellipsis">
+      Object endpoints
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ownership-checks" class="md-nav__link">
+    <span class="md-ellipsis">
+      Ownership checks
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#login-outcomes" class="md-nav__link">
+    <span class="md-ellipsis">
+      Login outcomes
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#trusted-proxies" class="md-nav__link">
+    <span class="md-ellipsis">
+      Trusted proxies
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-start-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      3. Start it
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#4-route-traffic-through-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      4. Route traffic through it
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="4. Route traffic through it">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#put-https-in-front" class="md-nav__link">
+    <span class="md-ellipsis">
+      Put HTTPS in front
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#close-the-way-around-it" class="md-nav__link">
+    <span class="md-ellipsis">
+      Close the way around it
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#5-check-what-the-gateway-sees" class="md-nav__link">
+    <span class="md-ellipsis">
+      5. Check what the gateway sees
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-decide-what-may-block" class="md-nav__link">
+    <span class="md-ellipsis">
+      6. Decide what may block
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#known-limits" class="md-nav__link">
+    <span class="md-ellipsis">
+      Known limits
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#code-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      Code references
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+<h1 id="protecting-your-own-api">Protecting your own API<a class="headerlink" href="#protecting-your-own-api" title="Permanent link">&para;</a></h1>
+<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Permanent link">&para;</a></h2>
+<p>Everything else in these docs runs the gateway in front of <code>vulnerable-app/</code>,
+the deliberately insecure demo backend. This page puts it in front of an API
+you run instead.</p>
+<p>The gateway is a single-backend reverse proxy. Clients send requests to it; it
+records and inspects each one, refuses what policy says to refuse, and
+forwards the rest to one backend URL.</p>
+<div class="highlight"><pre><span></span><code>client ──HTTPS──▶ your HTTPS proxy ──HTTP──▶ gateway :8082 ──HTTP──▶ your API
+                  (nginx, Caddy, LB)          │
+                                              ▼
+                                   Redis ◀── control plane ──▶ Postgres
+                                     ▲
+                                     └── console :5177 (loopback only)
+</code></pre></div>
+<p>Two files do the work:</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>What it is</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>infra/docker-compose.own-api.yml</code></td>
+<td>The gateway, control plane, console, Redis and Postgres. No demo backend.</td>
+</tr>
+<tr>
+<td><code>gateway/configs/config.own-api.yaml</code></td>
+<td>A complete gateway config with the four site-specific sections marked <code>CHANGE ME</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>The desktop app is not a way to do this. It runs a fixed demo stack: its
+compose file points the gateway at the demo backend and is replaced on every
+update.</p>
+<h2 id="1-get-the-files">1. Get the files<a class="headerlink" href="#1-get-the-files" title="Permanent link">&para;</a></h2>
+<p>Download <code>docker-compose.own-api.yml</code> from the
+<a href="https://github.com/Pranav-Hirawat/Intelligent_API_Security_Gateway/releases/latest">latest release</a>.
+The release copy already names the image registry and version. Put a copy of
+<code>gateway/configs/config.own-api.yaml</code> beside it, named <code>gateway.yaml</code>:</p>
+<div class="highlight"><pre><span></span><code>iasg/
+├── docker-compose.own-api.yml
+└── gateway.yaml
+</code></pre></div>
+<p>To run from a checkout instead, use <code>infra/docker-compose.own-api.yml</code> and set
+<code>IASG_VERSION</code> and <code>IASG_REGISTRY</code> to a published release.</p>
+<h2 id="2-edit-the-four-marked-sections">2. Edit the four marked sections<a class="headerlink" href="#2-edit-the-four-marked-sections" title="Permanent link">&para;</a></h2>
+<p>Keep the rest of the file as it is. <strong>A detector whose settings are missing
+from the config is switched off, not given defaults</strong>, so a trimmed-down file
+detects less and says nothing about it. A test keeps the template's
+<code>enforcement</code> block identical to <code>config.yaml.example</code>.</p>
+<h3 id="backend-url">Backend URL<a class="headerlink" href="#backend-url" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nt">proxy</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">backend_url</span><span class="p">:</span><span class="w"> </span><span class="s">"http://your-api:3000"</span>
+<span class="w">  </span><span class="nt">preserve_host</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</code></pre></div>
+<p><code>IASG_BACKEND_URL</code> overrides <code>backend_url</code> if it is set.</p>
+<p>By default the backend receives <strong>its own</strong> hostname in <code>Host</code>, and the
+client's hostname in <code>X-Forwarded-Host</code>. That is what a virtual host, a PaaS or
+a CDN needs to find the site. Set <code>preserve_host: true</code> only if the backend
+must see the public hostname in <code>Host</code> itself. The gateway always overwrites
+<code>X-Forwarded-Host</code>, so a client cannot choose the hostname your backend puts in
+the links it generates.</p>
+<h3 id="route-templates">Route templates<a class="headerlink" href="#route-templates" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nt">routes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">templates</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET /health</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST /auth/login</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET /users/me</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET /users/{id}</span>
+</code></pre></div>
+<p>List every endpoint your API serves, with <code>{name}</code> for a segment that varies.
+The most specific template wins, whatever the order.</p>
+<p><strong>This is not optional.</strong> A path that matches no template is recorded as
+<code>&lt;unmatched&gt;</code>, and <code>unknown_route_scanning</code> treats a client that requests 8
+different unmatched paths within 5 minutes as a scanner. With the template's
+example routes left in place, ordinary clients of your API look like attackers.</p>
+<p>Templates are read at startup. Restart the gateway after changing them.</p>
+<h3 id="object-endpoints">Object endpoints<a class="headerlink" href="#object-endpoints" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nt">routes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">object_templates</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET /users/{id}</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET /orders/{id}</span>
+</code></pre></div>
+<p>List the endpoints that return one object belonging to someone. The
+<code>object_enumeration</code> detector watches them for a client requesting many
+different ids (BOLA / IDOR harvesting). Each entry must also be in
+<code>routes.templates</code>, or the gateway refuses to start. Leave out public lookups
+such as a product catalogue, where one client opening many ids is normal. The
+detector sees the pattern, not ownership: the ownership check in your API is
+still what stops the data leaking.</p>
+<h3 id="ownership-checks">Ownership checks<a class="headerlink" href="#ownership-checks" title="Permanent link">&para;</a></h3>
+<p>The gateway can also refuse the reads themselves, if it can verify your tokens
+and your responses name the owner:</p>
+<div class="highlight"><pre><span></span><code><span class="nt">routes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">ownership</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET /orders/{id}</span>
+<span class="w">      </span><span class="nt">owner_field</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">userId</span><span class="w">          </span><span class="c1"># dotted path into the response JSON</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">GET /orders</span>
+<span class="w">      </span><span class="nt">list_field</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">.</span><span class="w">                </span><span class="c1"># the body is an array; drop others' items</span>
+<span class="w">      </span><span class="nt">owner_field</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">userId</span>
+
+<span class="nt">identity</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">jwt</span><span class="p">:</span>
+<span class="w">    </span><span class="nt">algorithm</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">HS256</span><span class="w">               </span><span class="c1"># or RS256 with public_key_file</span>
+<span class="w">    </span><span class="nt">secret_env</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">IASG_JWT_SECRET</span><span class="w">    </span><span class="c1"># set it in infra/.env, never in this file</span>
+<span class="w">    </span><span class="nt">user_claim</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sub</span><span class="w">                </span><span class="c1"># must equal owner_field's value</span>
+<span class="w">    </span><span class="nt">bypass_claim</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">role</span>
+<span class="w">    </span><span class="nt">bypass_values</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">admin</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<p>A response for someone else's object becomes <code>404</code> and never leaves the
+gateway; a missing, expired or forged token is <code>401</code>. Each template must be in
+<code>routes.templates</code> and be a <code>GET</code>, and the gateway will not start if the secret
+or key cannot be loaded. Check three things first:</p>
+<ul>
+<li><strong>The ids must match as text.</strong> <code>user_claim</code> in the token and <code>owner_field</code> in
+  the response are compared as strings, so <code>7</code> and <code>"7"</code> match, but a token
+  carrying an email will never match a numeric owner id.</li>
+<li><strong>Responses must be JSON and name the owner.</strong> Otherwise they are refused
+  (<code>enforcement.object_ownership.on_unverifiable: deny</code>). Set it to <code>allow</code> while
+  you roll out, and watch the gateway log for <code>[ownership] cannot check</code>.</li>
+<li><strong>Writes are not covered.</strong> A <code>PUT</code> or <code>DELETE</code> has already happened when its
+  response arrives. Your API must still check ownership on writes.</li>
+</ul>
+<h3 id="login-outcomes">Login outcomes<a class="headerlink" href="#login-outcomes" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nt">routes</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">auth_outcomes</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">method</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">POST</span>
+<span class="w">      </span><span class="nt">template</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">/auth/login</span>
+<span class="w">      </span><span class="nt">success</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">200</span><span class="p p-Indicator">]</span>
+<span class="w">      </span><span class="nt">invalid_credentials</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">401</span><span class="p p-Indicator">]</span>
+</code></pre></div>
+<p>Brute-force detection counts a failed login only when a request matching this
+template gets back a status listed under <code>invalid_credentials</code>. With no entry,
+it never fires. Check what your API really returns for a wrong password: many
+return 400 or 403, not 401. A status in neither list counts as unknown, not as
+a success.</p>
+<h3 id="trusted-proxies">Trusted proxies<a class="headerlink" href="#trusted-proxies" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><span class="nt">server</span><span class="p">:</span>
+<span class="w">  </span><span class="nt">trusted_proxies</span><span class="p">:</span>
+<span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">172.16.0.0/12</span>
+</code></pre></div>
+<p>List the addresses of whatever forwards traffic to the gateway, so it believes
+the <code>X-Forwarded-For</code> header they set. This decides which address gets blocked,
+so getting it wrong fails in one of two ways:</p>
+<table>
+<thead>
+<tr>
+<th>Mistake</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Proxy not listed, proxy on a private network</td>
+<td>Every request appears to come from the proxy. Private addresses are exempt from blocking, so <strong>nothing is ever blocked</strong>, and nothing says so.</td>
+</tr>
+<tr>
+<td>Proxy not listed, proxy on a public address</td>
+<td>Every request appears to come from the proxy, so <strong>one block refuses every user</strong>.</td>
+</tr>
+<tr>
+<td>Range too wide</td>
+<td>Any client can put someone else's address in the header and have them blocked.</td>
+</tr>
+</tbody>
+</table>
+<p>Leave it empty only if clients connect to the gateway directly. Step 5 shows how
+to check which address the gateway actually sees.</p>
+<p>See <a href="../client-ip/">Identifying the Client</a> for how the header chain is read.</p>
+<h2 id="3-start-it">3. Start it<a class="headerlink" href="#3-start-it" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code>docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.own-api.yml<span class="w"> </span>up<span class="w"> </span>-d
+docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.own-api.yml<span class="w"> </span>ps
+</code></pre></div>
+<p>The project is named <code>iasg-own-api</code>, so it never collides with the desktop
+app's <code>iasg</code> stack on the same machine.</p>
+<p>If <code>gateway.yaml</code> is missing, startup stops with
+<code>bind source path does not exist</code>. Docker does not create an empty directory
+in its place.</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Default</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IASG_GATEWAY_BIND</code></td>
+<td><code>127.0.0.1</code></td>
+<td>Interface the gateway port listens on</td>
+</tr>
+<tr>
+<td><code>IASG_GATEWAY_PORT</code></td>
+<td><code>8082</code></td>
+<td>Host port for the gateway</td>
+</tr>
+<tr>
+<td><code>IASG_GATEWAY_CONFIG</code></td>
+<td><code>./gateway.yaml</code></td>
+<td>Path to the gateway config</td>
+</tr>
+<tr>
+<td><code>IASG_BACKEND_URL</code></td>
+<td>unset</td>
+<td>Overrides <code>proxy.backend_url</code></td>
+</tr>
+<tr>
+<td><code>POSTGRES_PASSWORD</code></td>
+<td><code>changeme</code></td>
+<td>Set this for anything beyond a trial</td>
+</tr>
+</tbody>
+</table>
+<h2 id="4-route-traffic-through-it">4. Route traffic through it<a class="headerlink" href="#4-route-traffic-through-it" title="Permanent link">&para;</a></h2>
+<h3 id="put-https-in-front">Put HTTPS in front<a class="headerlink" href="#put-https-in-front" title="Permanent link">&para;</a></h3>
+<p>The gateway speaks plain HTTP only. Something else has to terminate HTTPS and
+forward to it. A minimal Caddyfile, with Caddy running on the same host:</p>
+<div class="highlight"><pre><span></span><code>api.example.com {
+    reverse_proxy 127.0.0.1:8082
+}
+</code></pre></div>
+<p>Caddy obtains the certificate and sets <code>X-Forwarded-For</code>. With nginx, the
+equivalent is <code>proxy_pass http://127.0.0.1:8082;</code> plus
+<code>proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;</code>.</p>
+<p>If the HTTPS proxy runs on another machine, set <code>IASG_GATEWAY_BIND=0.0.0.0</code> and
+firewall port 8082 so only that machine can reach it.</p>
+<h3 id="close-the-way-around-it">Close the way around it<a class="headerlink" href="#close-the-way-around-it" title="Permanent link">&para;</a></h3>
+<p>The gateway only sees traffic that passes through it. If clients can still
+reach your API directly (its own port, its IP address, an old DNS name), an
+attacker simply goes around. Make the backend accept connections from the
+gateway only: put both on one private Docker network, or firewall the
+backend's port.</p>
+<h2 id="5-check-what-the-gateway-sees">5. Check what the gateway sees<a class="headerlink" href="#5-check-what-the-gateway-sees" title="Permanent link">&para;</a></h2>
+<p>Send a request through the public hostname, then read the event the gateway
+recorded:</p>
+<div class="highlight"><pre><span></span><code>curl<span class="w"> </span>-s<span class="w"> </span>https://api.example.com/health
+
+docker<span class="w"> </span>compose<span class="w"> </span>-f<span class="w"> </span>docker-compose.own-api.yml<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>redis<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>redis-cli<span class="w"> </span>--raw<span class="w"> </span>XREVRANGE<span class="w"> </span>iasg:events<span class="w"> </span>+<span class="w"> </span>-<span class="w"> </span>COUNT<span class="w"> </span><span class="m">1</span>
+</code></pre></div>
+<p>Check two fields:</p>
+<ul>
+<li><strong><code>ip</code></strong> should be your own public address. If it shows the proxy's address
+  (often something in <code>172.16.0.0/12</code> behind Docker), fix <code>trusted_proxies</code>.</li>
+<li><strong><code>routeTemplate</code></strong> should be the template you expect. <code>&lt;unmatched&gt;</code> for a
+  real endpoint means the template list is missing it.</li>
+</ul>
+<p>The console listens on loopback only. From your own machine:</p>
+<div class="highlight"><pre><span></span><code>ssh<span class="w"> </span>-L<span class="w"> </span><span class="m">5177</span>:127.0.0.1:5177<span class="w"> </span>you@your-server
+<span class="c1"># then open http://localhost:5177</span>
+</code></pre></div>
+<h2 id="6-decide-what-may-block">6. Decide what may block<a class="headerlink" href="#6-decide-what-may-block" title="Permanent link">&para;</a></h2>
+<p>The template starts almost in detect-only mode:</p>
+<table>
+<thead>
+<tr>
+<th>Setting</th>
+<th>Template value</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>enforcement.block.signals</code></td>
+<td><code>[api_flooding]</code></td>
+<td>The gateway blocks on its own only for floods above <code>min_score</code></td>
+</tr>
+<tr>
+<td><code>enforcement.rate_limit.enforce</code></td>
+<td><code>false</code></td>
+<td>Over-limit traffic is reported, not refused</td>
+</tr>
+<tr>
+<td><code>enforcement.policy.enabled</code></td>
+<td><code>false</code></td>
+<td>Control-plane decisions are recorded, not enforced</td>
+</tr>
+</tbody>
+</table>
+<p>Run it for a while and read the Events and Campaigns pages. Anything that fires
+on legitimate traffic is a template, threshold or proxy setting to fix before
+you let it act. Then enable policy enforcement from the console's Settings
+page. Settings changes are stored in Redis, and <strong>Revert to file</strong> returns to
+<code>gateway.yaml</code>. How decisions are made is covered in
+<a href="../policy-enforcement/">Policy Enforcement</a> and
+<a href="../adaptive-policy/">Adaptive Policy and Analyst Control</a>.</p>
+<h2 id="known-limits">Known limits<a class="headerlink" href="#known-limits" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>No login on the console.</strong> Anyone who reaches port 5177 can change what
+  gets blocked. Keep it on loopback. See <code>SECURITY.md</code>.</li>
+<li><strong>One backend per gateway.</strong> Routing by hostname or path to several services
+  means one gateway per service, or a router behind the gateway.</li>
+<li><strong>No HTTPS in the gateway.</strong> It has to sit behind a proxy that terminates it.</li>
+<li><strong>Adaptive baselines learn from the demo backend's traffic</strong>, so reset and
+  warm them before protecting a different API.</li>
+<li><strong>Detection signatures are generic.</strong> The SQL injection and traversal
+  patterns are short lists meant for the demo. Extend them for your API in
+  <code>enforcement.attack_detection</code> and <code>enforcement.enumeration_path_traversal</code>.</li>
+</ul>
+<h2 id="code-references">Code references<a class="headerlink" href="#code-references" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Path</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>infra/docker-compose.own-api.yml</code></td>
+<td>Stack without the demo backend</td>
+</tr>
+<tr>
+<td><code>gateway/configs/config.own-api.yaml</code></td>
+<td>Starting config with the site-specific sections marked</td>
+</tr>
+<tr>
+<td><code>gateway/internal/proxy/reverse_proxy.go</code></td>
+<td>Forwarding, <code>Host</code> rewrite and <code>X-Forwarded-Host</code></td>
+</tr>
+<tr>
+<td><code>gateway/internal/proxy/reverse_proxy_test.go</code></td>
+<td>Host handling, including the forged-header case</td>
+</tr>
+<tr>
+<td><code>gateway/internal/config/config_test.go</code></td>
+<td><code>TestOwnAPITemplateDetectsWhatTheExampleDetects</code></td>
+</tr>
+<tr>
+<td><code>gateway/internal/signals/unknown_route_scanning.go</code></td>
+<td>Why unmatched routes matter</td>
+</tr>
+<tr>
+<td><code>gateway/internal/signals/brute_force.go</code></td>
+<td>How <code>auth_outcomes</code> feeds brute-force detection</td>
+</tr>
+<tr>
+<td><code>control-plane/iasg/policy/writer.py</code></td>
+<td>Why private addresses are never blocked</td>
+</tr>
+<tr>
+<td><code>.github/workflows/release.yml</code></td>
+<td>Attaches the compose file to each release with registry and version filled in</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    <script id="__config" type="application/json">{"base": "..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "content.code.copy"], "search": "../assets/javascripts/workers/search.6ce7567c.min.js", "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.88dd0f4e.min.js"></script>
+      
+    
+  </body>
+</html>
