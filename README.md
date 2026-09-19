@@ -62,6 +62,30 @@ See the [control-plane mechanism guide](control-plane/ALGORITHMS.md) and
 [adaptive-policy documentation](gateway/docs/adaptive-policy.md) for the
 decision boundaries and their safeguards.
 
+## Functional requirements
+
+Functional requirements describe the observable jobs the system must perform.
+They are separate from implementation choices: the requirements say *what* the
+gateway delivers, while the Go proxy, Redis, and Python control plane explain
+*how* it delivers it.
+
+| Requirement | What it means | Algorithm used | How it is done | Why it matters |
+|---|---|---|---|---|
+| FR1 — Intercept and validate requests | Every protected API request passes through one safe entry point. | Reverse-proxy routing, trusted-proxy CIDR matching, and bounded body reading. | The Go reverse proxy resolves trusted client identity, caps bodies, and validates request metadata before forwarding. | Prevents unsafe or oversized traffic from reaching the backend unchecked. |
+| FR2 — Detect suspicious behaviour | Recognise flooding, credential attacks, SQLi, enumeration, traversal, and related signals. | Deterministic substring/signature matching and per-client time-window counters. | Deterministic detectors emit structured evidence; they never decide to block the same request. | Keeps detection explainable and avoids false-positive enforcement in detector code. |
+| FR3 — Assess risk and correlate campaigns | Identify related activity across IPs, routes, detectors, and time windows. | Union-find correlation over shared behavioural traits, with rule-based confidence scoring. | The off-path Python agent correlates Redis evidence into campaigns and records confidence and explanations. | Distinguishes isolated noise from coordinated attacks. |
+| FR4 — Generate adaptive policies | Produce time-limited, explainable security decisions. | Rule-based risk/confidence ladder with policy-writer guardrails and TTLs. | The policy writer applies safety rails and stores TTL-bound `policy:<ip>` records in Redis. | Ensures controls expire automatically instead of becoming permanent accidental blocks. |
+| FR5 — Enforce decisions and rate limits | Apply monitor, throttle, temporary-block, and escalation outcomes before forwarding. | Background policy snapshots, Redis token buckets, and threshold-based reflex blocking. | The gateway reads background-refreshed policy snapshots, uses bounded quotas for throttles, and can apply a local reflex for urgent flooding. | Protects the backend without making requests wait for analysis. |
+| FR6 — Forward permitted requests and capture responses | Preserve normal application behaviour while observing outcomes. | Reverse proxying with response-status capture. | Admitted requests are reverse-proxied to the backend and response metadata is recorded as telemetry. | Lets the gateway protect an existing API without modifying it. |
+| FR7 — Provide monitoring and visualisation | Make traffic, evidence, campaigns, policies, and health visible. | Redis-stream telemetry aggregation and dashboard polling. | Redis telemetry and durable campaign history are presented by the Next.js dashboard. | Gives operators an auditable view of why action was taken. |
+| FR8 — Support configuration and human overrides | Let operators configure thresholds, modes, exemptions, and policy instructions. | Validated override processing with deterministic safety guardrails. | Dashboard actions become control-plane overrides and still pass the policy writer's safety rails. | Keeps human review available without bypassing safety controls. |
+
+**Viva summary:** IASG is a split-plane security gateway. The gateway handles
+the immediate request path; the control plane performs slower correlation and
+policy generation afterward. This separation is deliberate: it keeps
+enforcement fast, decisions explainable, and every policy bounded by a TTL and
+safety checks.
+
 ## Layout
 
 | Path | What it is |
