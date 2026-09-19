@@ -1,9 +1,0 @@
-/../../../etc/passwd
-/api/products/../../../etc/passwd
-/%2e%2e%2f%2e%2e%2fetc/passwd
-/.env
-/.git/config
-/.aws/credentials
-/wp-admin
-/.ssh/id_rsa
-/.bash_history
