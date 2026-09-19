@@ -17,7 +17,7 @@ docker compose -f infra/docker-compose.yml logs -f control_plane
 | `vulnerable_api` | 5002 | The deliberately insecure API being protected |
 | `vulnerable_web` | 5175 | Its front end |
 | `gateway_dashboard` | 5177 | Next.js operations console |
-| `postgres` | 5434 | Durable campaign memory and console accounts |
+| `postgres` | 5434 | Durable campaign memory, feedback, and dashboard settings |
 | `vulnerable_postgres` | 5435 | The vulnerable app's own database, kept separate |
 | `redis` | 6379 | Evidence stream, policy keys, telemetry |
 | `docs` | 8000 | MkDocs site |
@@ -40,8 +40,8 @@ one intended.
 Both databases and Redis use named volumes, and Redis runs with `--appendonly yes`, so a
 `docker compose down` and back up keeps campaigns, accounts and evidence.
 
-`docker compose down -v` removes the volumes and everything in them, including the console
-accounts — you will be sent back to `/setup` on the next start.
+`docker compose down -v` removes the volumes and everything in them, including campaign
+history, feedback, adaptive settings, and database-backed dashboard state.
 
 ## Narration
 

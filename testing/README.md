@@ -8,7 +8,7 @@ by the control plane, and none of it is a substitute for the unit tests
 ```text
 testing/
   signals/     shell scripts, one per detector
-  jmeter/      load-shaped attacks
+  jmeter/      maintained JMeter verification plans
 ```
 
 ## Prerequisites
@@ -36,30 +36,30 @@ trigger.
 
 ## JMeter
 
-`jmeter/brute_force_demo.jmx` drives a credential attack with `passwords.csv` as its word
-list — useful when you want sustained volume rather than a script's burst. Open it in the
-JMeter GUI, or run it headless:
+The maintained plans live directly in `testing/jmeter/`. They use RFC 5737
+documentation addresses where a control-plane policy must be eligible for
+enforcement. Open a plan in the JMeter GUI or run it headlessly, for example:
 
 ```bash
-jmeter -n -t testing/jmeter/brute_force_demo.jmx
+jmeter -n -t "testing/jmeter/4-SQL-Injection-Detection.jmx"
 ```
 
-`jmeter/adaptive_rate_limit.jmx` is the end-to-end FR3 check. It sends failed
-logins from a safe documentation address, waits for the control-plane cycle,
-then asserts that a high-severity throttle allows 20 health requests and
-returns `429` from request 21 onward:
+### Functional-requirements traceability
 
-```bash
-jmeter -n -t testing/jmeter/adaptive_rate_limit.jmx
-```
+| Requirement | JMeter plans that cover it | Coverage |
+|---|---|---|
+| FR1 — Intercept and validate requests | `1-Gateway forwarding, response capture, and telemetry.jmx`; `2- Request-size protection.jmx` | Forwarding, trusted `X-Forwarded-For`, normal requests, and the `413` body-size rejection. |
+| FR2 — Detect suspicious behaviour | `3A-Brute-force detection.jmx`; `3B-Password Spraying detection.jmx`; `4-SQL-Injection-Detection.jmx`; `5-Enumeration and path-traversal detection.jmx`; `6-Unknown-route scanning.jmx`; `7-Immediate gateway reflex for API flooding.jmx`; `14-bola_demo.jmx` | Covers the required attack types; BOLA is additional object-enumeration coverage. |
+| FR3 — Risk assessment and campaign correlation | `4-SQL-Injection-Detection.jmx`; `9-Control-plane campaign correlation.jmx`; `10-Monitor manual and automatic modes.jmx`; `11-Policy enforcement monitor throttle temporary block escalate.jmx`; `14-bola_demo.jmx` | Exercises multi-IP campaign correlation and resulting actions. Verify dashboard explanations manually. |
+| FR4 — Adaptive, expiring policies | `3A-Brute-force detection.jmx`; `4-SQL-Injection-Detection.jmx`; `10-Monitor manual and automatic modes.jmx`; `11-Policy enforcement monitor throttle temporary block escalate.jmx`; `12-Adaptive rate limiting without attack signature.jmx`; `14-bola_demo.jmx` | Exercises policy generation and outcomes. Redis policy fields and TTL are inspected manually. |
+| FR5 — Enforcement and adaptive rate limits | `3A-Brute-force detection.jmx`; `4-SQL-Injection-Detection.jmx`; `5-Enumeration and path-traversal detection.jmx`; `7-Immediate gateway reflex for API flooding.jmx`; `8-Gateway reflex allowlist and exemption settings.jmx`; `10-Monitor manual and automatic modes.jmx`; `11-Policy enforcement monitor throttle temporary block escalate.jmx`; `12-Adaptive rate limiting without attack signature.jmx`; `14-bola_demo.jmx` | Covers `403` blocks, `429` throttles with `Retry-After`, reflexes, exemptions, operation modes, and escalation. |
+| FR6 — Forward permitted requests and capture responses | `1-Gateway forwarding, response capture, and telemetry.jmx`; `2- Request-size protection.jmx`; permitted-response phases in plans `4`, `5`, `6`, `7`, and `14` | Plan 1 is the direct forwarding and response-telemetry check. |
+| FR7 — Logging, monitoring, and visualization | `1-Gateway forwarding, response capture, and telemetry.jmx`; `4-SQL-Injection-Detection.jmx`; `9-Control-plane campaign correlation.jmx`; `10-Monitor manual and automatic modes.jmx`; `11-Policy enforcement monitor throttle temporary block escalate.jmx` | Events, campaigns, policies, and dashboard outcomes are inspected during runs; dashboard and audit-history coverage is manual. |
+| FR8 — Administrative configuration and overrides | `8-Gateway reflex allowlist and exemption settings.jmx`; `10-Monitor manual and automatic modes.jmx`; `11-Policy enforcement monitor throttle temporary block escalate.jmx` | Settings, exemptions, mode changes, manual approvals, and policy actions are deliberate operator steps. Authentication and audit-record assertions are not automated. |
 
-The plan takes about 50 seconds. It uses `203.0.113.250` by default; pick a
-different documentation address on a repeat run, or remove its previous policy
-in the console first:
-
-```bash
-jmeter -n -t testing/jmeter/adaptive_rate_limit.jmx --jmeterproperty ATTACKER_IP=203.0.113.251
-```
+`12-Adaptive rate limiting without attack signature.jmx` is the focused proof
+that valid traffic alone can lead to a dynamic throttle. Its optional TTL
+recovery check is disabled by default.
 
 ## Seeding instead of attacking
 

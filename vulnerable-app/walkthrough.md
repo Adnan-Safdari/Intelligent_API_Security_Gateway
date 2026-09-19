@@ -36,7 +36,7 @@ Located at [backend/routes/auth.js](backend/routes/auth.js), the `POST /api/logi
   distinguishing behavior an earlier version of this backend had is gone.
 - **No rate limiting**: vulnerable to brute-force attacks, which is what
   makes it the target for `testing/signals/brute_force.sh` and
-  `testing/jmeter/brute_force_demo.jmx`.
+  `testing/jmeter/3A-Brute-force detection.jmx`.
 
 ## Verification Results
 

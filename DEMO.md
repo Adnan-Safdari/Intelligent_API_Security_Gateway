@@ -1,186 +1,73 @@
-# Live demo: JMeter + Gateway Dashboard
+# Live demo: JMeter and the Gateway Dashboard
 
-This is the presentation flow for the complete project. JMeter is the only
-traffic generator; the Gateway Dashboard is the only evidence and control
-surface. There are no curl requests, Redis commands, gateway logs, mock
-backends, or manual policy writes in this walkthrough.
+Use only the local, deliberately vulnerable demo stack. The JMeter plans create
+real traffic; the dashboard is where to inspect evidence, campaigns, policies,
+and enforcement.
 
-The story is simple: **generate an attack, watch the gateway record it, let the
-control plane correlate it, then show the policy the gateway enforces.**
+## Before the demo
 
-## Before the audience arrives
-
-Start the stack from the repository root:
+Start the stack from the repository root and open the dashboard:
 
 ```powershell
 docker compose -f infra/docker-compose.yml up -d
 ```
 
-Open [http://localhost:5177](http://localhost:5177) and wait until its status
-line shows **Redis connected** and a recent control-plane heartbeat. In
-**Settings**, use **Reset console** to clear prior events, campaigns and
-history. Reset intentionally leaves active policies in place, so on **Policy**
-delete any policy for the address you will reuse—or choose a fresh JMeter
-`ATTACKER_IP`.
+Open http://localhost:5177. Use **Settings → Reset console** to clear old
+evidence and campaigns. Reset deliberately preserves `policy:*`; remove a
+reused policy on **Policy**, or use the documentation addresses already assigned
+to a fresh plan run.
 
-Keep these two windows visible:
-
-1. Apache JMeter 5.6.3, opened in `testing/jmeter/` so the plans can find their CSV dictionaries.
-2. The dashboard at `http://localhost:5177`.
-
-> Only use these attack plans against this local, deliberately vulnerable demo.
-
-## One important Docker Desktop detail
-
-JMeter plans carry `X-Forwarded-For` identities from RFC 5737 documentation
-ranges. The gateway trusts that header only from configured proxies. A JMeter
-GUI running on the host still proves gateway detection and the reflex, but on
-Docker Desktop its forwarded client address can be ignored and the control
-plane will correctly refuse to write policy for the resulting private address.
-
-For the full **campaign → public IP policy → enforcement** demonstration, run
-the JMeter plan inside the Compose network. This is still JMeter; it only
-places the load generator where the gateway can safely trust its forwarded
-identity. From `testing/jmeter/`, run the plan with a JMeter Docker image you
-already use, targeting the Compose service name:
+For policy enforcement on Docker Desktop, run JMeter inside the Compose network.
+The gateway then receives traffic from its configured trusted bridge and can
+honour each plan's `X-Forwarded-For` address.
 
 ```powershell
-docker run --rm --network infra_default -v "${PWD}:/plans" -w /plans justb4/jmeter:5.6.3 `
-  -n -t adaptive_rate_limit.jmx -JHOST=gateway -JPORT=8082 -JATTACKER_IP=203.0.113.250
+docker run --rm --network infra_default -v "${PWD}\testing\jmeter:/plans" -w /plans justb4/jmeter:5.6.3 `
+  -n -t "4-SQL-Injection-Detection.jmx" -JHOST=gateway -JPORT=8082
 ```
 
-If your Compose project has a different network name, find it with
-`docker network ls` and substitute its `<project>_default` name. The JMeter GUI
-is still useful for opening a plan, reading its samplers, and showing its
-Summary Report; the networked command is the reliable run mode for policies on
-Docker Desktop.
+If the Compose project uses a different network name, replace `infra_default`
+with the `<project>_default` network shown by `docker network ls`.
 
-## The polished 8-minute flow
+## A complete incident in five minutes
 
-### 1. Start clean — 30 seconds
+Run `4-SQL-Injection-Detection.jmx` with the command above. It compares the
+unsafe and parameterized product-search routes, has three documentation IPs
+generate SQLi evidence, waits for correlation and policy refresh, then asserts
+that each affected address receives `403`.
 
-On **Overview**, point out:
+While its policy wait is running, show the dashboard in this order:
 
-- the four live measures: requests, alerts, addresses and policies;
-- the source map and signal mix; and
-- the status bar showing the control plane is separate but healthy.
+1. **Events** — filter for SQL injection and the three `203.0.113.7x` addresses.
+2. **Campaigns** — open the correlated campaign and its explanation.
+3. **Policy** — show the active, expiring decisions.
+4. **JMeter Summary Report** — show the final `403` assertions.
 
-Open **Settings** briefly. Show that gateway enforcement is live-configurable,
-then leave `Policy enforcement` enabled. Do not change thresholds during the
-main walkthrough: the supplied plans match the shipped configuration.
+The key message is: detectors create evidence during a request; the control
+plane decides later; the gateway enforces the cached decision without waiting
+for the control plane or a model.
 
-Talking point: “The gateway sees every request, but it does not wait for a
-model or a database to decide what to do.”
+## Other maintained plans
 
-### 2. Create a complete incident — 90 seconds
+All maintained plans live directly in `testing/jmeter/`; their comments state
+the reset, settings, and expected-response prerequisites.
 
-Run `adaptive_rate_limit.jmx` using the Compose-network command above. The
-plan automatically:
+| Plan | Demonstrates |
+|---|---|
+| `1-Gateway forwarding, response capture, and telemetry.jmx` | Forwarding, client identity, and telemetry. |
+| `2- Request-size protection.jmx` | Normal login and a gateway `413` body-size rejection. |
+| `3A-Brute-force detection.jmx`; `3B-Password Spraying detection.jmx` | Credential-attack evidence and throttle behaviour. |
+| `5-Enumeration and path-traversal detection.jmx` | Bounded traversal/enumeration evidence and the reflex response. |
+| `6-Unknown-route scanning.jmx` | Advisory unknown-route evidence and correlation. |
+| `7-Immediate gateway reflex for API flooding.jmx`; `8-Gateway reflex allowlist and exemption settings.jmx` | Flood reflex and its exemption setting. |
+| `9-Control-plane campaign correlation.jmx` | Three-IP reconnaissance correlation. |
+| `10-Monitor manual and automatic modes.jmx`; `11-Policy enforcement monitor throttle temporary block escalate.jmx` | Operator modes, approval, and policy outcomes. |
+| `12-Adaptive rate limiting without attack signature.jmx` | A valid-traffic adaptive throttle; it requires the documented adaptive settings. |
+| `14-bola_demo.jmx` | BOLA ownership protection, object enumeration, and direct-backend comparison. |
 
-1. sends 12 invalid logins from `203.0.113.250`;
-2. waits for the 30-second control-plane cycle and gateway policy refresh; and
-3. sends 25 health requests from the same address, expecting 20 `200` results
-   followed by five `429` results.
+## Close and recover
 
-While JMeter is in its wait stage, use the dashboard in this order:
-
-1. **Events** — enable **Alerts only**. Filter for `203.0.113.250` and show the
-   failed-login evidence. This is raw observation, not a verdict.
-2. **Campaigns** — show the correlated brute-force campaign, its confidence,
-   evidence count, affected address and explanation. This is where individual
-   events become an incident.
-3. **Policy** — show the active policy, its action, source, and countdown to
-   expiry. A policy exists only after the agent's bounded decision process.
-4. Return to JMeter's Summary Report. The final health requests receive `429`:
-   the gateway enforces its already-refreshed snapshot without asking the
-   control plane per request.
-
-Talking point: “The 429 is a throttle, not a permanent ban. The response says
-‘not this fast’; when the policy TTL expires, the restriction disappears by
-itself.”
-
-### 3. Show the other attack signals — 2 minutes
-
-Run these plans one at a time from JMeter. In the GUI, open a plan and click
-Start. Under Docker Desktop, use the Compose-network pattern with
-`-t <plan>.jmx -JHOST=gateway -JPORT=8082` whenever a plan includes an
-`X-Forwarded-For` demonstration identity and you want its public-IP policy
-path to be visible.
-
-| JMeter plan | What to show in the dashboard | Expected result |
-| --- | --- | --- |
-| `brute_force_demo.jmx` | Events filtered to failed logins, then the Campaigns page | Repeated credential failures become evidence and a campaign. This plan focuses on detector behaviour; use `adaptive_rate_limit.jmx` for its public-IP policy path. |
-| `flood_demo.jmx` | Overview alert count, Events signal filter, then Policy | API-flood evidence; the shipped gateway reflex may return `403` once its configured threshold is crossed. |
-| `sqli_probe.jmx` | Events filtered to SQL injection | Request-scoped SQLi evidence is recorded. A detector does not automatically block a single ambiguous request. |
-| `path_traversal_probe.jmx` | Events filtered to traversal / enumeration | Traversal and forced-browsing evidence is recorded for correlation. |
-| `ATTACK_IP=203.0.113.81 bash testing/signals/object_enumeration.sh` (script, not a plan) | Events filtered to Object ID enumeration (BOLA), then Campaigns | Once 20 distinct order ids are requested, `object_enumeration` evidence appears, keyed on `/api/orders/{id}`; the campaign is named Object ID Enumeration (BOLA). Through the gateway most of those reads are `404`, refused by the ownership check. |
-| `BACKEND_URL=http://localhost:5002 bash testing/signals/ownership.sh` (script, not a plan) | Gateway log, Events filtered to Ownership check (BOLA), then Campaigns | Jane reads her own orders; every other customer's order is `404` through the gateway and `200` straight from the backend, a forged token is `401`, and repeated refusals become an Unauthorized Object Access (BOLA) campaign. |
-| Storefront (`http://localhost:5175`), not a plan | The browser itself, then Events and Campaigns | Sign in as `jane@example.com` / `user123`. In **Gateway** mode, edit the address bar to `/orders/2`: "Order not found". Switch the navbar to **Backend** and reload the same URL: Arjun Mehta's order. No curl, for a panel that wants to see the leak rather than read it. |
-| `distributed_attack.jmx` | Campaigns and Overview source map | Several identities and attack types demonstrate correlation and a multi-stage view. |
-
-For each plan, keep the explanation consistent:
-
-**Events are evidence. Campaigns are conclusions. Policy is the decision now
-being enforced.**
-
-### 4. Demonstrate human control safely — 90 seconds
-
-Use an existing campaign or policy from the preceding steps.
-
-1. On **Policy**, select a different action for a row or use **Instruct the
-   agent** with the campaign address and a reason such as `demo review`.
-2. Explain that the console writes an instruction, not a policy directly. It
-   is applied on the next control-plane cycle and is still subject to
-   allowlists, shared-range checks, TTL limits and the writer's safeguards.
-3. On **Campaigns**, select a campaign to show the bulk temporary-block action.
-   This demonstrates response at incident scope rather than hunting through
-   individual event rows.
-4. On **Policy**, point out the expiry countdown. If you use **Delete policy**,
-   explain it is immediate but does not erase the underlying campaign; the
-   agent can write a fresh policy if the incident remains active.
-
-Never demonstrate a policy against localhost or a private address: the writer
-rejects them by design. Use an RFC 5737 address such as `203.0.113.250`.
-
-### 5. Demonstrate adaptive governance — 90 seconds
-
-Open **Adaptive enforcement**.
-
-- **Monitor** continues learning, scoring and correlation but never writes an
-  enforcing gateway policy.
-- **Manual** holds recommendations for an analyst to approve, edit or reject.
-- **Automatic** is the default bounded mode: only guardrail-compliant throttle
-  or temporary-block recommendations can become policy.
-
-Show the active-policy/recommendation audit and the endpoint-baseline section.
-The point is not “AI blocks users”; it is that learning is visible, decisions
-are constrained, and an analyst can review the evidence-to-action trail.
-
-If you switch modes for the presentation, switch back to **Automatic** before
-running the adaptive rate-limit plan again.
-
-### 6. Close with history and reset — 30 seconds
-
-Open **History** to show that campaigns and feedback persist in Postgres across
-service restarts. Then return to **Settings → Reset console** to remove demo
-events, campaigns and history. Active policy keys are intentionally preserved;
-remove them individually on **Policy** or let their TTL expire.
-
-## Fast recovery
-
-| Symptom | Dashboard-first fix |
-| --- | --- |
-| No events arrive | Confirm the Overview status bar reports Redis connected, then verify JMeter targets port `8082`, not the vulnerable API on `5002`. |
-| Events appear but no policy | Wait one control-plane cycle, then confirm the attack uses a public documentation IP from a trusted Compose-network JMeter run. Also check Adaptive mode is not `monitor`. |
-| The adaptive plan fails its `429` assertion | Delete the prior policy for that IP on Policy, or rerun with a new `-JATTACKER_IP=203.0.113.251`. |
-| JMeter receives `403` sooner than expected | The gateway reflex responded to a configured repeated signal; show that immediate protection and use a fresh address for the policy-throttle sequence. |
-| The dashboard looks old | It polls automatically. Refresh the page only if the status line reports a dependency problem. |
-
-## Demo checklist
-
-- [ ] Compose stack running; Overview shows Redis connected and a heartbeat.
-- [ ] Console reset; no reused active policy for the selected attacker IP.
-- [ ] JMeter uses the gateway on `8082`.
-- [ ] Compose-network JMeter run is used when public-IP policy enforcement must be shown.
-- [ ] Events → Campaigns → Policy → JMeter result is shown in that order.
-- [ ] Policy expiry and the separation between detector, decision and enforcement are explained.
+**Reset console** clears demo evidence and history but not an active policy.
+Delete a single policy on **Policy** if a fresh run needs its address, or let
+the policy TTL expire. Do not demonstrate policies using localhost or private
+addresses: the policy writer rejects them by design.

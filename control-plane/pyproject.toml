@@ -22,9 +22,6 @@ include = ["iasg*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Put the project root on sys.path so tests import iasg without relying on the
-# editable install, which setuptools does not wire up correctly on Python 3.14.
-# ".." puts the repository root on the path so the traffic harness in
-# testing/traffic can be tested here, against the same extractor it has to
-# produce data for. Checking a persona's plan by eye is not a check.
+# Keep both the control-plane package and repository root importable to tests
+# without relying on editable-install path handling.
 pythonpath = [".", ".."]

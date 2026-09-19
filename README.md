@@ -79,7 +79,7 @@ Each has its own README covering how to run it, what it talks to, and what it do
 ## Prerequisites
 
 - Docker and Docker Compose
-- Go 1.22.2+, Python 3.11+ and Node.js 18+ for local development
+- Go 1.22.2+, Python 3.11+, and Node.js 22 for local development (matching the Compose images)
 - Redis and Postgres (via Compose, or `brew install redis postgresql@18`)
 
 ## Quick start
@@ -461,8 +461,11 @@ says what to restore.
 ## Testing
 
 ```bash
-cd gateway && go test ./...
-cd control-plane && .venv/bin/python -m pytest
+cd gateway && go build ./... && go vet ./... && go test ./...
+cd gateway && go test ./internal/signals/ -race
+cd control-plane && PYTHONPATH=. .venv/bin/python -m pytest -q
+cd gateway-dashboard && npm test
+cd vulnerable-app/backend && npm test
 ```
 
 Use `.venv/bin/python -m pytest` (not `.venv/bin/pytest`) — the module form does not depend

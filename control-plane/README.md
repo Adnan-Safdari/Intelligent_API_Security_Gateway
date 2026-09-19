@@ -216,14 +216,16 @@ written, and nothing reads them back to make a decision. A hallucinated or
 prompt-injected assessment can mislead a human reader; it cannot unblock an attacker.
 
 Compose and a bare `python -m iasg` both default to `null` and render templates
-offline. To opt into a real model, set `IASG_LLM_PROVIDER=ollama`; Compose points
-the container at Ollama on the *host*, so there is no second copy of the model:
+offline. In Compose, start the opt-in internal Ollama service and set
+`IASG_LLM_PROVIDER=ollama` in `infra/.env`; see [`../infra/README.md`](../infra/README.md#narration).
+For a bare control-plane process, run Ollama on the host and point
+`IASG_OLLAMA_URL` at it:
 
 ```bash
 brew install ollama
 brew services start ollama   # runs in the background, restarts at login
 ollama pull llama3.2         # ~2GB, stored in ~/.ollama (not in this repo)
-IASG_LLM_PROVIDER=ollama .venv/bin/python -m iasg --once
+IASG_LLM_PROVIDER=ollama IASG_OLLAMA_URL=http://localhost:11434 .venv/bin/python -m iasg --once
 ```
 
 ## Safety rails on policy writes

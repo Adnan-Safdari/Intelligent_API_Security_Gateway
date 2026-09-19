@@ -50,9 +50,6 @@ replaced (accounts, sessions, scrypt hashing, `viewer`/`operator`/`admin`
 roles, `/login` and `/setup` pages) is in git history if it's ever wanted
 back; the comment at the top of `lib/auth.js` says what to restore.
 
-`scripts/reset-accounts.mjs` (`npm run reset-accounts`) still exists but is
-now vestigial — there is no `/setup` for a wiped account table to return to.
-
 ## Writing is instructing, not enforcing
 
 Nothing here writes a policy key. Every action appends to `iasg_overrides`, and the
