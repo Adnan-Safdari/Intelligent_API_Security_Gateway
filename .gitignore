@@ -52,16 +52,11 @@ temp/
 *.tmp
 .next/
 
-# JMeter test assets
-testing/jmeter/
-# Keep the maintained FR3 verification plan under version control.
-!testing/
-!testing/jmeter/
+# JMeter result files and generated assets do not belong in source control.
+# Keep the maintained test plans and their shared data file versioned.
 testing/jmeter/*
-!testing/jmeter/adaptive_rate_limit.jmx
-!testing/jmeter/bola_demo.jmx
-!testing/jmeter/accd_to_doc/
-!testing/jmeter/accd_to_doc/**
+!testing/jmeter/*.jmx
+!testing/jmeter/users.csv
 
 # Database
 *.db
